@@ -7,10 +7,7 @@ library;
 
 import 'dart:typed_data';
 
-// hide: the SDK still exports its pre-ChatInference inference types (M16/M17
-// leftovers, superseded by chat_inference) — cleanup queued with D3.
-import 'package:bentos_driver_sdk/bentos_driver_sdk.dart'
-    hide TextDelta, TokenUsage;
+import 'package:bentos_driver_sdk/bentos_driver_sdk.dart';
 import 'package:bentos_userland/bentos_userland.dart';
 import 'package:bentos_userland/chat.dart';
 import 'package:fixnum/fixnum.dart';
