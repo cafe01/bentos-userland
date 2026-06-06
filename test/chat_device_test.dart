@@ -10,6 +10,7 @@ import 'dart:typed_data';
 import 'package:bentos_driver_sdk/bentos_driver_sdk.dart';
 import 'package:bentos_userland/bentos_userland.dart';
 import 'package:bentos_userland/chat.dart';
+import 'package:chat_inference/chat_inference.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:stream_channel/stream_channel.dart';
 import 'package:test/test.dart';
@@ -64,19 +65,50 @@ void main() {
     expect(cursor, script.length);
   });
 
-  test('non-default config is refused until the ConfigCodec lands (D3)', () {
+  test('non-default config issues CHAT_SET_* ioctls before write', () async {
+    final ioctls = <(int, Uint8List)>[];
+    final script = <ChatEvent>[
+      Complete(ChatMetadata(model: 'm', stopReason: const EndTurn())),
+    ];
+    var cursor = 0;
+
+    final driver = BentosDriver(
+      onOpen: (req, ctx) => FuseResponse(open: OpenReply()),
+      onIoctl: (req, ctx) {
+        ioctls.add((req.cmd, Uint8List.fromList(req.inBuf)));
+        return FuseResponse(ioctl: IoctlReply());
+      },
+      onWrite: (req, ctx) =>
+          FuseResponse(write: WriteReply(count: Int64(req.data.length))),
+      onRead: (req, ctx) => FuseResponse(
+        buf: BufReply(
+          data: cursor < script.length
+              ? encodeEvent(script[cursor++])
+              : Uint8List(0),
+        ),
+      ),
+      onFlush: (req, ctx) => FuseResponse(),
+      onRelease: (req, ctx) => FuseResponse(),
+    );
+
     final pair = StreamChannelController<Uint8List>();
-    BentosDriver(onOpen: (req, ctx) => FuseResponse(open: OpenReply()))
-        .serveChannel(pair.foreign);
+    driver.serveChannel(pair.foreign);
     final device = BentosChatDevice(
       InProcessBentos(capMap: {'/dev/llm/': pair.local}),
       '/dev/llm/x',
     );
-    expect(
-      () => device
-          .infer([ChatMessage.userText('hi')], ChatIOConfig(maxTokens: 5))
-          .toList(),
-      throwsUnsupportedError,
-    );
+
+    await device
+        .infer(
+          [ChatMessage.userText('hi')],
+          const ChatIOConfig(maxTokens: 256, temperature: 0.7),
+        )
+        .toList();
+
+    expect(ioctls.map((o) => o.$1), containsAll([0x01, 0x02]));
+    final maxTok = ioctls.firstWhere((o) => o.$1 == 0x01);
+    expect(decodeIoctlInt32(maxTok.$2), equals(256));
+    final temp = ioctls.firstWhere((o) => o.$1 == 0x02);
+    expect(decodeIoctlDouble(temp.$2), closeTo(0.7, 1e-9));
   });
 }

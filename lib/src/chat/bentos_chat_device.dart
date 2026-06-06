@@ -63,16 +63,11 @@ class BentosChatDevice implements ChatDevice {
     }
   }
 
-  /// Translates non-default [config] fields into their `CHAT_SET_*` ioctls.
-  ///
-  /// SEAM (D3): the per-command payload encodings belong to the subsystem's
-  /// ioctl ConfigCodec, built with the first driver. Until it lands, only the
-  /// all-default config is expressible through this binding.
+  /// Translates non-default [config] fields into their `CHAT_SET_*` ioctls
+  /// via the subsystem ConfigCodec.
   Future<void> _applyConfig(int fd, ChatIOConfig config) async {
-    if (config == const ChatIOConfig()) return;
-    throw UnsupportedError(
-      'CHAT_SET_* payload encodings land with the subsystem ConfigCodec (D3); '
-      'only the default ChatIOConfig is expressible until then',
-    );
+    for (final (cmd, payload) in configToIoctls(config)) {
+      await _bentos.ioctl(fd, cmd, payload);
+    }
   }
 }
