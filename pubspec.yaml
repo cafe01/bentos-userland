@@ -8,6 +8,12 @@ environment:
 
 publish_to: none
 
+dependencies:
+  bentos_driver_sdk:
+    path: ../bentos-driver-sdk-dart
+  fixnum: ^1.1.0
+  stream_channel: ^2.1.0
+
 dev_dependencies:
   lints: ^6.0.0
   test: ^1.24.0

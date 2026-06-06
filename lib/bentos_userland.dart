@@ -4,4 +4,3 @@ library;
 
 export 'src/bentos.dart';
 export 'src/in_process/in_process_bentos.dart';
-export 'src/in_process/in_process_driver.dart';
