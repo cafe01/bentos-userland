@@ -51,12 +51,14 @@ class BentosChatDevice implements ChatDevice {
         await _bentos.write(fd, encodeMessage(m));
       }
       while (true) {
-        // The first read() triggers inference; each frame is one ChatEvent.
-        final frame = await _bentos.read(fd);
-        if (frame.isEmpty) return; // EOF — driver closed the stream.
-        final event = decodeEvent(frame);
-        yield event;
-        if (event is Complete) return;
+        // The first read() returns one or more length-prefixed ChatEvent frames
+        // ([4-byte size][payload] per event — structured output spec §output-modes).
+        final raw = await _bentos.read(fd);
+        if (raw.isEmpty) return; // EOF — driver closed the stream.
+        for (final event in decodeEventFrames(raw)) {
+          yield event;
+          if (event is Complete) return;
+        }
       }
     } finally {
       await _bentos.close(fd);

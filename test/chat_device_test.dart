@@ -42,7 +42,7 @@ void main() {
       onRead: (req, ctx) => FuseResponse(
         buf: BufReply(
           data: cursor < script.length
-              ? encodeEvent(script[cursor++])
+              ? encodeEventFrame(script[cursor++])
               : Uint8List(0),
         ),
       ),
@@ -83,7 +83,7 @@ void main() {
       onRead: (req, ctx) => FuseResponse(
         buf: BufReply(
           data: cursor < script.length
-              ? encodeEvent(script[cursor++])
+              ? encodeEventFrame(script[cursor++])
               : Uint8List(0),
         ),
       ),
