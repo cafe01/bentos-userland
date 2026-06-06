@@ -11,6 +11,8 @@ publish_to: none
 dependencies:
   bentos_driver_sdk:
     path: ../bentos-driver-sdk-dart
+  chat_inference:
+    path: ../chat-inference-dart
   fixnum: ^1.1.0
   stream_channel: ^2.1.0
 
