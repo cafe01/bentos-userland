@@ -1,0 +1,13 @@
+name: bentos_userland
+description: The bentos stdlib — what userland app programmers depend on. The client-side syscall surface over bentos-kernel capabilities.
+version: 0.1.0
+repository: https://github.com/cafe01/bentos-userland
+
+environment:
+  sdk: ^3.8.0
+
+publish_to: none
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.24.0
