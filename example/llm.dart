@@ -14,6 +14,7 @@ import 'dart:typed_data';
 import 'package:anthropic_chat_driver/anthropic_chat_driver.dart';
 import 'package:bentos_userland/bentos_userland.dart';
 import 'package:bentos_userland/chat.dart';
+import 'package:openai_chat_driver/openai_chat_driver.dart';
 import 'package:stream_channel/stream_channel.dart';
 
 void main(List<String> args) async {
@@ -50,17 +51,41 @@ void main(List<String> args) async {
 
 /// The portal this consumer enters the kernel through — in-process for now
 /// (architecture §3; the stdlib resolves the door, the program never knows).
+///
+/// Routes by vendor in the device path (`/dev/llm/<vendor>/<model>`) and serves
+/// the matching driver. The consumer above never learns which vendor answered —
+/// one device class, N vendors.
 Bentos _portal(String devicePath) {
-  final apiKey = Platform.environment['ANTHROPIC_API_KEY'];
-  if (apiKey == null || apiKey.isEmpty) {
-    stderr.writeln('llm: ANTHROPIC_API_KEY is not set');
+  final parts = devicePath.split('/').where((p) => p.isNotEmpty).toList();
+  // parts == ['dev', 'llm', <vendor>, <model>]
+  if (parts.length < 4 || parts[0] != 'dev' || parts[1] != 'llm') {
+    stderr.writeln('llm: bad device path "$devicePath" '
+        '(expected /dev/llm/<vendor>/<model>)');
     exit(3);
   }
-  final driver = anthropicChatDriver(
-    model: devicePath.split('/').last, // P4 ConfiguredStreamDriver
-    apiKey: apiKey,
-  );
+  final vendor = parts[2];
+  final model = parts.sublist(3).join('/');
+
   final pair = StreamChannelController<Uint8List>();
-  driver.serveChannel(pair.foreign);
-  return InProcessBentos(capMap: {'/dev/llm/anthropic/': pair.local});
+  switch (vendor) {
+    case 'anthropic':
+      anthropicChatDriver(model: model, apiKey: _key('ANTHROPIC_API_KEY'))
+          .serveChannel(pair.foreign);
+    case 'openai':
+      openaiChatDriver(model: model, apiKey: _key('OPENAI_API_KEY'))
+          .serveChannel(pair.foreign);
+    default:
+      stderr.writeln('llm: unknown vendor "$vendor"');
+      exit(3);
+  }
+  return InProcessBentos(capMap: {'/dev/llm/$vendor/': pair.local});
+}
+
+String _key(String name) {
+  final v = Platform.environment[name];
+  if (v == null || v.isEmpty) {
+    stderr.writeln('llm: $name is not set');
+    exit(3);
+  }
+  return v;
 }
