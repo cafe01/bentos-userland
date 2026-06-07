@@ -34,9 +34,11 @@ void main() {
 
     final driver = BentosDriver(
       onOpen: (req, ctx) => FuseResponse(open: OpenReply()),
+      onIoctl: (req, ctx) => FuseResponse(ioctl: IoctlReply()),
       onWrite: (req, ctx) {
         // The binding's frames must be decodable by the subsystem codec.
-        received.add(decodeMessage(req.data));
+        // infer() writes encodeMessageFrame() — strip the 4-byte size prefix.
+        received.add(decodeMessage(req.data.sublist(4)));
         return FuseResponse(write: WriteReply(count: Int64(req.data.length)));
       },
       onRead: (req, ctx) => FuseResponse(

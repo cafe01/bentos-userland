@@ -46,9 +46,11 @@ class BentosChatDevice implements ChatDevice {
   ]) async* {
     final fd = await _bentos.open(devicePath);
     try {
-      await _applyConfig(fd, config);
+      // infer() always writes encodeMessage() frames (structured format).
+      // Override inputFormat so the driver decodes proto frames, not raw text.
+      await _applyConfig(fd, config.copyWith(inputFormat: Format.structured));
       for (final m in messages) {
-        await _bentos.write(fd, encodeMessage(m));
+        await _bentos.write(fd, encodeMessageFrame(m));
       }
       while (true) {
         // The first read() returns one or more length-prefixed ChatEvent frames
