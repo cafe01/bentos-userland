@@ -10,7 +10,6 @@ import 'dart:typed_data';
 import 'package:bentos_driver_sdk/bentos_driver_sdk.dart';
 import 'package:bentos_userland/bentos_userland.dart';
 import 'package:bentos_userland/chat.dart';
-import 'package:chat_inference/chat_inference.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:stream_channel/stream_channel.dart';
 import 'package:test/test.dart';

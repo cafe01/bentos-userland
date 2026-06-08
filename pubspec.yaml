@@ -8,6 +8,11 @@ environment:
 
 publish_to: none
 
+# This repo IS "what you install when you install HumanOS": the libc plus its
+# coreutils, resolved as one pub workspace.
+workspace:
+  - coreutils/llm
+
 dependencies:
   bentos_driver_sdk:
     path: ../bentos-driver-sdk-dart
@@ -15,11 +20,13 @@ dependencies:
     path: ../chat-inference-dart
   fixnum: ^1.1.0
   stream_channel: ^2.1.0
-
-dev_dependencies:
+  # The drivers the in-process kernel stand-in (lib/boot.dart) wires behind
+  # /dev/llm/*. They live here, behind the device — never in a coreutil's main.
   anthropic_chat_driver:
     path: ../anthropic-chat-driver
   openai_chat_driver:
     path: ../openai-chat-driver
+
+dev_dependencies:
   lints: ^6.0.0
   test: ^1.24.0
