@@ -11,6 +11,7 @@ import 'package:chat_inference/chat_inference.dart';
 import '../../config.dart';
 import '../../device.dart';
 import '../../inert_consumer.dart';
+import '../../llm_config.dart';
 
 /// Base for any command that opens a `/dev/llm/*` device. Registers the common
 /// flags and resolves the inert consumer once.
@@ -70,14 +71,18 @@ abstract class LlmBaseCommand extends Command<int> {
     return ChatIOConfig(maxTokens: maxTokens, temperature: temperature);
   }
 
-  /// Resolves the device path (`--device` / env / default) and boots the inert
-  /// consumer once. On a routing failure ([LlmBootException]) reports to stderr
-  /// and returns null — the caller returns exit 3. A missing credential is NOT
-  /// a boot error: it fails the first turn's `open` with EACCES.
-  InertConsumer? bootConsumer() {
+  /// Resolves the device path (`--device` incl. alias / env / configured
+  /// default / built-in) and boots the inert consumer once.
+  ///
+  /// On a routing failure ([LlmBootException]) reports to stderr and returns
+  /// null — the caller returns exit 3. A missing credential is NOT a boot
+  /// error: it fails the first turn's `open` with EACCES.
+  Future<InertConsumer?> bootConsumer() async {
+    final config = LlmConfig.load();
     final devicePath = resolveDevicePath(
       argResults!['device'] as String?,
       environment: Platform.environment,
+      config: config,
     );
     try {
       return InertConsumer.forDevice(devicePath);

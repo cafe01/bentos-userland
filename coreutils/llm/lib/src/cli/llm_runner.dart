@@ -12,6 +12,7 @@ import 'package:args/command_runner.dart';
 
 import '../version.dart';
 import 'commands/chat_command.dart';
+import 'commands/config_command.dart';
 import 'commands/prompt_command.dart';
 import 'default_command.dart';
 
@@ -29,6 +30,7 @@ class LlmRunner extends CommandRunner<int> {
     );
     addCommand(PromptCommand());
     addCommand(ChatCommand());
+    addCommand(ConfigCommand());
   }
 
   /// [stdinHasPrompt] is true when the process's stdin is piped (not a TTY), so

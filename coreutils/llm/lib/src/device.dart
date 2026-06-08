@@ -3,20 +3,34 @@
 library;
 
 import 'config.dart';
+import 'llm_config.dart';
 
-/// Resolves the device path from the three sources, in precedence order:
+/// Normalises a user-supplied device string to a full `/dev/llm/…` path.
+/// Accepts both `vendor/model` (short) and `/dev/llm/vendor/model` (full).
+String normalizeDevicePath(String path) =>
+    path.startsWith('/') ? path : '/dev/llm/$path';
+
+/// Resolves the device path in precedence order:
 ///
-/// 1. [explicit] — an explicit `--device` argument (highest priority);
-/// 2. the [deviceEnvVar] environment variable;
-/// 3. [defaultDevicePath].
+/// 1. [explicit] — the `--device` argument, alias-resolved then normalised.
+/// 2. [deviceEnvVar] in [environment], normalised.
+/// 3. [config].defaultDevice — the user's configured default.
+/// 4. [defaultDevicePath] — the built-in fallback.
 ///
-/// [environment] defaults to the process environment; injectable for tests.
+/// [config] may be null; alias lookup and configured default are skipped
+/// when it is. [environment] is injectable for tests.
 String resolveDevicePath(
   String? explicit, {
   Map<String, String> environment = const {},
+  LlmConfig? config,
 }) {
-  if (explicit != null && explicit.isNotEmpty) return explicit;
+  if (explicit != null && explicit.isNotEmpty) {
+    final aliased = config?.aliases[explicit];
+    if (aliased != null) return aliased;
+    return normalizeDevicePath(explicit);
+  }
   final fromEnv = environment[deviceEnvVar];
-  if (fromEnv != null && fromEnv.isNotEmpty) return fromEnv;
+  if (fromEnv != null && fromEnv.isNotEmpty) return normalizeDevicePath(fromEnv);
+  if (config?.defaultDevice != null) return config!.defaultDevice!;
   return defaultDevicePath;
 }

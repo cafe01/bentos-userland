@@ -25,7 +25,7 @@ class PromptCommand extends LlmBaseCommand {
 
   @override
   Future<int> run() async {
-    final consumer = bootConsumer();
+    final consumer = await bootConsumer();
     if (consumer == null) return 3;
 
     final prompt = await _resolvePrompt(argResults!.rest);

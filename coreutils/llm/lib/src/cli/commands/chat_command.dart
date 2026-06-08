@@ -25,7 +25,7 @@ class ChatCommand extends LlmBaseCommand {
 
   @override
   Future<int> run() async {
-    final consumer = bootConsumer();
+    final consumer = await bootConsumer();
     if (consumer == null) return 3;
 
     // The conversation grows in memory across turns — the whole of the context.
