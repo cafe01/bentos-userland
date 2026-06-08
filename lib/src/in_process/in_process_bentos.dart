@@ -183,6 +183,7 @@ class InProcessBentos implements Bentos {
     final errno = switch (resp.err) {
       2 => BentosErrno.enoent, // ENOENT
       9 => BentosErrno.ebadf, // EBADF
+      13 => BentosErrno.eacces, // EACCES — e.g. driver has no credential
       22 => BentosErrno.einval, // EINVAL
       38 => BentosErrno.enotsup, // ENOSYS
       _ => BentosErrno.eio,

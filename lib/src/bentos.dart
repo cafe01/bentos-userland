@@ -11,6 +11,9 @@ enum BentosErrno {
   /// The fd does not name an open session.
   ebadf,
 
+  /// Permission denied — e.g. the driver behind the device lacks a credential.
+  eacces,
+
   /// Operation not supported by the device / invalid for this session state.
   enotsup,
 
