@@ -32,14 +32,20 @@ class InertConsumer {
   /// and returns the assistant's full text — so a caller holding a conversation
   /// can append it and carry context forward.
   ///
+  /// [systemMessages] are prepended before [messages] (system role first).
+  /// [config] carries `maxTokens` / `temperature` ioctls; defaults are fine.
+  ///
   /// A `BentosException` (e.g. EACCES with no credential) propagates to the
   /// caller, surfaced exactly as a POSIX/IO error from behind the device.
   Future<String> streamTurn(
     List<ChatMessage> messages, {
+    List<ChatMessage> systemMessages = const [],
+    ChatIOConfig config = const ChatIOConfig(),
     bool verbose = false,
   }) async {
     final reply = StringBuffer();
-    await for (final event in _device.infer(messages)) {
+    final wire = [...systemMessages, ...messages];
+    await for (final event in _device.infer(wire, config)) {
       switch (event) {
         case TextDelta(:final text):
           stdout.write(text);

@@ -19,7 +19,9 @@ class PromptCommand extends LlmBaseCommand {
       'and piped stdin, the prompt is read from stdin.';
 
   @override
-  String get invocation => 'llm [-v] [-d <device>] <prompt>   (or: echo … | llm)';
+  String get invocation =>
+      'llm [-d <device>] [-s <system>]... [-t <n>] [--temperature <f>] [-v] <prompt>\n'
+      '  or: echo … | llm';
 
   @override
   Future<int> run() async {
@@ -32,7 +34,12 @@ class PromptCommand extends LlmBaseCommand {
     }
 
     try {
-      await consumer.streamTurn([ChatMessage.userText(prompt)], verbose: verbose);
+      await consumer.streamTurn(
+        [ChatMessage.userText(prompt)],
+        systemMessages: systemMessages,
+        config: ioConfig,
+        verbose: verbose,
+      );
     } on BentosException catch (e) {
       stderr.writeln('llm: $e');
       return 1;

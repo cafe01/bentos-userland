@@ -20,7 +20,8 @@ class ChatCommand extends LlmBaseCommand {
       'turn. /exit or Ctrl-D quits. No persistence.';
 
   @override
-  String get invocation => 'llm chat [-v] [-d <device>]';
+  String get invocation =>
+      'llm chat [-d <device>] [-s <system>]... [-t <n>] [--temperature <f>] [-v]';
 
   @override
   Future<int> run() async {
@@ -42,7 +43,12 @@ class ChatCommand extends LlmBaseCommand {
 
       conversation.add(ChatMessage.userText(input));
       try {
-        final reply = await consumer.streamTurn(conversation, verbose: verbose);
+        final reply = await consumer.streamTurn(
+          conversation,
+          systemMessages: systemMessages,
+          config: ioConfig,
+          verbose: verbose,
+        );
         // Append the assistant's turn so the next turn sees it (RAM context).
         conversation.add(ChatMessage.assistantText(reply));
       } on BentosException catch (e) {
