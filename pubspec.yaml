@@ -12,6 +12,7 @@ publish_to: none
 # coreutils, resolved as one pub workspace.
 workspace:
   - coreutils/llm
+  - coreutils/chatbot
 
 dependencies:
   bentos_driver_sdk:
