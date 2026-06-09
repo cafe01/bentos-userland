@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Echo tool — reads {"text":"..."} from stdin, emits the text value on stdout.
+jq -r '.text'
