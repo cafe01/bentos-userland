@@ -6,6 +6,7 @@ export 'src/cli/default_command.dart';
 export 'src/cli/llm_runner.dart';
 export 'src/config.dart';
 export 'src/device.dart';
+export 'src/function_file.dart';
 export 'src/inert_consumer.dart';
 export 'src/llm_config.dart';
 export 'src/version.dart';

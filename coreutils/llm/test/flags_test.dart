@@ -1,7 +1,8 @@
-/// Tests for the generation flags (-s/--system, -t/--max-tokens, --temperature)
-/// parsed by LlmBaseCommand and surfaced as systemMessages / ioConfig.
+/// Tests for the generation flags (-s/--system, -t/--max-tokens, --temperature,
+/// --input-format) parsed by LlmBaseCommand / PromptCommand and surfaced as
+/// systemMessages / ioConfig.
 ///
-/// We mirror LlmBaseCommand's ArgParser in isolation so tests are pure and fast
+/// We mirror the ArgParser in isolation so tests are pure and fast
 /// — no device boot, no network, no runner overhead.
 library;
 
@@ -18,6 +19,31 @@ ArgParser _buildArgParser() {
     ..addOption('device', abbr: 'd');
 }
 
+/// Mirrors PromptCommand's extended parser (base + scriptable-register flags).
+ArgParser _buildPromptArgParser() {
+  return _buildArgParser()
+    ..addOption('input-format', allowed: ['text', 'jsonl'], defaultsTo: 'text')
+    ..addOption('output-format', allowed: ['text', 'jsonl'], defaultsTo: 'text')
+    ..addFlag('stream', defaultsTo: true)
+    ..addMultiOption('function')
+    ..addOption('function-choice');
+}
+
+FunctionChoice? _parseFunctionChoice(String? value) {
+  return switch (value) {
+    null => null,
+    'auto' => const AutoChoice(),
+    'none' => const NoneChoice(),
+    _ => NamedChoice(value),
+  };
+}
+
+ChatIOConfig _promptIoConfigWithFunctions(ArgResults r) {
+  return _promptIoConfig(r).copyWith(
+    functionChoice: _parseFunctionChoice(r['function-choice'] as String?),
+  );
+}
+
 List<ChatMessage> _systemMessages(ArgResults r) {
   final segments = r['system'] as List<String>;
   if (segments.isEmpty) return const [];
@@ -31,6 +57,27 @@ ChatIOConfig _ioConfig(ArgResults r) {
     maxTokens: maxTokensStr != null ? int.tryParse(maxTokensStr) : null,
     temperature:
         temperatureStr != null ? double.tryParse(temperatureStr) : null,
+  );
+}
+
+/// Mirrors PromptCommand.ioConfig: base config + all scriptable-register flags.
+ChatIOConfig _promptIoConfig(ArgResults r) {
+  final inputFmt = (r['input-format'] as String) == 'jsonl'
+      ? Format.structured
+      : Format.unstructured;
+  final outputFmt = (r['output-format'] as String) == 'jsonl'
+      ? Format.structured
+      : Format.unstructured;
+  final bool streaming;
+  if (r.wasParsed('stream')) {
+    streaming = r['stream'] as bool;
+  } else {
+    streaming = outputFmt == Format.unstructured;
+  }
+  return _ioConfig(r).copyWith(
+    inputFormat: inputFmt,
+    outputFormat: outputFmt,
+    streaming: streaming,
   );
 }
 
@@ -107,6 +154,154 @@ void main() {
       expect(msgs, hasLength(1));
       expect(cfg.maxTokens, 50);
       expect(cfg.temperature, closeTo(0.9, 0.001));
+    });
+  });
+
+  group('--input-format flag (PromptCommand)', () {
+    final promptParser = _buildPromptArgParser();
+
+    test('absent → inputFormat unstructured (text default)', () {
+      final r = promptParser.parse([]);
+      expect(_promptIoConfig(r).inputFormat, Format.unstructured);
+    });
+
+    test('text → inputFormat unstructured', () {
+      final r = promptParser.parse(['--input-format', 'text']);
+      expect(_promptIoConfig(r).inputFormat, Format.unstructured);
+    });
+
+    test('jsonl → inputFormat structured', () {
+      final r = promptParser.parse(['--input-format', 'jsonl']);
+      expect(_promptIoConfig(r).inputFormat, Format.structured);
+    });
+
+    test('jsonl coexists with generation flags', () {
+      final r = promptParser.parse([
+        '--input-format', 'jsonl',
+        '-t', '256',
+        '--temperature', '0.5',
+      ]);
+      final cfg = _promptIoConfig(r);
+      expect(cfg.inputFormat, Format.structured);
+      expect(cfg.maxTokens, 256);
+      expect(cfg.temperature, closeTo(0.5, 0.001));
+    });
+
+    test('invalid value is rejected by the parser', () {
+      expect(() => promptParser.parse(['--input-format', 'csv']),
+          throwsA(isA<Exception>()));
+    });
+  });
+
+  group('--output-format flag (PromptCommand)', () {
+    final promptParser = _buildPromptArgParser();
+
+    test('absent → outputFormat unstructured (text default)', () {
+      final r = promptParser.parse([]);
+      expect(_promptIoConfig(r).outputFormat, Format.unstructured);
+    });
+
+    test('text → outputFormat unstructured', () {
+      final r = promptParser.parse(['--output-format', 'text']);
+      expect(_promptIoConfig(r).outputFormat, Format.unstructured);
+    });
+
+    test('jsonl → outputFormat structured', () {
+      final r = promptParser.parse(['--output-format', 'jsonl']);
+      expect(_promptIoConfig(r).outputFormat, Format.structured);
+    });
+
+    test('invalid value is rejected by the parser', () {
+      expect(() => promptParser.parse(['--output-format', 'xml']),
+          throwsA(isA<Exception>()));
+    });
+  });
+
+  group('--[no-]stream flag (PromptCommand) — smart default', () {
+    final promptParser = _buildPromptArgParser();
+
+    test('absent + text output → streaming on (default)', () {
+      final r = promptParser.parse([]);
+      expect(_promptIoConfig(r).streaming, isTrue);
+    });
+
+    test('absent + jsonl output → streaming off (default)', () {
+      final r = promptParser.parse(['--output-format', 'jsonl']);
+      expect(_promptIoConfig(r).streaming, isFalse);
+    });
+
+    test('explicit --stream overrides jsonl default (on)', () {
+      final r = promptParser.parse(['--output-format', 'jsonl', '--stream']);
+      expect(_promptIoConfig(r).streaming, isTrue);
+    });
+
+    test('explicit --no-stream overrides text default (off)', () {
+      final r = promptParser.parse(['--no-stream']);
+      expect(_promptIoConfig(r).streaming, isFalse);
+    });
+
+    test('jsonl in+out both structured, streaming off by default', () {
+      final r = promptParser.parse([
+        '--input-format', 'jsonl',
+        '--output-format', 'jsonl',
+      ]);
+      final cfg = _promptIoConfig(r);
+      expect(cfg.inputFormat, Format.structured);
+      expect(cfg.outputFormat, Format.structured);
+      expect(cfg.streaming, isFalse);
+    });
+
+    test('full filter flags coexist with generation flags', () {
+      final r = promptParser.parse([
+        '--input-format', 'jsonl',
+        '--output-format', 'jsonl',
+        '-t', '1024',
+        '--temperature', '0.2',
+      ]);
+      final cfg = _promptIoConfig(r);
+      expect(cfg.inputFormat, Format.structured);
+      expect(cfg.outputFormat, Format.structured);
+      expect(cfg.streaming, isFalse);
+      expect(cfg.maxTokens, 1024);
+      expect(cfg.temperature, closeTo(0.2, 0.001));
+    });
+  });
+
+  group('--function-choice flag (PromptCommand)', () {
+    final promptParser = _buildPromptArgParser();
+
+    test('absent → functionChoice is null', () {
+      final r = promptParser.parse([]);
+      expect(_promptIoConfigWithFunctions(r).functionChoice, isNull);
+    });
+
+    test('auto → AutoChoice', () {
+      final r = promptParser.parse(['--function-choice', 'auto']);
+      expect(_promptIoConfigWithFunctions(r).functionChoice, isA<AutoChoice>());
+    });
+
+    test('none → NoneChoice', () {
+      final r = promptParser.parse(['--function-choice', 'none']);
+      expect(_promptIoConfigWithFunctions(r).functionChoice, isA<NoneChoice>());
+    });
+
+    test('named function → NamedChoice with correct name', () {
+      final r = promptParser.parse(['--function-choice', 'get_weather']);
+      final choice = _promptIoConfigWithFunctions(r).functionChoice;
+      expect(choice, isA<NamedChoice>());
+      expect((choice as NamedChoice).name, 'get_weather');
+    });
+
+    test('function-choice coexists with output-format and generation flags', () {
+      final r = promptParser.parse([
+        '--output-format', 'jsonl',
+        '--function-choice', 'auto',
+        '-t', '256',
+      ]);
+      final cfg = _promptIoConfigWithFunctions(r);
+      expect(cfg.outputFormat, Format.structured);
+      expect(cfg.functionChoice, isA<AutoChoice>());
+      expect(cfg.maxTokens, 256);
     });
   });
 }
