@@ -1,0 +1,19 @@
+name: tx
+description: The HumanOS state coreutil — the stateful half of composition. A content-blind transaction log over git, scoped to a being (.tx/<entity>/).
+version: 0.1.0
+publish_to: none
+
+resolution: workspace
+
+environment:
+  sdk: ^3.8.0
+
+executables:
+  tx:
+
+dependencies:
+  args: ^2.4.0
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.24.0
