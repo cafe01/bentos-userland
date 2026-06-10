@@ -6,10 +6,16 @@ import 'package:tx/tx.dart';
 const _usage = '''
 Usage: tx [--agent <name>] <command>
 
-Commands (D1):
-  new       open a fresh session and make it current (prints the session id)
-  append    read bytes from stdin, commit them to the current session
-  cat       stream the current session's accumulated bytes to stdout
+Commands:
+  new            open a fresh session and make it current (prints the id)
+  append         read bytes from stdin, commit them to the current session
+  cat            stream the current session's accumulated bytes to stdout
+  ls             list the entity's sessions (current marked with *)
+  current        print the current session ref (HEAD)
+  switch <sid>   make an existing session current (resume)
+  log            the current session's commit trace (oneline)
+  fork           branch the current session into a new line, make it current
+  rewind <n>     move the current ref back n COMMITS (not turns)
 
 State lives at <place>/.tx/<entity>/, resolved like .mem.
 entity = --agent <name> ?? \$BENTOS_AGENT''';
@@ -48,6 +54,28 @@ Future<void> main(List<String> args) async {
         await repo.append(await _readStdinBytes());
       case 'cat':
         stdout.add(repo.cat());
+      case 'ls':
+        final cur = await repo.current();
+        for (final s in await repo.ls()) {
+          stdout.writeln('${s == cur ? '* ' : '  '}$s');
+        }
+      case 'current':
+        stdout.writeln(await repo.current());
+      case 'switch':
+        final sid = _requireArg(parsed.rest, 'switch <sid>');
+        await repo.switchTo(sid);
+      case 'log':
+        stdout.write(await repo.log());
+      case 'fork':
+        stdout.writeln(await repo.fork());
+      case 'rewind':
+        final raw = _requireArg(parsed.rest, 'rewind <n>');
+        final n = int.tryParse(raw);
+        if (n == null) {
+          stderr.writeln('tx: rewind <n>: "$raw" is not a number.');
+          exit(1);
+        }
+        await repo.rewind(n);
       default:
         stderr.writeln('tx: unknown command "$command"');
         stderr.writeln(_usage);
@@ -63,6 +91,14 @@ Future<void> main(List<String> args) async {
     stderr.writeln(e);
     exit(2);
   }
+}
+
+String _requireArg(List<String> rest, String form) {
+  if (rest.length < 2) {
+    stderr.writeln('tx: $form requires an argument.');
+    exit(1);
+  }
+  return rest[1];
 }
 
 Future<List<int>> _readStdinBytes() async {

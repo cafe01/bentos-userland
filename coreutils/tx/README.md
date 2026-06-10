@@ -41,7 +41,7 @@ So every `tx` operation references an entity, resolved as:
 entity = --agent <name> ?? $BENTOS_AGENT
 ```
 
-The body already exports `$BENTOS_AGENT` at spawn, so a live agent's `tx` defaults to itself. There is no fallback to the operator: a human in a raw shell must *name* the agent (`tx --agent alfred log`); without one, `tx` errors asking which being — it never writes a log for `$USER`.
+The body already exports `$BENTOS_AGENT` at spawn, so a live agent's `tx` defaults to *its own* log — operating on itself, the **hydra** case (it mirrors `claude-spawn <name>`: same name is a head of yourself, another name is a peer). There is no fallback to the operator: a human in a raw shell must *name* the agent (`tx --agent alfred log`); without one, `tx` errors asking which being — it never writes a log for `$USER`.
 
 > [!NOTE]
 > **Place resolution mirrors `.mem`.** `<place>` is not the literal CWD — that would scatter `.tx/<entity>/` across every directory a turn runs in. `tx` resolves the place the way `.mem` does: walk up the filesystem for the governing `place.yaml`, and root the entity's repo there. The session belongs to *the place that owns the context*, found by the same hierarchy that finds memory — so `.tx/<entity>/` and `.mem/<entity>/` always land together. The resolution rule is `.mem`'s, not a second invention.
@@ -57,6 +57,7 @@ The body already exports `$BENTOS_AGENT` at spawn, so a live agent's `tx` defaul
 | `tx new` | `init` / new branch | open a fresh session, make it current |
 | `tx ls` | `branch` | list sessions |
 | `tx current` | `HEAD` | the current session ref |
+| `tx switch <sid>` | `switch` / `checkout` | make an existing session current — the **resume** primitive |
 | `tx log` | `log` | the execution trace — every committed mutation |
 | `tx fork` | `branch` / `checkout -b` | branch the current session into a new line |
 | `tx rewind <n>` | `reset` / `checkout` | move the current ref back **`n` commits** |

@@ -78,7 +78,72 @@ final class TxRepo {
     return _record.readAsBytesSync();
   }
 
+  /// The sessions (branches) of this entity.
+  Future<List<String>> ls() async {
+    _requireSession();
+    final out = await _gitOut(['branch', '--format=%(refname:short)']);
+    return out.split('\n').where((l) => l.isNotEmpty).toList();
+  }
+
+  /// The current session ref (HEAD).
+  Future<String> current() async {
+    _requireSession();
+    return (await _gitOut(['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+  }
+
+  /// Makes an EXISTING session current — the resume primitive. Sets HEAD to
+  /// the session's ref (git switch of an existing branch).
+  Future<void> switchTo(String sid) async {
+    _requireSession();
+    if (!await _branchExists(sid)) {
+      throw TxNoSessionError('no session "$sid" for "$entity".');
+    }
+    await _git(['checkout', '-q', sid]);
+  }
+
+  /// The execution trace of the current session — every committed mutation,
+  /// oneline. Content-blind: this lists commits, never the record's content.
+  Future<String> log() async {
+    _requireSession();
+    return _gitOut(['log', '--oneline']);
+  }
+
+  /// Branches the current session into a new line from its current state and
+  /// makes the fork current (git branch + checkout). Returns the new id.
+  Future<String> fork() async {
+    _requireSession();
+    final sid = _generateSid();
+    await _git(['checkout', '-q', '-b', sid]);
+    return sid;
+  }
+
+  /// Moves the current session's ref back [n] commits (git reset). The working
+  /// record resets with it, so `cat` then reflects the reverted state.
+  ///
+  /// [n] counts COMMITS, not turns — `tx` is content-blind and knows only
+  /// commits. A turn-granular rewind is `chat`'s convenience, never `tx`'s.
+  Future<void> rewind(int n) async {
+    _requireSession();
+    if (n < 1) {
+      throw TxGitError('rewind <n>: n must be >= 1.');
+    }
+    final total = int.parse((await _gitOut(['rev-list', '--count', 'HEAD'])).trim());
+    // The base `tx new` commit is the floor; rewinding past it would leave no
+    // session line. Max rewind lands back on that empty base.
+    if (n >= total) {
+      throw TxGitError(
+        'cannot rewind $n: session has $total commits (max rewind ${total - 1}).',
+      );
+    }
+    await _git(['reset', '-q', '--hard', 'HEAD~$n']);
+  }
+
   // --- internals -----------------------------------------------------------
+
+  Future<bool> _branchExists(String sid) async {
+    final out = await _gitOut(['branch', '--list', sid]);
+    return out.trim().isNotEmpty;
+  }
 
   bool get _initialized => Directory('${dir.path}/.git').existsSync();
 
@@ -119,5 +184,18 @@ final class TxRepo {
       final err = String.fromCharCodes(result.stderr as List<int>).trim();
       throw TxGitError('git ${args.join(' ')} failed: $err');
     }
+  }
+
+  /// Like [_git] but returns decoded stdout. Used for the structural reads
+  /// (ls/current/log/rev-list) — git's own output ABOUT the history, never
+  /// the record's content, so the content-blind discipline holds.
+  Future<String> _gitOut(List<String> args) async {
+    final result = await Process.run('git', ['-C', dir.path, ...args]);
+    if (result.exitCode != 0) {
+      throw TxGitError(
+        'git ${args.join(' ')} failed: ${(result.stderr as String).trim()}',
+      );
+    }
+    return result.stdout as String;
   }
 }

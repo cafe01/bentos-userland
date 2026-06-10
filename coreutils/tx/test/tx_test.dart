@@ -94,6 +94,98 @@ void main() {
     });
   });
 
+  group('TxRepo — structural ops (D2)', () {
+    late TxRepo repo;
+
+    setUp(() {
+      repo = TxRepo(Directory('${tmp.path}/.tx/alfred'), 'alfred');
+    });
+
+    test('current is the session ref made by new', () async {
+      final sid = await repo.newSession();
+      expect(await repo.current(), equals(sid));
+    });
+
+    test('ls lists every session', () async {
+      final a = await repo.newSession();
+      final b = await repo.fork();
+      expect(await repo.ls(), unorderedEquals([a, b]));
+    });
+
+    test('log lists one line per commit', () async {
+      await repo.newSession(); // 1
+      await repo.append('x'.codeUnits);
+      await repo.append('y'.codeUnits);
+      final lines = (await repo.log()).trim().split('\n');
+      expect(lines, hasLength(3));
+    });
+
+    test('fork branches from current state and shares it', () async {
+      await repo.newSession();
+      await repo.append('shared\n'.codeUnits);
+      await repo.fork();
+      // The fork sees the parent's record at the fork point.
+      expect(repo.cat(), equals('shared\n'.codeUnits));
+    });
+
+    test('fork becomes current; append diverges from parent', () async {
+      final a = await repo.newSession();
+      await repo.append('base\n'.codeUnits);
+      final b = await repo.fork();
+      expect(await repo.current(), equals(b));
+
+      await repo.append('only-on-fork\n'.codeUnits);
+      expect(repo.cat(), equals('base\nonly-on-fork\n'.codeUnits));
+
+      // The parent line is untouched.
+      await repo.switchTo(a);
+      expect(repo.cat(), equals('base\n'.codeUnits));
+    });
+
+    test('switch resumes an existing session', () async {
+      final a = await repo.newSession();
+      await repo.append('in-a\n'.codeUnits);
+      final b = await repo.fork();
+      await repo.append('in-b\n'.codeUnits);
+
+      await repo.switchTo(a);
+      expect(await repo.current(), equals(a));
+      expect(repo.cat(), equals('in-a\n'.codeUnits));
+
+      await repo.switchTo(b);
+      expect(repo.cat(), equals('in-a\nin-b\n'.codeUnits));
+    });
+
+    test('switch to a nonexistent session errors', () async {
+      await repo.newSession();
+      expect(() => repo.switchTo('nope'), throwsA(isA<TxNoSessionError>()));
+    });
+
+    test('rewind moves the ref back n commits; cat reflects it', () async {
+      await repo.newSession();
+      await repo.append('one\n'.codeUnits);
+      await repo.append('two\n'.codeUnits);
+      expect(repo.cat(), equals('one\ntwo\n'.codeUnits));
+
+      await repo.rewind(1);
+      expect(repo.cat(), equals('one\n'.codeUnits));
+
+      await repo.rewind(1); // back to the empty `new` base
+      expect(repo.cat(), isEmpty);
+    });
+
+    test('rewind past the base errors (floor is the new commit)', () async {
+      await repo.newSession(); // total = 1
+      await repo.append('x'.codeUnits); // total = 2
+      expect(() => repo.rewind(2), throwsA(isA<TxGitError>()));
+    });
+
+    test('rewind with n < 1 errors', () async {
+      await repo.newSession();
+      expect(() => repo.rewind(0), throwsA(isA<TxGitError>()));
+    });
+  });
+
   group('resolveEntity', () {
     test('--agent flag wins', () {
       expect(resolveEntity('john', {'BENTOS_AGENT': 'alfred'}), equals('john'));
