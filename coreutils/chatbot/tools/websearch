@@ -1,0 +1,13 @@
+#!/bin/sh
+# Adapter: dispatch protocol (JSON on stdin) → websearch CLI (positional args + flags).
+# The chatbot dispatch sends {"query":"...","count":N} on stdin; we translate to:
+#   websearch [-n count] "query"
+set -e
+args=$(cat)
+query=$(printf '%s' "$args" | jq -r '.query')
+count=$(printf '%s' "$args" | jq -r '.count // empty')
+if [ -n "$count" ]; then
+  websearch -n "$count" "$query"
+else
+  websearch "$query"
+fi

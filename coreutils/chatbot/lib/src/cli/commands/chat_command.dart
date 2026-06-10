@@ -59,7 +59,10 @@ class ChatCommand extends ChatbotBaseCommand {
     }
 
     final toolsDir = argResults!['tools'] as String?;
-    final tools = toolsDir != null ? _loadTools(toolsDir) : <FunctionDefinition>[];
+    final tools = [
+      ..._builtinTools(),
+      if (toolsDir != null) ..._loadTools(toolsDir),
+    ];
     final config = ChatIOConfig(functions: tools.isEmpty ? null : tools);
 
     final positional = argResults!.rest;
@@ -224,15 +227,23 @@ class ChatCommand extends ChatbotBaseCommand {
   // ---------------------------------------------------------------------------
 
   /// Invokes one tool executable: args JSON on stdin → result text on stdout.
+  ///
+  /// Resolution order: (1) explicit toolsDir, (2) PATH (built-in coreutils).
   Future<FunctionResultContent> _dispatch(
     FunctionCallContent call,
     String? toolsDir,
   ) async {
-    final dir = toolsDir ?? 'tools';
-    final toolPath = '$dir/${call.name}';
+    // Prefer a file in the explicit tools dir; fall back to PATH resolution.
+    String? toolPath;
+    if (toolsDir != null) {
+      final candidate = '$toolsDir/${call.name}';
+      if (File(candidate).existsSync()) toolPath = candidate;
+    }
+    // PATH fallback — covers built-in coreutils (websearch, etc.).
+    toolPath ??= _resolveOnPath(call.name);
 
-    if (!File(toolPath).existsSync()) {
-      stderr.writeln('chatbot: tool not found: $toolPath');
+    if (toolPath == null) {
+      stderr.writeln('chatbot: tool not found: ${call.name}');
       return FunctionResultContent(
         callId: call.id,
         content: [TextContent('tool not found: ${call.name}')],
@@ -240,10 +251,23 @@ class ChatCommand extends ChatbotBaseCommand {
       );
     }
 
-    final process = await Process.start(toolPath, []);
-    process.stdin.write(jsonEncode(call.arguments));
-    await process.stdin.flush();
-    await process.stdin.close();
+    // Built-in coreutils speak CLI args; tools in an explicit dir speak
+    // JSON-on-stdin (the D3a adapter protocol). Distinguish by whether a
+    // toolsDir was the source of this path.
+    final isBuiltin = toolsDir == null ||
+        !File('$toolsDir/${call.name}').existsSync();
+
+    final Process process;
+    if (isBuiltin) {
+      // Translate FunctionCall arguments → CLI flags for built-in coreutils.
+      final cliArgs = _builtinArgs(call.name, call.arguments);
+      process = await Process.start(toolPath, cliArgs);
+    } else {
+      process = await Process.start(toolPath, []);
+      process.stdin.write(jsonEncode(call.arguments));
+      await process.stdin.flush();
+      await process.stdin.close();
+    }
 
     final output = await process.stdout.transform(utf8.decoder).join();
     final exitCode = await process.exitCode;
@@ -258,6 +282,55 @@ class ChatCommand extends ChatbotBaseCommand {
   // ---------------------------------------------------------------------------
   // Tool loading
   // ---------------------------------------------------------------------------
+
+  /// Translates FunctionCall [arguments] to CLI args for a built-in coreutil.
+  List<String> _builtinArgs(String name, Map<String, dynamic> arguments) =>
+      switch (name) {
+        'websearch' => [
+            if (arguments['count'] case final int n) ...[ '-n', '$n'],
+            arguments['query'] as String,
+          ],
+        _ => [],
+      };
+
+  /// Built-in outward tools the chatbot ships with — declared by default.
+  List<FunctionDefinition> _builtinTools() => [
+        FunctionDefinition(
+          name: 'websearch',
+          description:
+              'Search the web and return a list of results. Use when the '
+              'question requires current or external information not available '
+              'offline.',
+          inputSchema: {
+            'type': 'object',
+            'properties': {
+              'query': {
+                'type': 'string',
+                'description': 'The search query.',
+              },
+              'count': {
+                'type': 'integer',
+                'description':
+                    'Number of results to return (1–25). Omit to use the default (10).',
+                'minimum': 1,
+                'maximum': 25,
+              },
+            },
+            'required': ['query'],
+          },
+        ),
+      ];
+
+  /// Resolves [name] to an absolute path by scanning PATH, or returns null.
+  String? _resolveOnPath(String name) {
+    final pathVar = Platform.environment['PATH'] ?? '';
+    for (final dir in pathVar.split(':')) {
+      if (dir.isEmpty) continue;
+      final candidate = File('$dir/$name');
+      if (candidate.existsSync()) return candidate.path;
+    }
+    return null;
+  }
 
   /// Loads [FunctionDefinition]s from *.json files in [dir].
   List<FunctionDefinition> _loadTools(String dir) {

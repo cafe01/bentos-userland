@@ -13,6 +13,7 @@ publish_to: none
 workspace:
   - coreutils/llm
   - coreutils/chatbot
+  - coreutils/websearch
 
 dependencies:
   bentos_driver_sdk:

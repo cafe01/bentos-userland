@@ -1,0 +1,19 @@
+name: websearch
+description: The HumanOS web search coreutil — delegates to an installed engine (ddgr) and emits JSONL results.
+version: 0.1.0
+publish_to: none
+
+resolution: workspace
+
+environment:
+  sdk: ^3.8.0
+
+executables:
+  websearch:
+
+dependencies:
+  args: ^2.4.0
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.24.0

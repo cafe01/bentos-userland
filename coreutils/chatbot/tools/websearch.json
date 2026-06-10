@@ -1,0 +1,20 @@
+{
+  "name": "websearch",
+  "description": "Search the web and return a list of results. Use when the question requires current or external information not available offline.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "The search query."
+      },
+      "count": {
+        "type": "integer",
+        "description": "Number of results to return (1–25). Omit to use the default (10).",
+        "minimum": 1,
+        "maximum": 25
+      }
+    },
+    "required": ["query"]
+  }
+}
