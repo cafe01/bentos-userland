@@ -15,6 +15,7 @@ workspace:
   - coreutils/chatbot
   - coreutils/websearch
   - coreutils/tx
+  - coreutils/chat
 
 dependencies:
   bentos_driver_sdk:

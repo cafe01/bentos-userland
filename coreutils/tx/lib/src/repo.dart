@@ -138,6 +138,10 @@ final class TxRepo {
     await _git(['reset', '-q', '--hard', 'HEAD~$n']);
   }
 
+  /// Whether this entity has a log yet — false before the first `new`.
+  /// Sibling coreutils (e.g. `chat`) use it to open a session on demand.
+  bool get hasSession => _initialized;
+
   // --- internals -----------------------------------------------------------
 
   Future<bool> _branchExists(String sid) async {
