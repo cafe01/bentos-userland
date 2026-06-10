@@ -3,5 +3,5 @@
 library;
 
 export 'src/cli/chatbot_runner.dart';
-export 'src/session/session_store.dart';
+export 'src/cli/session_resolve.dart';
 export 'src/version.dart';

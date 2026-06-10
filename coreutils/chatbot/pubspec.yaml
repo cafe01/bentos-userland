@@ -17,8 +17,12 @@ dependencies:
   args: ^2.4.0
   bentos_userland:
     path: ../..
+  chat:
+    path: ../chat
   chat_inference:
     path: ../../../chat-inference-dart
+  tx:
+    path: ../tx
 
 dev_dependencies:
   lints: ^6.0.0

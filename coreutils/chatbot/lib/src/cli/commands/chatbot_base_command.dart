@@ -2,13 +2,21 @@ import 'dart:io';
 
 import 'package:args/command_runner.dart';
 import 'package:chat_inference/chat_inference.dart';
+import 'package:tx/tx.dart';
 
-/// Shared base for all chatbot subcommands.
+import '../session_resolve.dart';
+
+/// Shared base for chatbot subcommands that open a device and infer.
 ///
-/// Holds the flags common to commands that open a device and infer.
+/// Holds the common flags and the entity → tx repo resolution.
 abstract class ChatbotBaseCommand extends Command<int> {
   ChatbotBaseCommand() {
     argParser
+      ..addOption(
+        'agent',
+        abbr: 'a',
+        help: 'The being whose session to use (default: \$BENTOS_AGENT).',
+      )
       ..addOption(
         'device',
         abbr: 'd',
@@ -35,6 +43,9 @@ abstract class ChatbotBaseCommand extends Command<int> {
     if (segments.isEmpty) return const [];
     return [ChatMessage.systemText(segments.join('\n'))];
   }
+
+  /// The entity's tx repo (`--agent ?? $BENTOS_AGENT`, rooted at the place).
+  TxRepo openRepo() => openRepoForAgent(argResults!['agent'] as String?);
 
   /// Resolves the device path: --device flag → BENTOS_LLM_DEVICE env → default.
   String resolveDevicePath() {

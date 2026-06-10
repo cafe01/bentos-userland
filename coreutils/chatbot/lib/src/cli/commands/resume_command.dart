@@ -1,16 +1,30 @@
-/// `chatbot resume [session]` — reopen a past session from its disk log.
+/// `chatbot resume [session]` — reopen a session and continue it.
+///
+/// No arg: continue the CURRENT tx session (the HEAD is the latest active line
+/// — cleaner than the old `latestId`). With a sid: `tx switch` to it first.
+/// Either way the conversation is rebuilt from the tx log, not memory.
 library;
 
 import 'dart:io';
 
-import 'package:bentos_userland/bentos_userland.dart';
 import 'package:bentos_userland/boot.dart';
 import 'package:bentos_userland/chat.dart';
+import 'package:chat/chat.dart';
+import 'package:tx/tx.dart';
 
-import '../../session/session_store.dart';
+import '../repl.dart';
 import 'chatbot_base_command.dart';
 
 class ResumeCommand extends ChatbotBaseCommand {
+  ResumeCommand() {
+    argParser.addOption(
+      'tools',
+      abbr: 't',
+      help: 'Directory of tool executables and *.json FunctionDefinition files.',
+      valueHelp: 'dir',
+    );
+  }
+
   @override
   String get name => 'resume';
 
@@ -22,34 +36,35 @@ class ResumeCommand extends ChatbotBaseCommand {
 
   @override
   Future<int> run() async {
-    final store = SessionStore.open();
-    final arg = argResults!.rest.firstOrNull;
-
-    final String sessionId;
-    if (arg != null) {
-      final resolved = store.meta(arg)?.id;
-      if (resolved == null) {
-        stderr.writeln('chatbot: session not found: $arg');
-        return 1;
-      }
-      sessionId = resolved;
-    } else {
-      final latest = store.latestId();
-      if (latest == null) {
-        stderr.writeln('chatbot: no sessions found.');
-        return 1;
-      }
-      sessionId = latest;
+    final TxRepo repo;
+    try {
+      repo = openRepo();
+    } on TxResolveError catch (e) {
+      stderr.writeln('chatbot: $e');
+      return 1;
     }
-
-    final history = store.load(sessionId);
-    if (history == null) {
-      stderr.writeln('chatbot: failed to load session: $sessionId');
+    if (!repo.hasSession) {
+      stderr.writeln('chatbot: no sessions found.');
       return 1;
     }
 
-    final meta = store.meta(sessionId)!;
-    stderr.writeln('Resuming session ${meta.label} (${history.length} messages).');
+    // With a sid, switch the current ref to it; without, continue current.
+    final sid = argResults!.rest.firstOrNull;
+    if (sid != null) {
+      try {
+        await repo.switchTo(sid);
+      } on TxNoSessionError catch (e) {
+        stderr.writeln('chatbot: $e');
+        return 1;
+      }
+    }
+
+    final session = ChatSession(repo);
+    final conversation = [...session.history()];
+    stderr.writeln(
+      'Resuming session ${await repo.current()} '
+      '(${conversation.length} messages).',
+    );
 
     final devicePath = resolveDevicePath();
     final BentosChatDevice device;
@@ -60,65 +75,26 @@ class ResumeCommand extends ChatbotBaseCommand {
       return 3;
     }
 
-    final conversation = List<ChatMessage>.from(history);
+    final toolsDir = argResults!['tools'] as String?;
+    final tools = [
+      ...builtinTools(),
+      if (toolsDir != null) ...loadTools(toolsDir),
+    ];
+    final turn = Turn(
+      device: device,
+      systemMessages: systemMessages,
+      config: ChatIOConfig(functions: tools.isEmpty ? null : tools),
+      toolsDir: toolsDir,
+      verbose: verbose,
+      persist: session.record,
+    );
 
-    while (true) {
-      stdout.write('> ');
-      final line = stdin.readLineSync();
-      if (line == null) {
-        stdout.writeln();
-        break;
-      }
-      final input = line.trim();
-      if (input == '/exit') break;
-      if (input.isEmpty) continue;
-
-      final userMsg = ChatMessage.userText(input);
-      conversation.add(userMsg);
-      await store.append(sessionId, [userMsg]);
-
-      try {
-        final reply = await _streamTurn(device, conversation);
-        final assistantMsg = ChatMessage.assistantText(reply);
-        conversation.add(assistantMsg);
-        await store.append(sessionId, [assistantMsg]);
-      } on BentosException catch (e) {
-        stderr.writeln('chatbot: $e');
-        return 1;
-      }
-    }
-
-    stderr.writeln('Session ${meta.label} sealed.');
-    return 0;
-  }
-
-  Future<String> _streamTurn(
-    BentosChatDevice device,
-    List<ChatMessage> messages,
-  ) async {
-    final wire = [...systemMessages, ...messages];
-    final reply = StringBuffer();
-    await for (final event in device.infer(wire, const ChatIOConfig())) {
-      switch (event) {
-        case TextDelta(:final text):
-          stdout.write(text);
-          reply.write(text);
-        case Block(:final content) when content is TextContent:
-          stdout.write(content.text);
-          reply.write(content.text);
-        case Complete(:final metadata):
-          stdout.writeln();
-          if (verbose) {
-            stderr.writeln(
-              '[${metadata.model} · ${metadata.stopReason} · '
-              '${metadata.usage?.inputTokens}in/'
-              '${metadata.usage?.outputTokens}out]',
-            );
-          }
-        default:
-          break;
-      }
-    }
-    return reply.toString();
+    final code = await runRepl(
+      session: session,
+      turn: turn,
+      conversation: conversation,
+    );
+    stderr.writeln('Session ${await repo.current()} sealed.');
+    return code;
   }
 }
