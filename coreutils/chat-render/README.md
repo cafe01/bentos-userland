@@ -71,7 +71,7 @@ Format:
   --[no-]ansi          ANSI color and styling
                        (default: auto — on if stdout is a TTY, off if piped)
   --width <n>          max columns for call-card and block layout
-                       (default: terminal width; 0 = no limit)
+                       (default: terminal width if TTY, 0 if piped; 0 = no limit)
   --compact            condensed output: suppresses the turn-boundary marker
                        and reduces call-card chrome; does not affect --ansi
 
@@ -101,9 +101,9 @@ Function-call cards are rendered by default. Pass `--no-calls` to suppress them 
 
 When stdout is a TTY, ANSI color and styling are on. When piped, they are off. Pass `--ansi` to force styling even in a pipe (e.g., when the downstream knows how to handle it — `| less -R`). Pass `--no-ansi` to force plain text even in a TTY (scripts, CI, accessibility). The auto-detection uses `stdout.hasTerminal`.
 
-**`--width <n>`** (default: terminal width, fallback 120; 0 = unlimited)
+**`--width <n>`** (default: terminal width if TTY, 0 if piped; 0 = no limit)
 
-Controls the column budget for call-card layout and block formatting. Has no effect on streaming text deltas (the terminal wraps those). `--width 0` disables layout budgeting.
+Controls the column budget for call-card layout and block formatting. Has no effect on streaming text deltas (the terminal wraps those). When stdout is a TTY the default is the current terminal width; when piped the default is `0` (no limit) — the downstream has not asked for wrapping, and imposing it would be inventing plumbing. Same family of reasoning as `--ansi` and `--boundary` auto-detection.
 
 **`--compact`**
 
@@ -117,13 +117,15 @@ At `Complete`, `chat-render` emits a minimal turn-boundary marker (a visual sepa
 
 | Code | Meaning |
 |---|---|
-| `0` | clean stream — `Complete` event received, turn finished |
-| `1` | stream ended without `Complete` (producer died mid-turn, broken pipe) |
-| `2` | malformed JSONL or I/O error |
+| `0` | rendered — stream processed (complete turn *or* partial/cancelled turn) |
+| `1` | data error — a JSONL line could not be decoded as a `ChatEvent` |
+| `2` | usage error — invalid flag or option |
 
-**Stdin empty**: exits `0`, no output. An empty stream is a valid no-op (e.g., `echo "" | chat-render`).
+A cancelled turn (SIGINT, broken pipe, producer killed mid-stream) has no `Complete` event and exits `0` — the renderer does not moralize about completeness. In this paradigm a turn is a foreground job and cancellation is a normal outcome, not a failure.
 
-**Malformed line**: logs the line number and error to stderr, exits `2`. Does not attempt to continue after a parse failure — a corrupt stream is ambiguous, and silently skipping an event could produce a misleading rendering (an open block with no close, a call card that never commits).
+**Stdin empty**: exits `0`, no output. An empty stream is a valid no-op.
+
+**Malformed line**: logs the line number and error to stderr, exits `1`. Does not attempt to continue — a line that cannot be decoded as a `ChatEvent` is corrupt input (distinguishable from a valid-but-empty stream), and silently skipping events could produce a misleading rendering (an open block with no close, a call card that never commits).
 
 ---
 
