@@ -1,0 +1,2 @@
+{"block":{"index":0,"content":{"functionCall":{"id":"call_ns1","name":"get_weather","argumentsJson":"{\"city\":\"London\"}"}}}}
+{"complete":{"metadata":{"model":"gpt-4o-mini","stopReason":"CHAT_STOP_REASON_FUNCTION_CALL","usage":{"inputTokens":"20","outputTokens":"0"}}}}

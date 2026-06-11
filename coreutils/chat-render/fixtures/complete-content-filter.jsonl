@@ -1,0 +1,3 @@
+{"textStart":{"index":0}}
+{"textStop":{"index":0}}
+{"complete":{"metadata":{"model":"gpt-4o","stopReason":"CHAT_STOP_REASON_CONTENT_FILTER","usage":{"inputTokens":"12","outputTokens":"0"}}}}

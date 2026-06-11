@@ -1,0 +1,7 @@
+{"textStart":{"index":0}}
+{"textDelta":{"index":0,"text":"I will check that."}}
+{"textStop":{"index":0}}
+{"functionCallStart":{"index":0,"id":"call_mix","name":"search"}}
+{"functionArgsDelta":{"index":0,"partialJson":"{\"q\":\"bentos OS\"}"}}
+{"functionCallStop":{"index":0}}
+{"complete":{"metadata":{"model":"claude-sonnet-4-6","stopReason":"CHAT_STOP_REASON_FUNCTION_CALL","usage":{"inputTokens":"35","outputTokens":"15"}}}}

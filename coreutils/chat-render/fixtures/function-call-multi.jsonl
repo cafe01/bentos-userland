@@ -1,0 +1,7 @@
+{"functionCallStart":{"index":0,"id":"call_0","name":"get_weather"}}
+{"functionArgsDelta":{"index":0,"partialJson":"{\"city\":\"Tokyo\"}"}}
+{"functionCallStop":{"index":0}}
+{"functionCallStart":{"index":0,"id":"call_1","name":"get_time"}}
+{"functionArgsDelta":{"index":0,"partialJson":"{\"tz\":\"Asia/Tokyo\"}"}}
+{"functionCallStop":{"index":0}}
+{"complete":{"metadata":{"model":"gpt-4o","stopReason":"CHAT_STOP_REASON_FUNCTION_CALL","usage":{"inputTokens":"40","outputTokens":"0"}}}}

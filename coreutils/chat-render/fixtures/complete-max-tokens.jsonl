@@ -1,0 +1,4 @@
+{"textStart":{"index":0}}
+{"textDelta":{"index":0,"text":"This is a very long response that gets cut"}}
+{"textStop":{"index":0}}
+{"complete":{"metadata":{"model":"claude-haiku-4-5","stopReason":"CHAT_STOP_REASON_MAX_TOKENS","usage":{"inputTokens":"50","outputTokens":"8192"}}}}

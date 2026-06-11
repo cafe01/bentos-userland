@@ -1,0 +1,8 @@
+{"thinkingStart":{"index":0}}
+{"thinkingDelta":{"index":0,"text":"Let me reason about this step by step."}}
+{"thinkingDelta":{"index":0,"text":" First, I consider the constraints."}}
+{"thinkingStop":{"index":0}}
+{"textStart":{"index":0}}
+{"textDelta":{"index":0,"text":"The answer is 42."}}
+{"textStop":{"index":0}}
+{"complete":{"metadata":{"model":"claude-sonnet-4-6","stopReason":"CHAT_STOP_REASON_END_TURN","usage":{"inputTokens":"128","outputTokens":"12"}}}}

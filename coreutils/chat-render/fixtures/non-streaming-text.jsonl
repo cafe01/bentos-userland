@@ -1,0 +1,2 @@
+{"block":{"index":0,"content":{"text":{"text":"The quick brown fox jumps over the lazy dog."}}}}
+{"complete":{"metadata":{"model":"claude-haiku-4-5","stopReason":"CHAT_STOP_REASON_END_TURN","usage":{"inputTokens":"42","outputTokens":"18"}}}}

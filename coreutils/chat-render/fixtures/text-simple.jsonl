@@ -1,0 +1,7 @@
+{"textStart":{"index":0}}
+{"textDelta":{"index":0,"text":"The quick "}}
+{"textDelta":{"index":0,"text":"brown fox "}}
+{"textDelta":{"index":0,"text":"jumps over "}}
+{"textDelta":{"index":0,"text":"the lazy dog."}}
+{"textStop":{"index":0}}
+{"complete":{"metadata":{"model":"claude-haiku-4-5","stopReason":"CHAT_STOP_REASON_END_TURN","usage":{"inputTokens":"42","outputTokens":"18"}}}}

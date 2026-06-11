@@ -1,0 +1,7 @@
+{"thinkingStart":{"index":0}}
+{"thinkingDelta":{"index":0,"text":"Extended thinking engaged."}}
+{"thinkingStop":{"index":0}}
+{"textStart":{"index":0}}
+{"textDelta":{"index":0,"text":"After careful consideration: 42."}}
+{"textStop":{"index":0}}
+{"complete":{"metadata":{"model":"claude-sonnet-4-6","stopReason":"CHAT_STOP_REASON_END_TURN","usage":{"inputTokens":"200","outputTokens":"28","reasoningTokens":"512"}}}}

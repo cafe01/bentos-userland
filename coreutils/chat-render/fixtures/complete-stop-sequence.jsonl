@@ -1,0 +1,4 @@
+{"textStart":{"index":0}}
+{"textDelta":{"index":0,"text":"Here is the output:"}}
+{"textStop":{"index":0}}
+{"complete":{"metadata":{"model":"gpt-4o","stopReason":"CHAT_STOP_REASON_STOP_SEQUENCE","usage":{"inputTokens":"30","outputTokens":"22"}}}}

@@ -1,0 +1,8 @@
+{"thinkingStart":{"index":0}}
+{"thinkingDelta":{"index":0,"text":"I need to think carefully here."}}
+{"signatureDelta":{"index":0,"signature":"EqoBCkgIARAAGAIiQL9m8X3k="}}
+{"thinkingStop":{"index":0}}
+{"textStart":{"index":0}}
+{"textDelta":{"index":0,"text":"Here is my response."}}
+{"textStop":{"index":0}}
+{"complete":{"metadata":{"model":"claude-sonnet-4-6","stopReason":"CHAT_STOP_REASON_END_TURN","usage":{"inputTokens":"96","outputTokens":"8","reasoningTokens":"64"}}}}
