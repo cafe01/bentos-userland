@@ -1,2 +1,5 @@
 .dart_tool/
 pubspec.lock
+# AOT-compiled binaries — built locally, not tracked
+coreutils/*/bin/*
+!coreutils/*/bin/*.dart

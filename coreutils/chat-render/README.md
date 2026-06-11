@@ -70,6 +70,8 @@ Content:
 Format:
   --[no-]ansi          ANSI color and styling
                        (default: auto — on if stdout is a TTY, off if piped)
+  --[no-]unicode       Unicode glyphs (┌ └ → ⚠ ─ ┊) vs ASCII fallbacks (, ' > ! - |)
+                       (default: auto — on if locale is UTF-8)
   --width <n>          max columns for fixed chrome (call-cards); never prose
                        (default: terminal width if TTY, 0 if piped; 0 = no limit)
   --compact            condensed output: suppresses the turn-boundary marker
@@ -104,6 +106,10 @@ Function-call cards are rendered by default. Pass `--no-calls` to suppress them 
 **`--[no-]ansi`** (default: auto)
 
 When stdout is a TTY, ANSI color and styling are on. When piped, they are off. Pass `--ansi` to force styling even in a pipe (e.g., when the downstream knows how to handle it — `| less -R`). Pass `--no-ansi` to force plain text even in a TTY (scripts, CI, accessibility). The auto-detection uses `stdout.hasTerminal`.
+
+**`--[no-]unicode`** (default: auto)
+
+When the process locale is UTF-8 (`LANG`, `LC_ALL`, or `LC_CTYPE` contains `UTF-8`), Unicode marker glyphs are on (`┌`, `└`, `→`, `⚠`, `─`, `┊`). On non-UTF-8 locales they fall back to same-width ASCII equivalents (`,`, `'`, `>`, `!`, `-`, `|`) via `term_glyph`'s ASCII mode. This is the **second degradation axis** — independent of `--[no-]ansi`; a terminal without ANSI support can still have Unicode, and vice versa. Pass `--no-unicode` to force ASCII glyphs. The legibility floor is `--no-ansi --no-unicode`: plain text, ASCII markers, full semantics intact.
 
 **`--width <n>`** (default: terminal width if TTY, 0 if piped; 0 = no limit)
 

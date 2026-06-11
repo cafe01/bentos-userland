@@ -15,6 +15,7 @@ workspace:
   - coreutils/chatbot
   - coreutils/websearch
   - coreutils/chat-data
+  - coreutils/chat-render
   - coreutils/tx
   - coreutils/chat
 
