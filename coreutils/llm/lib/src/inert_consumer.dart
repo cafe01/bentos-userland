@@ -72,48 +72,48 @@ class InertConsumer {
     return reply.toString();
   }
 
-  /// Runs one inference cycle in the scriptable register: folds all events into
-  /// a single assembled [ChatMessage] (via [foldToMessage]) and writes it as one
-  /// proto3 JSON line to [out] (defaults to stdout). Returns the assembled
-  /// message so the caller can use it (e.g. append to a conversation in memory).
+  /// Runs one inference cycle in the scriptable register: emits each
+  /// [ChatEvent] as one proto3 JSON line to [out] (the raw event stream —
+  /// `--output-format jsonl`). Never folds; folding is downstream (`chat-data
+  /// fold`).
   ///
-  /// [systemMessages] are prepended before [messages] (system role first).
-  /// Handles heterogeneous messages (TextContent + FunctionCallContent in the
-  /// same assistant turn) because [foldToMessage] accumulates all block types.
+  /// If [echoInput] is true, each input message is re-emitted on [out] before
+  /// the event stream begins — so stdout carries the full turn transcript
+  /// (input messages + output events) suitable for `>> messages.jsonl`.
+  ///
+  /// [systemMessages] are prepended before [messages]; they are NOT echoed
+  /// (they are config, not transcript).
   ///
   /// [out] and [errOut] are injectable for testing; production defaults to the
   /// real stdout/stderr.
-  Future<ChatMessage> filterTurn(
+  Future<void> eventTurn(
     List<ChatMessage> messages, {
     List<ChatMessage> systemMessages = const [],
     ChatIOConfig config = const ChatIOConfig(),
     bool verbose = false,
+    bool echoInput = false,
     StringSink? out,
     StringSink? errOut,
   }) async {
     out ??= stdout;
     errOut ??= stderr;
 
-    // Tap the Complete event for verbose metadata without consuming the stream
-    // twice — the map transformer runs synchronously as events flow through, so
-    // metadata is set before foldToMessage's future resolves.
-    ChatMetadata? metadata;
-    final wire = [...systemMessages, ...messages];
-    final tapped = _device.infer(wire, config).map((event) {
-      if (event is Complete) metadata = event.metadata;
-      return event;
-    });
-
-    final message = await tapped.foldToMessage();
-    out.writeln(encodeMessageJson(message));
-
-    if (verbose && metadata != null) {
-      errOut.writeln(
-        '[${metadata!.model} · ${metadata!.stopReason} · '
-        '${metadata!.usage?.inputTokens}in/'
-        '${metadata!.usage?.outputTokens}out]',
-      );
+    if (echoInput) {
+      for (final m in messages) {
+        out.writeln(encodeMessageJson(m));
+      }
     }
-    return message;
+
+    final wire = [...systemMessages, ...messages];
+    await for (final event in _device.infer(wire, config)) {
+      out.writeln(encodeEventJson(event));
+      if (verbose && event is Complete) {
+        final meta = event.metadata;
+        errOut.writeln(
+          '[${meta.model} · ${meta.stopReason} · '
+          '${meta.usage?.inputTokens}in/${meta.usage?.outputTokens}out]',
+        );
+      }
+    }
   }
 }

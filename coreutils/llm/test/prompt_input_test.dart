@@ -1,10 +1,11 @@
 /// Tests for PromptCommand's jsonl input/output modes:
 /// - Input: line-by-line decoding turns a JSONL conversation into ChatMessages.
-/// - Output: filterTurn emits one JSON line per turn and round-trips correctly.
+/// - Output: eventTurn emits each ChatEvent as one JSON line (the raw event
+///   stream — never folds).  --echo-input re-emits input messages first.
 /// - D2: FunctionDefinition loading from JSON files, function-choice wiring,
 ///   and a full turn with a scripted function-call reply.
 ///
-/// filterTurn tests use a scripted in-process driver (BentosDriver) so they
+/// eventTurn tests use a scripted in-process driver (BentosDriver) so they
 /// run without any network or API key.
 library;
 
@@ -175,85 +176,93 @@ void main() {
     });
   });
 
-  group('jsonl output mode — filterTurn', () {
-    test('text reply emits one JSON line, round-trips to assistant ChatMessage',
-        () async {
-      final consumer = _makeConsumer([
+  group('jsonl output mode — eventTurn', () {
+    test('text reply emits one JSON line per ChatEvent, never folds', () async {
+      final script = [
         const TextStart(0),
         const TextDelta(index: 0, text: 'Hello, '),
         const TextDelta(index: 0, text: 'world!'),
         const TextStop(0),
         Complete(_metadata),
-      ]);
+      ];
+      final consumer = _makeConsumer(script);
 
       final out = StringBuffer();
-      final message = await consumer.filterTurn(
+      await consumer.eventTurn(
         [const ChatMessage(role: ChatRole.user, content: [TextContent('hi')])],
         out: out,
       );
 
-      final line = out.toString().trim();
-      expect(line.contains('\n'), isFalse,
-          reason: 'filterTurn must emit exactly one line');
-      expect(line.startsWith('{'), isTrue);
+      final lines = out.toString().trimRight().split('\n');
+      expect(lines, hasLength(script.length),
+          reason: 'one JSON line per ChatEvent');
 
-      final decoded = decodeMessageJson(line);
-      expect(decoded.role, ChatRole.assistant);
-      expect(decoded, equals(message));
-      expect((decoded.content.first as TextContent).text, 'Hello, world!');
+      for (final line in lines) {
+        expect(line.startsWith('{'), isTrue,
+            reason: 'every line must be a JSON object');
+        // must decode back to a ChatEvent without error
+        expect(() => decodeEventJson(line), returnsNormally);
+      }
+
+      // Last event is Complete and carries the metadata
+      final last = decodeEventJson(lines.last);
+      expect(last, isA<Complete>());
+      expect((last as Complete).metadata.model, 'test-1');
     });
 
-    test('function-call reply emits one JSON line with FunctionCallContent',
-        () async {
-      final consumer = _makeConsumer([
+    test('function-call reply emits function-call events verbatim', () async {
+      final script = [
         const FunctionCallStart(index: 0, id: 'call_1', name: 'lookup'),
-        const FunctionArgsDelta(index: 0, partialJson: '{"q":"b'),
-        const FunctionArgsDelta(index: 0, partialJson: 'entos"}'),
+        const FunctionArgsDelta(index: 0, partialJson: '{"q":"bentos"}'),
         const FunctionCallStop(0),
         Complete(_metadata),
-      ]);
+      ];
+      final consumer = _makeConsumer(script);
 
       final out = StringBuffer();
-      final message = await consumer.filterTurn(
+      await consumer.eventTurn(
         [const ChatMessage(role: ChatRole.user, content: [TextContent('search')])],
         out: out,
       );
 
-      final decoded = decodeMessageJson(out.toString().trim());
-      expect(decoded.role, ChatRole.assistant);
-      expect(decoded.content, hasLength(1));
-      final call = decoded.content.first as FunctionCallContent;
-      expect(call.name, 'lookup');
-      expect(call.arguments, {'q': 'bentos'});
-      expect(decoded, equals(message));
+      final lines = out.toString().trimRight().split('\n');
+      expect(lines, hasLength(script.length));
+
+      final first = decodeEventJson(lines.first);
+      expect(first, isA<FunctionCallStart>());
+      expect((first as FunctionCallStart).name, 'lookup');
     });
 
-    test('heterogeneous reply (text + function call) assembles all contents',
-        () async {
-      final consumer = _makeConsumer([
+    test('--echo-input re-emits input messages before event stream', () async {
+      const input = [
+        ChatMessage(role: ChatRole.user, content: [TextContent('hi')]),
+      ];
+      final script = [
         const TextStart(0),
-        const TextDelta(index: 0, text: "I'll look that up."),
+        const TextDelta(index: 0, text: 'hello'),
         const TextStop(0),
-        const FunctionCallStart(index: 1, id: 'call_2', name: 'search'),
-        const FunctionArgsDelta(index: 1, partialJson: '{"q":"dart"}'),
-        const FunctionCallStop(1),
         Complete(_metadata),
-      ]);
+      ];
+      final consumer = _makeConsumer(script);
 
       final out = StringBuffer();
-      final message = await consumer.filterTurn(
-        [const ChatMessage(role: ChatRole.user, content: [TextContent('search dart')])],
-        out: out,
-      );
+      await consumer.eventTurn(input, echoInput: true, out: out);
 
-      final decoded = decodeMessageJson(out.toString().trim());
-      expect(decoded.content, hasLength(2));
-      expect(decoded.content[0], isA<TextContent>());
-      expect(decoded.content[1], isA<FunctionCallContent>());
-      expect(decoded, equals(message));
+      final lines = out.toString().trimRight().split('\n');
+      // input message (1) + script events (4) = 5 lines
+      expect(lines, hasLength(1 + script.length));
+
+      // First line is the echoed input ChatMessage
+      final echoed = decodeMessageJson(lines.first);
+      expect(echoed, equals(input.first));
+
+      // Remaining lines are ChatEvents
+      for (final line in lines.skip(1)) {
+        expect(() => decodeEventJson(line), returnsNormally);
+      }
     });
 
-    test('filter pipeline end-to-end: input jsonl → filterTurn → output jsonl',
+    test('filter pipeline end-to-end: input jsonl → eventTurn → event stream',
         () async {
       // Simulates: cat messages.jsonl | llm --input-format jsonl --output-format jsonl
       const inputConversation = [
@@ -262,28 +271,30 @@ void main() {
             role: ChatRole.assistant, content: [TextContent('first reply')]),
         ChatMessage(role: ChatRole.user, content: [TextContent('second turn')]),
       ];
-
-      final consumer = _makeConsumer([
+      final script = [
         const TextStart(0),
         const TextDelta(index: 0, text: 'second reply'),
         const TextStop(0),
         Complete(_metadata),
-      ]);
+      ];
+
+      final consumer = _makeConsumer(script);
 
       // Step 1: parse input jsonl (PromptCommand._resolveJsonlMessages)
       final jsonl = inputConversation.map(encodeMessageJson).join('\n');
       final messages = parseJsonlConversation(jsonl);
       expect(messages, equals(inputConversation));
 
-      // Step 2: run the turn (filterTurn)
+      // Step 2: run the turn (eventTurn) — emits events, not a folded message
       final out = StringBuffer();
-      await consumer.filterTurn(messages, out: out);
+      await consumer.eventTurn(messages, out: out);
 
-      // Step 3: decode output line (what >> messages.jsonl captures)
-      final outputLine = out.toString().trim();
-      final reply = decodeMessageJson(outputLine);
-      expect(reply.role, ChatRole.assistant);
-      expect((reply.content.first as TextContent).text, 'second reply');
+      // Step 3: output is N event lines (one per script entry)
+      final lines = out.toString().trimRight().split('\n');
+      expect(lines, hasLength(script.length));
+      for (final line in lines) {
+        expect(() => decodeEventJson(line), returnsNormally);
+      }
     });
   });
 
@@ -363,18 +374,19 @@ void main() {
   });
 
   group('D2 — function calling full turn: scripted driver → jsonl output', () {
-    test('driver reply with FunctionCallContent serializes to one jsonl line',
+    test('driver reply with function-call events emits each event as JSON line',
         () async {
-      final consumer = _makeConsumer([
+      final script = [
         const FunctionCallStart(index: 0, id: 'call_w1', name: 'get_weather'),
         const FunctionArgsDelta(index: 0, partialJson: '{"city":"'),
         const FunctionArgsDelta(index: 0, partialJson: 'Tokyo"}'),
         const FunctionCallStop(0),
         Complete(_metadata),
-      ]);
+      ];
+      final consumer = _makeConsumer(script);
 
       final out = StringBuffer();
-      final message = await consumer.filterTurn(
+      await consumer.eventTurn(
         [
           const ChatMessage(
             role: ChatRole.user,
@@ -384,22 +396,18 @@ void main() {
         out: out,
       );
 
-      final line = out.toString().trim();
-      // Must be exactly one line — the shell-loop `>> messages.jsonl` contract.
-      expect(line.contains('\n'), isFalse,
-          reason: 'filterTurn must emit exactly one line');
+      final lines = out.toString().trimRight().split('\n');
+      expect(lines, hasLength(script.length),
+          reason: 'one JSON line per ChatEvent');
 
-      final decoded = decodeMessageJson(line);
-      expect(decoded.role, ChatRole.assistant);
-      expect(decoded.content, hasLength(1));
+      // First event is FunctionCallStart with the right name and id
+      final first = decodeEventJson(lines.first);
+      expect(first, isA<FunctionCallStart>());
+      expect((first as FunctionCallStart).id, 'call_w1');
+      expect(first.name, 'get_weather');
 
-      final call = decoded.content.first as FunctionCallContent;
-      expect(call.id, 'call_w1');
-      expect(call.name, 'get_weather');
-      expect(call.arguments, {'city': 'Tokyo'});
-
-      // filterTurn return value == decoded line.
-      expect(decoded, equals(message));
+      // Last event is Complete
+      expect(decodeEventJson(lines.last), isA<Complete>());
     });
 
     test('wiring: functions and functionChoice flow into ChatIOConfig', () {

@@ -68,12 +68,8 @@ ChatIOConfig _promptIoConfig(ArgResults r) {
   final outputFmt = (r['output-format'] as String) == 'jsonl'
       ? Format.structured
       : Format.unstructured;
-  final bool streaming;
-  if (r.wasParsed('stream')) {
-    streaming = r['stream'] as bool;
-  } else {
-    streaming = outputFmt == Format.unstructured;
-  }
+  // streaming: on by default regardless of output format.
+  final bool streaming = r['stream'] as bool;
   return _ioConfig(r).copyWith(
     inputFormat: inputFmt,
     outputFormat: outputFmt,
@@ -217,30 +213,30 @@ void main() {
     });
   });
 
-  group('--[no-]stream flag (PromptCommand) — smart default', () {
+  group('--[no-]stream flag (PromptCommand)', () {
     final promptParser = _buildPromptArgParser();
 
-    test('absent + text output → streaming on (default)', () {
-      final r = promptParser.parse([]);
-      expect(_promptIoConfig(r).streaming, isTrue);
+    test('absent → streaming on (default, all output formats)', () {
+      expect(_promptIoConfig(promptParser.parse([])).streaming, isTrue);
+      expect(
+        _promptIoConfig(promptParser.parse(['--output-format', 'jsonl']))
+            .streaming,
+        isTrue,
+        reason: 'streaming is on by default even for jsonl output',
+      );
     });
 
-    test('absent + jsonl output → streaming off (default)', () {
-      final r = promptParser.parse(['--output-format', 'jsonl']);
-      expect(_promptIoConfig(r).streaming, isFalse);
-    });
-
-    test('explicit --stream overrides jsonl default (on)', () {
-      final r = promptParser.parse(['--output-format', 'jsonl', '--stream']);
-      expect(_promptIoConfig(r).streaming, isTrue);
-    });
-
-    test('explicit --no-stream overrides text default (off)', () {
+    test('explicit --no-stream → streaming off', () {
       final r = promptParser.parse(['--no-stream']);
       expect(_promptIoConfig(r).streaming, isFalse);
     });
 
-    test('jsonl in+out both structured, streaming off by default', () {
+    test('explicit --no-stream with jsonl output → streaming off', () {
+      final r = promptParser.parse(['--output-format', 'jsonl', '--no-stream']);
+      expect(_promptIoConfig(r).streaming, isFalse);
+    });
+
+    test('jsonl in+out both structured, streaming on by default', () {
       final r = promptParser.parse([
         '--input-format', 'jsonl',
         '--output-format', 'jsonl',
@@ -248,7 +244,7 @@ void main() {
       final cfg = _promptIoConfig(r);
       expect(cfg.inputFormat, Format.structured);
       expect(cfg.outputFormat, Format.structured);
-      expect(cfg.streaming, isFalse);
+      expect(cfg.streaming, isTrue);
     });
 
     test('full filter flags coexist with generation flags', () {
@@ -261,7 +257,7 @@ void main() {
       final cfg = _promptIoConfig(r);
       expect(cfg.inputFormat, Format.structured);
       expect(cfg.outputFormat, Format.structured);
-      expect(cfg.streaming, isFalse);
+      expect(cfg.streaming, isTrue);
       expect(cfg.maxTokens, 1024);
       expect(cfg.temperature, closeTo(0.2, 0.001));
     });

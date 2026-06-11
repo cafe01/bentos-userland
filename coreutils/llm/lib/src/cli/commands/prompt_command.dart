@@ -33,9 +33,15 @@ class PromptCommand extends LlmBaseCommand {
       ..addFlag(
         'stream',
         defaultsTo: true,
-        help: 'Stream tokens as generated. '
-            'Defaults on for text output, off for jsonl output. '
-            'Use --no-stream to force whole-message-at-once.',
+        help: 'Stream tokens as generated (default: on). '
+            'Use --no-stream for whole-block events only (still events, no folding).',
+      )
+      ..addFlag(
+        'echo-input',
+        negatable: false,
+        help: 'Re-emit each input message on stdout before the event stream, '
+            'in the output vocabulary — so stdout carries the full turn transcript. '
+            'Requires --input-format jsonl and --output-format jsonl.',
       )
       ..addMultiOption(
         'function',
@@ -79,15 +85,8 @@ class PromptCommand extends LlmBaseCommand {
         ? Format.structured
         : Format.unstructured;
 
-    // streaming: explicit --stream/--no-stream wins; otherwise default is on
-    // for text output and off for jsonl output (the filter use-case wants the
-    // assembled message, not a token stream).
-    final bool streaming;
-    if (argResults!.wasParsed('stream')) {
-      streaming = argResults!['stream'] as bool;
-    } else {
-      streaming = outputFmt == Format.unstructured;
-    }
+    // streaming: explicit --stream/--no-stream wins; otherwise on by default.
+    final bool streaming = argResults!['stream'] as bool;
 
     return super.ioConfig.copyWith(
       inputFormat: inputFmt,
@@ -135,11 +134,19 @@ class PromptCommand extends LlmBaseCommand {
     var config = ioConfig;
     final isJsonlInput = config.inputFormat == Format.structured;
     final isJsonlOutput = config.outputFormat == Format.structured;
+    final echoInput = argResults!['echo-input'] as bool;
 
     if (functions != null && !isJsonlOutput) {
       throw UsageException(
         '--function requires --output-format jsonl '
         '(function calls cannot be serialized in text mode)',
+        usage,
+      );
+    }
+
+    if (echoInput && !(isJsonlInput && isJsonlOutput)) {
+      throw UsageException(
+        '--echo-input requires --input-format jsonl and --output-format jsonl',
         usage,
       );
     }
@@ -155,11 +162,12 @@ class PromptCommand extends LlmBaseCommand {
 
     try {
       if (isJsonlOutput) {
-        await consumer.filterTurn(
+        await consumer.eventTurn(
           messages,
           systemMessages: systemMessages,
           config: config,
           verbose: verbose,
+          echoInput: echoInput,
         );
       } else {
         await consumer.streamTurn(
