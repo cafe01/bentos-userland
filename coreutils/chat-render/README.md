@@ -70,7 +70,7 @@ Content:
 Format:
   --[no-]ansi          ANSI color and styling
                        (default: auto — on if stdout is a TTY, off if piped)
-  --width <n>          max columns for call-card and block layout
+  --width <n>          max columns for fixed chrome (call-cards); never prose
                        (default: terminal width if TTY, 0 if piped; 0 = no limit)
   --compact            condensed output: suppresses the turn-boundary marker
                        and reduces call-card chrome; does not affect --ansi
@@ -89,6 +89,10 @@ Other:
 
 ### Options in detail
 
+**Prose is never hard-wrapped**
+
+`chat-render` never inserts `\n` into text or thinking content. Prose flows raw; the terminal emulator is the sole owner of line-breaking for reflowable text. Hard-wrapping would freeze the line structure at the terminal width at render time — on resize, the emulator reflows what it soft-wrapped, but the renderer's injected `\n`s stay, leaving the text stranded at the old column count. Beyond the mechanics: the renderer does not reinvent what the terminal already does better. This is the same law that keeps `--ansi` and `--boundary` auto-detecting rather than imposing — do not invent plumbing the host already provides. `--width` has no domain over prose.
+
 **`--[no-]thinking`** (default: on)
 
 Thinking blocks (`ThinkingStart/Delta/Stop`) are rendered by default, styled distinctly from speech (dim + italic, or equivalent). Pass `--no-thinking` to suppress them entirely — useful when you want to read the answer without the reasoning trace, or when the thinking block is very long and you are in a narrow context.
@@ -103,7 +107,7 @@ When stdout is a TTY, ANSI color and styling are on. When piped, they are off. P
 
 **`--width <n>`** (default: terminal width if TTY, 0 if piped; 0 = no limit)
 
-Controls the column budget for call-card layout and block formatting. Has no effect on streaming text deltas (the terminal wraps those). When stdout is a TTY the default is the current terminal width; when piped the default is `0` (no limit) — the downstream has not asked for wrapping, and imposing it would be inventing plumbing. Same family of reasoning as `--ansi` and `--boundary` auto-detection.
+Controls the column budget for **fixed chrome only** — call-card boxes, if and when they exist. It has no effect on text or thinking content; prose is never hard-wrapped (see above). When stdout is a TTY the default is the current terminal width; when piped the default is `0` (no limit) — same auto-detection reasoning as `--ansi` and `--boundary`. One caveat: even fixed-width chrome inherits some fragility on resize (the terminal cannot reflow box-drawing characters the way it reflows soft-wrapped text), which is why fixed-width chrome is kept minimal.
 
 **`--compact`**
 
