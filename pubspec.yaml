@@ -2,11 +2,17 @@ name: bentos_userland
 description: The bentos stdlib — what userland app programmers depend on. The client-side syscall surface over bentos-kernel capabilities.
 version: 0.1.0
 repository: https://github.com/cafe01/bentos-userland
+homepage: https://github.com/cafe01/bentos-userland
+
+topics:
+  - agent
+  - ai
+  - cli
+  - coreutils
+  - bentos
 
 environment:
   sdk: ^3.8.0
-
-publish_to: none
 
 # This repo IS "what you install when you install HumanOS": the libc plus its
 # coreutils, resolved as one pub workspace.
