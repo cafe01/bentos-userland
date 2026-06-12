@@ -3,9 +3,6 @@ description: chat-data — the ChatInference data model as a CLI codec. Construc
 version: 0.1.0
 publish_to: none
 
-executables:
-  chat-data:
-    main: bin/chat_data.dart
 
 resolution: workspace
 

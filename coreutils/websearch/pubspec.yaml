@@ -8,8 +8,6 @@ resolution: workspace
 environment:
   sdk: ^3.8.0
 
-executables:
-  websearch:
 
 dependencies:
   args: ^2.4.0

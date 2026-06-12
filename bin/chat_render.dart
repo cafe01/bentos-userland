@@ -5,7 +5,6 @@ import 'dart:io';
 
 import 'package:args/args.dart';
 import 'package:chat_render/chat_render.dart';
-// ignore: unused_import — used via ChatRenderer
 
 const _usage = '''
 Usage: llm … | chat-render [options]

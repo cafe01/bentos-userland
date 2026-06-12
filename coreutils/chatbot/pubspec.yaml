@@ -3,8 +3,6 @@ description: chatbot.exe — LUCA with species ontology. The first agent built o
 version: 0.1.0
 publish_to: none
 
-executables:
-  chatbot:
 
 resolution: workspace
 

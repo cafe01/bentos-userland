@@ -19,15 +19,40 @@ workspace:
   - coreutils/tx
   - coreutils/chat
 
+executables:
+  chat:
+  chat-data: chat_data
+  chat-render: chat_render
+  chatbot:
+  llm:
+  tx:
+  websearch:
+
 dependencies:
+  args: ^2.4.0
   bentos_driver_sdk:
     path: ../bentos-driver-sdk-dart
   chat_inference:
     path: ../chat-inference-dart
   fixnum: ^1.1.0
   stream_channel: ^2.1.0
-  # The drivers the in-process kernel stand-in (lib/boot.dart) wires behind
-  # /dev/llm/*. They live here, behind the device — never in a coreutil's main.
+  # coreutil libs — exposed via bin/ shells
+  chat:
+    path: coreutils/chat
+  chat_data:
+    path: coreutils/chat-data
+  chat_render:
+    path: coreutils/chat-render
+  chatbot:
+    path: coreutils/chatbot
+  llm:
+    path: coreutils/llm
+  tx:
+    path: coreutils/tx
+  websearch:
+    path: coreutils/websearch
+  # Vendor drivers — needed by bin/_drivers.dart at AOT compile time.
+  # lib/ does NOT import these (cycle stays broken); only bin/ does.
   anthropic_chat_driver:
     path: ../anthropic-chat-driver
   openai_chat_driver:

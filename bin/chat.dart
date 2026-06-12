@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import '_drivers.dart';
 import 'package:args/args.dart';
 import 'package:bentos_userland/bentos_userland.dart';
 import 'package:bentos_userland/boot.dart';
@@ -26,6 +27,8 @@ Options:
 entity = --agent <name> ?? \$BENTOS_AGENT. State at <place>/.tx/<entity>/.''';
 
 Future<int> main(List<String> args) async {
+  registerBundledLlmDrivers();
+
   final parser = ArgParser()
     ..addOption('agent', abbr: 'a')
     ..addOption('device', abbr: 'd')

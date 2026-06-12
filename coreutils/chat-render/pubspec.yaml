@@ -3,8 +3,6 @@ description: chat-render — reads a ChatEvent JSONL stream and renders it to th
 version: 0.1.0
 publish_to: none
 
-executables:
-  chat-render: chat_render
 
 resolution: workspace
 
