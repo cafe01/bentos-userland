@@ -9,7 +9,17 @@ library;
 import 'package:bentos_userland/boot.dart';
 import 'package:test/test.dart';
 
+import '../example/boot_with_drivers.dart';
+
 void main() {
+  // The bundled vendors are wired from example/ (a dev/distribution concern),
+  // never from the published lib. Registering them here proves the agnostic
+  // routing table + the bundled wiring together.
+  setUp(() {
+    clearLlmDrivers();
+    registerBundledLlmDrivers();
+  });
+
   test('routes both shipped vendors by the path, never by app choice', () {
     expect(() => bootLlmDevice('/dev/llm/openai/gpt-4o-mini'), returnsNormally);
     expect(
