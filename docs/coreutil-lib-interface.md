@@ -1,8 +1,8 @@
 # The userland — composing capabilities as pipeline jobs
 
-**What this is.** BentOS exposes each external capability as an OS device — the platform thesis: `open("/dev/llm/…")` as much a given as `open()` itself. The *userland* is the layer above: a set of coreutils — small programs, one capability each — that **compose into workflows through OS primitives**, pipes and processes, rather than through a framework runtime. It is the same problem LangChain, LangGraph, and n8n attack — chaining capabilities into a working pipeline — solved **OS-based instead of framework-based**.
+**What this is.** BentOS exposes each external capability as an OS device — the platform thesis: `open("/dev/llm/…")` is as much a given as `open()` itself. The *userland* is the layer above: a set of coreutils — small programs, one capability each — that **compose into workflows through OS primitives**, pipes and processes, rather than through a framework runtime. It is the same problem LangChain, LangGraph, and n8n attack — chaining capabilities into a working pipeline — solved **OS-based instead of framework-based**.
 
-This document explains the idea and its primitives. The catalog of specific coreutils, and the specific workflows they compose, are authored elsewhere, each in isolation (§6). Companion: [../../bentos/platform-thesis.md](../../bentos/platform-thesis.md) — the device layer this one stands on.
+This document is the thesis: the idea and its primitives. The architecture that realizes it — the concrete `dart:io` interfaces a pipeline job is built from — is the companion [pipeline-jobs.md](pipeline-jobs.md). The catalog of specific coreutils and the workflows they compose are authored elsewhere, each in isolation (§6). Standing under all of it: [../../bentos/platform-thesis.md](../../bentos/platform-thesis.md) — the device layer.
 
 ---
 
@@ -10,14 +10,14 @@ This document explains the idea and its primitives. The catalog of specific core
 
 The ontology we model is the oldest one in the craft — the **pipeline job**, `A | B | C`. It has exactly two primitives:
 
-- **command** — the node. A stage of the pipeline: a unit with input and output channels (fds), arguments, and an operation. The classic Unix *filter* — read stdin, write stdout — is its commonest shape, but not its definition (§3).
+- **command** — the node. A stage of the pipeline: a unit with input and output channels, arguments, and an operation. The classic Unix *filter* — read stdin, write stdout — is its commonest shape, but not its definition (§3).
 - **pipe** — the connector. A unidirectional channel carrying one command's output into the next's input. `|`.
 
 A workflow is nothing but commands wired by pipes. That is the whole substrate.
 
 **The plumbing is semantics-blind, and that is the point.** A pipe does not know — must not know — what flows through it. It carries data; the meaning of that data is the command's business, never the pipe's. This is why one plumbing serves every domain: the same `|` that wires text utilities wires inference, voice, vision, embeddings. The composition layer is generic precisely because it refuses to look inside the payload.
 
-**Blind, but not untyped.** In shell the payload is bytes; in a fused, in-language pipeline (§4) it is a live value. The plumbing stays generic by being *parametric* — generic over the element type, preserving it end to end without interpreting it. Semantics-blind and type-safe are the same property seen from two sides: the pipe knows the type's *shape* well enough to carry it, and its *meaning* not at all.
+**Blind, but not untyped.** In shell the payload is bytes; in a fused, in-language pipeline ([pipeline-jobs.md §5](pipeline-jobs.md)) two adjacent stages may pass a live value. The plumbing stays generic by being *parametric* — generic over the element type, carrying it end to end without interpreting it. Semantics-blind and type-safe are the same property seen from two sides: the pipe knows the type's *shape* well enough to carry it, and its *meaning* not at all.
 
 ---
 
@@ -50,7 +50,7 @@ Treating every command as a stdin→stdout filter is the trap; it forces the gen
 | **reducer** | `Stream<I> → Future<O>` | folds a stream to a single value |
 | **fan-out** | `Stream<I> → Stream<I>` (+ side channels) | duplicates the stream; `tee` is the archetype |
 
-All five are commands; all five wire by pipe — though fan-out is where the line becomes a graph: its side channels are simply additional output pipes, the branch points where one stream feeds more than one downstream. The filter is merely the one in the middle of `A | B | C`. Designing the userland around *command* rather than *filter* is what lets a producer, a fold, or a `tee` compose as uniformly as any filter — instead of arriving as exceptions to be special-cased.
+All five are commands; all five wire by pipe — though fan-out is where the line becomes a graph: its side channels are simply additional output pipes, the branch points where one stream feeds more than one downstream. The filter is merely the one in the middle of `A | B | C`. Designing the userland around *command* rather than *filter* is what lets a producer, a fold, or a `tee` compose as uniformly as any filter — instead of arriving as exceptions to be special-cased. That these five are not five interfaces but one — a single node type touching different channels — is the architecture's to show ([pipeline-jobs.md §4](pipeline-jobs.md)).
 
 ---
 
@@ -59,11 +59,13 @@ All five are commands; all five wire by pipe — though fan-out is where the lin
 Every coreutil exists in two consumable forms, and the relationship between them is the reason the library form exists at all.
 
 - **As a CLI executable** — the prototyping material. You wire a workflow by composing programs with `|` at a shell, run it, adjust it. Fast, inspectable, `cat`-able, disposable.
-- **As a library block** — the production material. The same coreutil, imported in-process, lets you **fuse** that prototyped pipeline into a single program — or a compiled binary — with the *same wiring*. Each `|` becomes an in-language composition; the subprocesses collapse into one process; the per-stage serialization between typed stages disappears.
+- **As a library block** — the production material. The same coreutil, imported in-process, lets you **fuse** that prototyped pipeline into a single program — or a compiled binary — with the *same wiring*. Each `|` becomes an in-language composition; the subprocesses collapse into one.
 
 The progression is shell → script → binary: prototype the workflow in the softest material, then forge it in one as solid as you need — for performance, for deployment, for distribution. The acceptance test that governs the library design is literal: **the fused pipeline must mirror the shell pipeline line for line** — `|` becomes a composition, and nothing else moves. If the in-language wiring does not read like the pipe it replaces, the library interface is wrong.
 
-**What the fusion changes — and why it is a gain.** The shell pipeline is concurrent processes coupled by kernel buffers, with backpressure expressed as blocking I/O. The fused pipeline is a single cooperative dataflow in one process: one thread, deterministic ordering, no kernel buffer, no serialization between stages. It trades OS-process parallelism for in-process cooperative concurrency — and for these workflows that is pure gain, because their cost is I/O wait (a device answering) not CPU contention. Parallelism across cores buys nothing when there is no CPU work competing; determinism and zero serialization buy a great deal. The rule that falls out: **asynchrony lives only at the real I/O boundary** — the device, the sinks — while the entire transforming middle is synchronous, each value passing through promptly and in order.
+**What the fusion changes — and why it is a gain.** The shell pipeline is concurrent processes coupled by kernel buffers, with backpressure expressed as blocking I/O. The fused pipeline is a single cooperative dataflow in one process: one thread, deterministic ordering, no kernel buffer, no IPC. It trades OS-process parallelism for in-process cooperative concurrency — and for these workflows that is pure gain, because their cost is I/O wait (a device answering) not CPU contention. Parallelism across cores buys nothing when there is no CPU work competing; determinism, single-process deployment, and a tight I/O boundary buy a great deal. The rule that falls out: **asynchrony lives only at the real I/O boundary** — the device, the sinks — while the entire transforming middle is synchronous, each value passing through promptly and in order.
+
+What fusion does *not* do by itself is erase the per-stage encode/decode: the base channel is bytes, so adjacent stages still serialize across it. That cost is negligible here — these pipelines pay in latency, not codecs — and where two cooperating stages want to skip it, a typed port lets them. That is an optimization the architecture defines, not a property of fusion; [pipeline-jobs.md §5](pipeline-jobs.md) draws the line.
 
 ---
 
@@ -85,7 +87,7 @@ Both are *examples*. Assuming either shape here would be the contamination this 
 
 ## 6. What follows
 
-This document is the substrate. Two bodies of work stand on it, each authored in isolation so neither contaminates the model:
+This document is the thesis; [pipeline-jobs.md](pipeline-jobs.md) is its architecture. Two further bodies of work stand on both, each authored in isolation so neither contaminates the model:
 
 - **the catalog** — each coreutil specified on its own terms: its capability, its command shape, its CLI and library surface;
 - **the compositions** — concrete workflows (the llm turn, the agent turn, and others) built from the catalog.

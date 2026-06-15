@@ -1,5 +1,10 @@
 # coreutils
 
+> [!WARNING]
+> **This directory is transitional and will dissolve.** Each coreutil here is its own package today; the destination is one busybox package — children descend into `../lib/src/<name>/`, the child pubspecs and the parent's `workspace:` block go away (the userland-consolidation arc). Consolidation happens gradually, in step with building the native agent body — not as a mechanical sweep up front.
+>
+> **The canonical theory now lives in the docs**, not here: the thesis is [`../docs/coreutil-lib-interface.md`](../docs/coreutil-lib-interface.md), the architecture is [`../docs/pipeline-jobs.md`](../docs/pipeline-jobs.md). This file is kept as a **catalog** of what currently exists. Where the text below re-argues who-owns-the-loop or the dual nature, defer to the docs.
+
 The HumanOS coreutils — small native programs the agent orchestrates. Single-purpose, agent-facing: invoked, do one thing, terminate. Composable via pipes (IPC) or linked in-process as libraries. This directory **is** the programmatic Agent SDK. Taxonomy authority: `hq/workshop/humanos/userland.md`.
 
 ## The thesis: the SDK *is* the coreutils

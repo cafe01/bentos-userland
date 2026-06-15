@@ -87,7 +87,7 @@ The acceptance test passes **by construction**, because both forms target the sa
 | **reducer** | reads all `stdin`; writes one value at EOF | `wc`, `sort` |
 | **fan-out** | reads `stdin`; writes `stdout` **+ injected sinks** | `tee` |
 
-No shape needs a distinct interface — this is the lesson paid for once already, when modelling the node as `StreamTransformer<I,O>` forced source, sink, reducer, and `tee` to arrive as special cases. `StreamTransformer` *is* the filter shape: one of five, mistaken for the whole. `Process` has no such bias; a source is simply a `Process` that never reads `stdin`.
+No shape needs a distinct interface. `StreamTransformer<I,O>` *is* the filter shape — one of five — and modelling the node on it would force source, sink, reducer, and `tee` to arrive as special cases. `Process` has no such bias: a source is simply a `Process` that never reads `stdin`, a reducer one that writes a single value at EOF.
 
 **Fan-out and the side channels.** `tee` is the one shape that branches the line into a graph, and `Process` has only one `stdout`. The branch is expressed not by inventing extra fds but by *constructor injection*: a `TeeProcess` is handed the additional `IOSink`s it should duplicate into.
 
@@ -101,15 +101,15 @@ The side channels are ordinary sinks the node was given — the next stage's `st
 
 ## 5. Two composition registers
 
-`Process.stdout` is `Stream<List<int>>` — **bytes**. This is the honest base contract, and it has a consequence the thesis overstated: across a byte boundary, each stage still encodes and decodes. Fusing the processes does **not** by itself make per-stage serialization disappear.
+`Process.stdout` is `Stream<List<int>>` — **bytes**. That is the honest base contract, and it has a consequence: across a byte boundary, each stage encodes and decodes. This holds whether the stages are forked or fused — fusing the processes collapses them into one isolate, but the channel between them is still bytes.
 
-It does not need to. The cost of these pipelines is I/O wait — a device answering — not CPU spent on codecs; a chat turn pays in latency, not parsing. So the real wins of fusion are elsewhere and remain: **one process** (deployment, startup, zero IPC setup), **deterministic ordering**, **no kernel buffer**, and asynchrony confined to the true I/O boundary while the transforming middle runs promptly and in order.
+It costs nothing worth avoiding. These pipelines pay in I/O wait — a device answering — not in CPU spent on codecs; a chat turn's price is latency, not parsing. So the wins of fusion live elsewhere and are real: **one process** (deployment, startup, zero IPC setup), **deterministic ordering**, **no kernel buffer**, and asynchrony confined to the true I/O boundary while the transforming middle runs promptly and in order.
 
 That gives two registers, and the architecture keeps them distinct:
 
 1. **Process composition — the spine.** Byte streams over the `Process` interface; real or fake nodes wired identically; serialization present and cheap. This is what a shell does, what the POC proves, and what every heterogeneous pipeline uses. Faithful, direct, and the default.
 
-2. **Typed fusion — an opt-in optimization.** When two adjacent fused stages share a value type, the fake `Process` may expose a typed port that hands the live value across without the byte round-trip — *here* serialization disappears. It is a richer contract between cooperating stages, never the base primitive, and never required to compose.
+2. **Typed fusion — an opt-in optimization.** When two adjacent fused stages share a value type, the fake `Process` may expose a typed port that hands the live value across without the byte round-trip — *there* the encode/decode is gone. It is a richer contract between two cooperating stages, never the base primitive, and never required to compose.
 
 The mistake to avoid is making register 2 the foundation — typing the pipe end to end and rediscovering the `StreamTransformer` trap one layer up. The pipe is bytes; types are an optimization two willing stages opt into.
 
