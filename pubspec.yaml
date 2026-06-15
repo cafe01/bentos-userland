@@ -36,6 +36,8 @@ executables:
 
 dependencies:
   args: ^2.4.0
+  bentos_abi:
+    path: ../bentos-abi
   bentos_driver_sdk:
     path: ../bentos-driver-sdk-dart
   chat_inference:
@@ -65,5 +67,7 @@ dependencies:
     path: ../openai-chat-driver
 
 dev_dependencies:
+  bentos_kernel:
+    path: ../bentos-kernel
   lints: ^6.0.0
   test: ^1.24.0
