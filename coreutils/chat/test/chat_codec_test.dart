@@ -2,6 +2,9 @@
 /// Uses in-process command construction with injectable StringSink for output.
 library;
 
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:args/command_runner.dart';
 import 'package:bentos_userland/chat.dart';
 import 'package:chat/chat.dart';
@@ -28,6 +31,32 @@ CommandRunner<int> _buildTestRunner(StringBuffer buf) {
     ..addCommand(ContentCommand()..out = buf)
     ..addCommand(EventCommand()..out = buf);
   return runner;
+}
+
+// In-process fold: decodes JSONL events and folds them to a ChatMessage.
+Future<ChatMessage> _foldJsonl(String jsonl) async {
+  final controller = StreamController<ChatEvent>();
+  for (final line in const LineSplitter().convert(jsonl)) {
+    final trimmed = line.trim();
+    if (trimmed.isNotEmpty) controller.add(decodeEventJson(trimmed));
+  }
+  controller.close();
+  return controller.stream.foldToMessage();
+}
+
+// In-process validate: returns number of invalid lines.
+int _countErrors(String jsonl) {
+  var errors = 0;
+  for (final line in const LineSplitter().convert(jsonl)) {
+    final trimmed = line.trim();
+    if (trimmed.isEmpty) continue;
+    try {
+      decodeEventJson(trimmed);
+    } catch (_) {
+      errors++;
+    }
+  }
+  return errors;
 }
 
 // ---------------------------------------------------------------------------
@@ -236,6 +265,100 @@ void main() {
       for (final line in lines) {
         expect(() => decodeEventJson(line), returnsNormally);
       }
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // chat-codec fold (in-process via stream helper)
+  // ---------------------------------------------------------------------------
+
+  group('chat-codec fold', () {
+    test('folds text event stream to assistant ChatMessage', () async {
+      final events = [
+        const TextStart(0),
+        const TextDelta(index: 0, text: 'Hello'),
+        const TextDelta(index: 0, text: ', world!'),
+        const TextStop(0),
+        Complete(ChatMetadata(model: 'test', stopReason: const EndTurn())),
+      ];
+      final msg = await _foldJsonl(events.map(encodeEventJson).join('\n'));
+      expect(msg.role, ChatRole.assistant);
+      expect((msg.content.first as TextContent).text, 'Hello, world!');
+    });
+
+    test('folds function-call event stream to assistant ChatMessage', () async {
+      final events = [
+        const FunctionCallStart(index: 0, id: 'c1', name: 'search'),
+        const FunctionArgsDelta(index: 0, partialJson: '{"q":"bentos"}'),
+        const FunctionCallStop(0),
+        Complete(ChatMetadata(model: 'test', stopReason: const FunctionCall())),
+      ];
+      final msg = await _foldJsonl(events.map(encodeEventJson).join('\n'));
+      expect(msg.role, ChatRole.assistant);
+      final call = msg.content.first as FunctionCallContent;
+      expect(call.name, 'search');
+      expect(call.arguments, {'q': 'bentos'});
+    });
+
+    test('pipeline: event DSL → fold → ChatMessage (full compose)', () async {
+      final buf = StringBuffer();
+      await runChatCodec([
+        'event',
+        'text_start',
+        'text_delta:the answer',
+        'text_stop',
+        'complete',
+      ], outBuf: buf);
+
+      final msg = await _foldJsonl(buf.toString().trimRight());
+      expect(msg.role, ChatRole.assistant);
+      expect((msg.content.first as TextContent).text, 'the answer');
+    });
+
+    test('fold output is a valid ChatMessage JSONL line', () async {
+      final events = [
+        const TextStart(0),
+        const TextDelta(index: 0, text: 'ok'),
+        const TextStop(0),
+        Complete(ChatMetadata(model: 'm', stopReason: const EndTurn())),
+      ];
+      final msg = await _foldJsonl(events.map(encodeEventJson).join('\n'));
+      final line = encodeMessageJson(msg);
+      expect(line.contains('\n'), isFalse, reason: 'must be one line');
+      expect(() => decodeMessageJson(line), returnsNormally);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // chat-codec validate (in-process via helper)
+  // ---------------------------------------------------------------------------
+
+  group('chat-codec validate', () {
+    test('valid event stream has zero errors', () {
+      final events = [
+        const TextStart(0),
+        const TextDelta(index: 0, text: 'hi'),
+        const TextStop(0),
+        Complete(ChatMetadata(model: 'x', stopReason: const EndTurn())),
+      ];
+      expect(_countErrors(events.map(encodeEventJson).join('\n')), 0);
+    });
+
+    test('invalid line is counted as an error', () {
+      final jsonl =
+          '${encodeEventJson(const TextStart(0))}\nnot-valid-json\n';
+      expect(_countErrors(jsonl), 1);
+    });
+
+    test('empty lines are ignored', () {
+      final events = [const TextStart(0), const TextStop(0)];
+      final jsonl = '\n${events.map(encodeEventJson).join('\n\n')}\n\n';
+      expect(_countErrors(jsonl), 0);
+    });
+
+    test('multiple invalid lines all counted', () {
+      final jsonl = 'bad1\nbad2\n${encodeEventJson(const TextStart(0))}\nbad3';
+      expect(_countErrors(jsonl), 3);
     });
   });
 }
