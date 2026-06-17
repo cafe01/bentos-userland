@@ -27,6 +27,7 @@ workspace:
 
 executables:
   chat:
+  chat-codec: chat_codec
   chat-data: chat_data
   chat-render: chat_render
   chatbot:
