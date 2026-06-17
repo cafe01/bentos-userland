@@ -23,7 +23,9 @@ Future<({int exitCode, String out})> runChatCodec(
 
 CommandRunner<int> _buildTestRunner(StringBuffer buf) {
   final runner = CommandRunner<int>('chat-codec', 'test runner');
-  runner.addCommand(MessageCommand()..out = buf);
+  runner
+    ..addCommand(MessageCommand()..out = buf)
+    ..addCommand(ContentCommand()..out = buf);
   return runner;
 }
 
@@ -85,6 +87,47 @@ void main() {
       const text = 'what is bentos?';
       final r = await runChatCodec(['message', '--user', text]);
       expect(() => decodeMessageJson(r.out.trimRight()), returnsNormally);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // chat-codec content
+  // ---------------------------------------------------------------------------
+
+  group('chat-codec content', () {
+    test('--text emits a TextContent JSONL line (NOT a ChatMessage)', () async {
+      final r = await runChatCodec(['content', '--text', 'hello block']);
+      expect(r.exitCode, 0);
+      final line = r.out.trimRight();
+      expect(line.contains('\n'), isFalse, reason: 'must be one line');
+      final content = decodeContentJson(line);
+      expect(content, isA<TextContent>());
+      expect((content as TextContent).text, 'hello block');
+    });
+
+    test('output is NOT decodable as a ChatMessage', () async {
+      final r = await runChatCodec(['content', '--text', 'raw block']);
+      expect(
+        () => decodeMessageJson(r.out.trimRight()),
+        throwsA(anything),
+        reason: 'content altitude must not produce a ChatMessage envelope',
+      );
+    });
+
+    test('round-trip: encodes and decodes with structural identity', () async {
+      const text = 'explain the Matter protocol in one sentence';
+      final r = await runChatCodec(['content', '--text', text]);
+      final content = decodeContentJson(r.out.trimRight());
+      expect(content, isA<TextContent>());
+      expect((content as TextContent).text, text);
+    });
+
+    test('no --text flag throws UsageException', () {
+      final runner = _buildTestRunner(StringBuffer());
+      expect(
+        () => runner.run(['content']),
+        throwsA(isA<UsageException>()),
+      );
     });
   });
 }
