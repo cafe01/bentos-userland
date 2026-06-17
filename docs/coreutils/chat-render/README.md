@@ -15,7 +15,7 @@ llm … | chat-render
 
 The reason is the streaming UX. Someone who turned streaming on wants to *see* the text being born. Folding the stream into a complete message before rendering would defeat the only reason streaming exists — you would be back to waiting for the whole answer, and the live "typing" would be gone. So `chat-render` consumes the same stream the device emits at `/dev/llm/*` — the very stream a fold transformer would otherwise eat — and renders it *as it flows*.
 
-Being a coreutil of the chat subsystem does **not** bind it to the `ChatMessage`. The `ChatEvent` vocabulary already carries the structure the renderer needs: the typed `Start/Delta/Stop` triads, the whole-`Block`, and `Complete` (see [chatinference-subsystem.md](../../../hq/workshop/bentos/chatinference-subsystem.md) §ChatEvent). From the event *type* alone the renderer knows a text block opened, that a delta is speech to print incrementally, that a block closed, that the turn finished. The `ChatMessage` is one projection of the content ontology; the `ChatEvent` stream is the other; they are isomorphic by construction. `chat-render` maps over the temporal projection — because that is the one that streams.
+Being a coreutil of the chat subsystem does **not** bind it to the `ChatMessage`. The `ChatEvent` vocabulary already carries the structure the renderer needs: the typed `Start/Delta/Stop` triads, the whole-`Block`, and `Complete` (see [chatinference-subsystem.md](../../../../../hq/workshop/bentos/chatinference-subsystem.md) §ChatEvent). From the event *type* alone the renderer knows a text block opened, that a delta is speech to print incrementally, that a block closed, that the turn finished. The `ChatMessage` is one projection of the content ontology; the `ChatEvent` stream is the other; they are isomorphic by construction. `chat-render` maps over the temporal projection — because that is the one that streams.
 
 The wire it reads is the subsystem's structured output, one frame per line (JSON convenience encoding):
 
@@ -180,7 +180,7 @@ The unit is the same in every case: a `Stream<ChatEvent>` on stdin. Where it cam
 
 ## Authority
 
-- The event / message ontology (the spine this maps over) — [`hq/workshop/bentos/chatinference-subsystem.md`](../../../hq/workshop/bentos/chatinference-subsystem.md)
+- The event / message ontology (the spine this maps over) — [`hq/workshop/bentos/chatinference-subsystem.md`](../../../../../hq/workshop/bentos/chatinference-subsystem.md)
 - The chat coreutils category + the projection family — [`../chat.md`](../chat.md)
-- The paradigm — the shell is the REPL, the turn is a job — [`../../../hq/workshop/humanos/userland/the-userland-paradigm.md`](../../../hq/workshop/humanos/userland/the-userland-paradigm.md)
+- The paradigm — the shell is the REPL, the turn is a job — [`../../../../../hq/workshop/humanos/userland/the-userland-paradigm.md`](../../../../../hq/workshop/humanos/userland/the-userland-paradigm.md)
 - General coreutil principles + the loop-ownership test — [`../README.md`](../README.md)

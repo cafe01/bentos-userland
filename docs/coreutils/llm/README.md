@@ -4,7 +4,7 @@
 llm "explain the Matter protocol in one sentence"
 ```
 
-`llm` is the ~~HumanOS~~  BentOS coreutil for talking to a language model. It is the **consumable face of the ChatInference subsystem** ([`chat-inference-dart`](../../../chat-inference-dart)) — nothing more. It opens a **device** — `/dev/llm/<vendor>/<model>` — and its `stdout` *is* the `Stream<ChatEvent>` that device produces, verbatim. `llm` is to the device what `cat` is to `read()`: a faithful, inert projection, oblivious to which company answered.
+`llm` is the ~~HumanOS~~  BentOS coreutil for talking to a language model. It is the **consumable face of the ChatInference subsystem** ([`chat-inference-dart`](../../../../chat-inference-dart)) — nothing more. It opens a **device** — `/dev/llm/<vendor>/<model>` — and its `stdout` *is* the `Stream<ChatEvent>` that device produces, verbatim. `llm` is to the device what `cat` is to `read()`: a faithful, inert projection, oblivious to which company answered.
 
 It holds no API keys and knows no vendors. Provider, credentials, and wire protocol all live in the **driver** behind the device, where the OS manages them once for every program. Swap the device, swap the model — the tool never changes.
 
@@ -96,7 +96,7 @@ The casual register projects the stream to plain text. The scriptable register e
 | `--function-choice <auto\|none\|name>` | `functionChoice` | Constrain whether/which function the model may call. |
 
 > [!NOTE]
-> **`--output-format jsonl` emits events, not a message.** You get the wire of [chatinference-subsystem.md](../../../hq/workshop/bentos/chatinference-subsystem.md) — `{"type":"text_delta",…}` … `{"type":"complete",…}`, one per line. A consumer that matches only `block` and `complete` works with or without `--stream`; the triads are the extra capability streaming switches on. To collapse the stream into the assembled `ChatMessage`, fold it downstream: `… | chat-data fold`.
+> **`--output-format jsonl` emits events, not a message.** You get the wire of [chatinference-subsystem.md](../../../../../hq/workshop/bentos/chatinference-subsystem.md) — `{"type":"text_delta",…}` … `{"type":"complete",…}`, one per line. A consumer that matches only `block` and `complete` works with or without `--stream`; the triads are the extra capability streaming switches on. To collapse the stream into the assembled `ChatMessage`, fold it downstream: `… | chat-data fold`.
 
 ### One turn as a filter
 

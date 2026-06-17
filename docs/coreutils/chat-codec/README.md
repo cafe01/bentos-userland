@@ -4,7 +4,7 @@
 chat-codec message --user "explain the Matter protocol in one sentence"
 ```
 
-`chat-codec` is the **codec-as-CLI** for the chat subsystem's data model — the shell face of `package:chat_inference`. It constructs, transcodes, inspects, and folds the `ChatContent` / `ChatMessage` / `ChatEvent` ontology ([chatinference-subsystem.md](../../../../hq/workshop/bentos/chatinference-subsystem.md)) from the shell. It invents nothing above the substrate: it is the ontology's honest shell face, the `printf`-and-`iconv` of the chat record in one program.
+`chat-codec` is the **codec-as-CLI** for the chat subsystem's data model — the shell face of `package:chat_inference`. It constructs, transcodes, inspects, and folds the `ChatContent` / `ChatMessage` / `ChatEvent` ontology ([chatinference-subsystem.md](../../../../../hq/workshop/bentos/chatinference-subsystem.md)) from the shell. It invents nothing above the substrate: it is the ontology's honest shell face, the `printf`-and-`iconv` of the chat record in one program.
 
 > [!NOTE]
 > **`chat-codec` is the evolution of `chat-data`.** The earlier `chat-data` was the constructor face alone (args → records). Once Encoding and Format became formal axes of the subsystem, the constructor and the transcoder revealed themselves as **one operation** (below), and the data-model tool absorbed both. `chat-codec` is that unified tool; `chat-data` is retired into it.
@@ -137,8 +137,8 @@ It sits beside `llm` as the other half of the chat coreutil family, and the two 
 
 ## Authority
 
-- The data model this is a codec for — [`chatinference-subsystem.md`](../../../../hq/workshop/bentos/chatinference-subsystem.md)
-- The chat coreutils category + the projection family — [`../../../coreutils/chat.md`](../../../coreutils/chat.md)
+- The data model this is a codec for — [`chatinference-subsystem.md`](../../../../../hq/workshop/bentos/chatinference-subsystem.md)
+- The chat coreutils category + the projection family — [`../chat.md`](../chat.md)
 - The rich renderer that stacks on the base text projection — [`../chat-render/README.md`](../chat-render/README.md)
-- General coreutil principles + the loop-ownership test — [`../../../coreutils/README.md`](../../../coreutils/README.md)
+- General coreutil principles + the loop-ownership test — [`../README.md`](../README.md)
 - The SDK transformer family this mirrors — `lib/chat-inference-dart/lib/src/chat_transformers.dart`
