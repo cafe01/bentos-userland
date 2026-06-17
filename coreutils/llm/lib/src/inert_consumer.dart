@@ -73,40 +73,54 @@ class InertConsumer {
   }
 
   /// Runs one inference cycle in the scriptable register: emits each
-  /// [ChatEvent] as one proto3 JSON line to [out] (the raw event stream —
-  /// `--output-format jsonl`). Never folds; folding is downstream (`chat-data
-  /// fold`).
+  /// [ChatEvent] as one frame to [out] / [stdout], in the encoding selected
+  /// by [outputEncoding]:
   ///
-  /// If [echoInput] is true, each input message is re-emitted on [out] before
-  /// the event stream begins — so stdout carries the full turn transcript
-  /// (input messages + output events) suitable for `>> messages.jsonl`.
+  /// - `'jsonl'` (default): one proto3-JSON string per line on [out] (injectable
+  ///   for testing).
+  /// - `'protobuf'`: one length-prefix framed protobuf binary record written
+  ///   directly to [stdout] (binary; [out] is ignored for this path).
   ///
-  /// [systemMessages] are prepended before [messages]; they are NOT echoed
-  /// (they are config, not transcript).
+  /// Never folds; folding is downstream (`chat-data fold`).
   ///
-  /// [out] and [errOut] are injectable for testing; production defaults to the
-  /// real stdout/stderr.
+  /// If [echoInput] is true, each input message is re-emitted before the event
+  /// stream — so stdout carries the full turn transcript (input messages +
+  /// output events) suitable for `>> messages.jsonl`. [systemMessages] are NOT
+  /// echoed (they are config, not transcript).
+  ///
+  /// [out] and [errOut] are injectable for testing (JSONL path only).
   Future<void> eventTurn(
     List<ChatMessage> messages, {
     List<ChatMessage> systemMessages = const [],
     ChatIOConfig config = const ChatIOConfig(),
     bool verbose = false,
     bool echoInput = false,
+    String outputEncoding = 'protobuf',
     StringSink? out,
     StringSink? errOut,
   }) async {
     out ??= stdout;
     errOut ??= stderr;
 
+    final useJsonl = outputEncoding == 'jsonl';
+
     if (echoInput) {
       for (final m in messages) {
-        out.writeln(encodeMessageJson(m));
+        if (useJsonl) {
+          out.writeln(encodeMessageJson(m));
+        } else {
+          stdout.add(encodeMessageFrame(m));
+        }
       }
     }
 
     final wire = [...systemMessages, ...messages];
     await for (final event in _device.infer(wire, config)) {
-      out.writeln(encodeEventJson(event));
+      if (useJsonl) {
+        out.writeln(encodeEventJson(event));
+      } else {
+        stdout.add(encodeEventFrame(event));
+      }
       if (verbose && event is Complete) {
         final meta = event.metadata;
         errOut.writeln(

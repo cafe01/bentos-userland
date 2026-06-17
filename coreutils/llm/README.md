@@ -14,17 +14,6 @@ It holds no API keys and knows no vendors. Provider, credentials, and wire proto
 > [!TIP]
 > `llm` has two registers, same tool, same device — the flags pick the projection of the stream. **Casual**: `llm "…"` and `llm chat` — text out, the answer streaming to your terminal. **Scriptable**: `… | llm --output-format jsonl` — the structured `ChatEvent` stream, one frame per line, a Unix filter you compose a turn-loop out of.
 
-> [!WARNING]
-> The term `format` has specific meaning on the chat subsystem. (the format/encoding/mode) -- `llm` must be polished to project it faithfully. 
-> Authority: hq/workshop/bentos/chatinference-subsystem.md 
-> TL;DR:
-> - format = unstructured/structures
-> - encoding = wire binary encoding -- currently supported: protobuf, JSONL (any other que be added eventually, binary or text based, eg, BSON, TOML, ...)
-> - mode = streaming chat inference response
-> > [!IMPORTANT]
-> > Im mentioning this here, but thats actually chat-codec territory -- `llm` as well as all other coreutil/program that talks the chat inference protocol is a chat-codec consumer (as lib), because internally all work with typed data, ofc.
-> >
-> > Inside the workflow/pipeline job, bytes should flow in the most efficient encoding possible -- ie, pbuf marshaling is obviously cheaper than JSON, right? Pick text based encoding only on the nodes where it really pays off. (eg, IN/OUT from/to .jsonl file being the canonical use case)
 
 
 
@@ -97,11 +86,13 @@ The casual register projects the stream to plain text. The scriptable register e
 
 | Flag | `ChatIOConfig` field | Meaning |
 |---|---|---|
-| `--input-format <text\|jsonl>` | `inputFormat` | `text` (default): stdin/arg is one user prompt. `jsonl`: stdin is a conversation — one `ChatMessage` per line. |
-| `--output-format <text\|jsonl>` | `outputFormat` | `text` (default): the stream projected to plain text. `jsonl`: the raw `ChatEvent` stream, one frame per line. |
-| `--[no-]stream` | `streaming` | `--stream` (default): typed triads — live, per-delta events. `--no-stream`: whole-`Block` events only (still events, no folding). |
-| `--echo-input` | — | echo-class helper: re-emit each input message on `stdout`, in the output vocabulary, before the answer — so `stdout` carries the **full turn transcript**. Requires structured in *and* out. |
-| `--function <file.json>` | `functions` | Declare a callable function (JSON schema). Repeatable. |
+| `--input-format <text\|typed>` | `inputFormat` | `text` (default): stdin/arg is one user prompt. `typed`: stdin is a conversation — one `ChatMessage` frame per record. |
+| `--output-format <text\|typed>` | `outputFormat` | `text` (default): the stream projected to plain text. `typed`: the raw `ChatEvent` stream, one frame per record. |
+| `--input-encoding <protobuf\|jsonl>` | — (channel binding) | Honoured when `--input-format typed`. `protobuf` (default): length-prefix framed binary. `jsonl`: newline-framed proto3-JSON. Ignored under `text` format. |
+| `--output-encoding <protobuf\|jsonl>` | — (channel binding) | Honoured when `--output-format typed`. `protobuf` (default): length-prefix framed binary. `jsonl`: newline-framed proto3-JSON. Ignored under `text` format. |
+| `--output-mode <streaming\|buffered>` | `streaming` | `streaming` (default): typed triads — live, per-delta events. `buffered`: whole-`Block` events only (still events, no folding). |
+| `--echo-input` | — | echo-class helper: re-emit each input message on `stdout`, in the output vocabulary, before the answer — so `stdout` carries the **full turn transcript**. Requires `--input-format typed` and `--output-format typed`. |
+| `--function <file.json>` | `functions` | Declare a callable function (JSON schema). Repeatable. Requires `--output-format typed`. |
 | `--function-choice <auto\|none\|name>` | `functionChoice` | Constrain whether/which function the model may call. |
 
 > [!NOTE]
@@ -112,7 +103,8 @@ The casual register projects the stream to plain text. The scriptable register e
 The conversation lives in a JSONL file — one `ChatMessage` per line, the transaction-log form. A turn is *fetch the history, run the model, fold the reply, append it*:
 
 ```sh
-cat messages.jsonl | llm --input-format jsonl --output-format jsonl \
+cat messages.jsonl | llm --input-format typed --input-encoding jsonl \
+  --output-format typed --output-encoding jsonl \
   | chat-data fold >> messages.jsonl
 #   └ fetch          └ run the turn (event stream out)   └ fold to a message   └ store (append = writeback)
 ```
@@ -120,7 +112,8 @@ cat messages.jsonl | llm --input-format jsonl --output-format jsonl \
 The fold is explicit and composable — and because the events flow through a pipe, you can tee them to a live view at the same time:
 
 ```sh
-cat messages.jsonl | llm --input-format jsonl --output-format jsonl \
+cat messages.jsonl | llm --input-format typed --input-encoding jsonl \
+  --output-format typed --output-encoding jsonl \
   | tee >(chat-render) | chat-data fold >> messages.jsonl
 #   render the turn live AND fold it to the record — one stream, the shell tees it.
 ```
@@ -136,7 +129,8 @@ Function calling needs no agent runtime — it is a `while` loop over `llm`. The
 
 ```sh
 while true; do
-  cat messages.jsonl | llm --input-format jsonl --output-format jsonl \
+  cat messages.jsonl | llm --input-format typed --input-encoding jsonl \
+    --output-format typed --output-encoding jsonl \
     --function weather.json | chat-data fold >> messages.jsonl
   # if the last message is a function call → execute it, append the result, continue
   # else → done
@@ -205,7 +199,7 @@ It is the `cat` of inference: a thin, inert consumer of an OS primitive, oblivio
 | Surface | State |
 |---|---|
 | `llm <prompt>` · `llm chat` · `llm models` · `llm config` (casual register) | ✅ shipped |
-| `--output-format jsonl` emitting the **event stream** (not a folded message) | build target — supersedes the current folded-message output (the Mode×Format conflation) |
+| `--output-format typed` emitting the **event stream** (not a folded message) | ✅ shipped (t-304) |
 | `--echo-input` (full-transcript echo) | build target |
 | Function calling (`--function` / `--function-choice`) | build target |
 

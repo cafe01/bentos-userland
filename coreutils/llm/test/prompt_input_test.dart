@@ -190,6 +190,7 @@ void main() {
       final out = StringBuffer();
       await consumer.eventTurn(
         [const ChatMessage(role: ChatRole.user, content: [TextContent('hi')])],
+        outputEncoding: 'jsonl',
         out: out,
       );
 
@@ -222,6 +223,7 @@ void main() {
       final out = StringBuffer();
       await consumer.eventTurn(
         [const ChatMessage(role: ChatRole.user, content: [TextContent('search')])],
+        outputEncoding: 'jsonl',
         out: out,
       );
 
@@ -246,7 +248,7 @@ void main() {
       final consumer = _makeConsumer(script);
 
       final out = StringBuffer();
-      await consumer.eventTurn(input, echoInput: true, out: out);
+      await consumer.eventTurn(input, echoInput: true, outputEncoding: 'jsonl', out: out);
 
       final lines = out.toString().trimRight().split('\n');
       // input message (1) + script events (4) = 5 lines
@@ -287,7 +289,7 @@ void main() {
 
       // Step 2: run the turn (eventTurn) — emits events, not a folded message
       final out = StringBuffer();
-      await consumer.eventTurn(messages, out: out);
+      await consumer.eventTurn(messages, outputEncoding: 'jsonl', out: out);
 
       // Step 3: output is N event lines (one per script entry)
       final lines = out.toString().trimRight().split('\n');
@@ -393,6 +395,7 @@ void main() {
             content: [TextContent("What's the weather in Tokyo?")],
           ),
         ],
+        outputEncoding: 'jsonl',
         out: out,
       );
 

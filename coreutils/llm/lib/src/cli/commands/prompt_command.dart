@@ -16,38 +16,56 @@ class PromptCommand extends LlmBaseCommand {
     argParser
       ..addOption(
         'input-format',
-        allowed: ['text', 'jsonl'],
+        allowed: ['text', 'typed'],
         defaultsTo: 'text',
-        help: 'Input mode. '
+        help: 'Input format. '
             'text (default): stdin or arg is a single user prompt. '
-            'jsonl: stdin is a conversation — one ChatMessage (proto3 JSON) per line.',
+            'typed: stdin is a conversation — one ChatMessage frame per record.',
       )
       ..addOption(
         'output-format',
-        allowed: ['text', 'jsonl'],
+        allowed: ['text', 'typed'],
         defaultsTo: 'text',
-        help: 'Output mode. '
+        help: 'Output format. '
             'text (default): stream the answer as plain text. '
-            'jsonl: emit the assembled assistant ChatMessage as one JSON line.',
+            'typed: emit the raw ChatEvent stream, one frame per record.',
       )
-      ..addFlag(
-        'stream',
-        defaultsTo: true,
-        help: 'Stream tokens as generated (default: on). '
-            'Use --no-stream for whole-block events only (still events, no folding).',
+      ..addOption(
+        'input-encoding',
+        allowed: ['protobuf', 'jsonl'],
+        defaultsTo: 'protobuf',
+        help: 'Input channel encoding (honoured when --input-format=typed). '
+            'protobuf (default): length-prefix framed protobuf binary. '
+            'jsonl: newline-framed proto3-JSON records.',
+      )
+      ..addOption(
+        'output-encoding',
+        allowed: ['protobuf', 'jsonl'],
+        defaultsTo: 'protobuf',
+        help: 'Output channel encoding (honoured when --output-format=typed). '
+            'protobuf (default): length-prefix framed protobuf binary. '
+            'jsonl: newline-framed proto3-JSON records.',
+      )
+      ..addOption(
+        'output-mode',
+        allowed: ['streaming', 'buffered'],
+        defaultsTo: 'streaming',
+        help: 'Output mode. '
+            'streaming (default): typed triads — live, per-delta events. '
+            'buffered: whole-Block events only (still events, no folding).',
       )
       ..addFlag(
         'echo-input',
         negatable: false,
         help: 'Re-emit each input message on stdout before the event stream, '
             'in the output vocabulary — so stdout carries the full turn transcript. '
-            'Requires --input-format jsonl and --output-format jsonl.',
+            'Requires --input-format typed and --output-format typed.',
       )
       ..addMultiOption(
         'function',
         help: 'Declare a callable function from a JSON file '
             '({"name","description","inputSchema"}). Repeatable. '
-            'Requires --output-format jsonl.',
+            'Requires --output-format typed.',
         valueHelp: 'file.json',
       )
       ..addOption(
@@ -72,21 +90,22 @@ class PromptCommand extends LlmBaseCommand {
   String get invocation =>
       'llm [-d <device>] [-s <system>]... [-t <n>] [--temperature <f>] [-v] <prompt>\n'
       '  or: echo … | llm\n'
-      '  or: cat messages.jsonl | llm --input-format jsonl --output-format jsonl';
+      '  or: cat messages.jsonl | llm --input-format typed --input-encoding jsonl '
+      '--output-format typed --output-encoding jsonl';
 
   /// Extends the base config with the scriptable-register flags.
   /// File loading (--function) and output-format validation happen in run().
   @override
   ChatIOConfig get ioConfig {
-    final inputFmt = (argResults!['input-format'] as String) == 'jsonl'
+    final inputFmt = (argResults!['input-format'] as String) == 'typed'
         ? Format.structured
         : Format.unstructured;
-    final outputFmt = (argResults!['output-format'] as String) == 'jsonl'
+    final outputFmt = (argResults!['output-format'] as String) == 'typed'
         ? Format.structured
         : Format.unstructured;
 
-    // streaming: explicit --stream/--no-stream wins; otherwise on by default.
-    final bool streaming = argResults!['stream'] as bool;
+    final bool streaming =
+        (argResults!['output-mode'] as String) == 'streaming';
 
     return super.ioConfig.copyWith(
       inputFormat: inputFmt,
@@ -132,21 +151,26 @@ class PromptCommand extends LlmBaseCommand {
         functionPaths.isEmpty ? null : functionPaths.map(_loadFunctionFile).toList();
 
     var config = ioConfig;
-    final isJsonlInput = config.inputFormat == Format.structured;
-    final isJsonlOutput = config.outputFormat == Format.structured;
+    final isTypedInput = config.inputFormat == Format.structured;
+    final isTypedOutput = config.outputFormat == Format.structured;
+    // Encoding flags are only honoured when format=typed; silently ignored otherwise.
+    final inputEncoding =
+        isTypedInput ? argResults!['input-encoding'] as String : 'protobuf';
+    final outputEncoding =
+        isTypedOutput ? argResults!['output-encoding'] as String : 'protobuf';
     final echoInput = argResults!['echo-input'] as bool;
 
-    if (functions != null && !isJsonlOutput) {
+    if (functions != null && !isTypedOutput) {
       throw UsageException(
-        '--function requires --output-format jsonl '
+        '--function requires --output-format typed '
         '(function calls cannot be serialized in text mode)',
         usage,
       );
     }
 
-    if (echoInput && !(isJsonlInput && isJsonlOutput)) {
+    if (echoInput && !(isTypedInput && isTypedOutput)) {
       throw UsageException(
-        '--echo-input requires --input-format jsonl and --output-format jsonl',
+        '--echo-input requires --input-format typed and --output-format typed',
         usage,
       );
     }
@@ -155,19 +179,20 @@ class PromptCommand extends LlmBaseCommand {
       config = config.copyWith(functions: functions);
     }
 
-    final messages = isJsonlInput
+    final messages = isTypedInput && inputEncoding == 'jsonl'
         ? await _resolveJsonlMessages(argResults!.rest)
         : await _resolveTextMessages(argResults!.rest);
     if (messages == null) return 64; // usage error already reported
 
     try {
-      if (isJsonlOutput) {
+      if (isTypedOutput) {
         await consumer.eventTurn(
           messages,
           systemMessages: systemMessages,
           config: config,
           verbose: verbose,
           echoInput: echoInput,
+          outputEncoding: outputEncoding,
         );
       } else {
         await consumer.streamTurn(
@@ -198,18 +223,19 @@ class PromptCommand extends LlmBaseCommand {
     return [ChatMessage.userText(prompt)];
   }
 
-  /// jsonl mode: stdin is a conversation — one ChatMessage per non-empty line.
+  /// typed+jsonl mode: stdin is a conversation — one ChatMessage per non-empty line.
   /// Positional args are rejected (they would be silently ignored otherwise).
   Future<List<ChatMessage>?> _resolveJsonlMessages(List<String> rest) async {
     if (rest.isNotEmpty) {
       throw UsageException(
-        '--input-format jsonl reads from stdin; positional args are not accepted',
+        '--input-format typed --input-encoding jsonl reads from stdin; '
+        'positional args are not accepted',
         usage,
       );
     }
     if (stdin.hasTerminal) {
       throw UsageException(
-        '--input-format jsonl requires piped stdin (no terminal)',
+        '--input-format typed --input-encoding jsonl requires piped stdin (no terminal)',
         usage,
       );
     }
@@ -219,13 +245,14 @@ class PromptCommand extends LlmBaseCommand {
         .where((l) => l.trim().isNotEmpty)
         .toList();
     if (lines.isEmpty) {
-      stderr.writeln('llm: --input-format jsonl: empty input');
+      stderr.writeln('llm: --input-format typed --input-encoding jsonl: empty input');
       return null;
     }
     try {
       return lines.map(decodeMessageJson).toList();
     } on FormatException catch (e) {
-      stderr.writeln('llm: --input-format jsonl: malformed line — $e');
+      stderr.writeln(
+          'llm: --input-format typed --input-encoding jsonl: malformed line — $e');
       return null;
     }
   }
