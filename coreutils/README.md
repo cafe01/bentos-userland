@@ -5,7 +5,7 @@
 >
 > **The canonical theory now lives in the docs**, not here: the thesis is [`../docs/coreutil-lib-interface.md`](../docs/coreutil-lib-interface.md), the architecture is [`../docs/pipeline-jobs.md`](../docs/pipeline-jobs.md). This file is kept as a **catalog** of what currently exists. Where the text below re-argues who-owns-the-loop or the dual nature, defer to the docs.
 
-The HumanOS coreutils — small native programs the agent orchestrates. Single-purpose, agent-facing: invoked, do one thing, terminate. Composable via pipes (IPC) or linked in-process as libraries. This directory **is** the programmatic Agent SDK. Taxonomy authority: `hq/workshop/humanos/userland.md`.
+The ~~HumanOS~~ BentOS coreutils — small native programs the agent orchestrates. Single-purpose, agent-facing: invoked, do one thing, terminate. Composable via pipes (IPC) or linked in-process as libraries. This directory **is** the programmatic Agent SDK. Taxonomy authority: `hq/workshop/humanos/userland.md`.
 
 ## The thesis: the SDK *is* the coreutils
 

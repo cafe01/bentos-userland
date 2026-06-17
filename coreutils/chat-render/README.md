@@ -39,7 +39,7 @@ The wire it reads is the subsystem's structured output, one frame per line (JSON
 | `SignatureDelta` | verification artifact — **never surfaced** (opaque, round-trip data, not for the human — no flag) |
 | `FunctionCallStart` / `FunctionArgsDelta` / `FunctionCallStop` | a function call — a call card (name known at open; args assemble) |
 | `Block` (whole) | a non-fragmenting block — rendered whole, by its `ChatContent` kind |
-| `Complete` | turn boundary — a minimal end-of-turn marker (token usage is `stats`' job, never `chat-render`'s) |
+| `Complete` | turn boundary — a minimal end-of-turn marker (token usage is `stats`' job, ~~never `chat-render`'s~~ -- WHY? 'chat-render' obviously must be able to render the Complete event! (metabolism propioception) |
 
 > [!NOTE]
 > **Speech streams; arguments do not.** Text and thinking are consumable per-delta — the incremental print *is* the UX. Function-call argument deltas are transport artifacts, inconsumable piecemeal — nobody renders half a JSON argument (chatinference §ChatEvent, "semantic asymmetry"). The renderer shows the call is *forming* but commits to the call only at `FunctionCallStop`. The minimal per-block state it holds — which block is open, the args accumulating for display — is exactly what *rendering* needs, and never a fold into a `ChatMessage`.

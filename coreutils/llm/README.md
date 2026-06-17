@@ -4,7 +4,7 @@
 llm "explain the Matter protocol in one sentence"
 ```
 
-`llm` is the HumanOS coreutil for talking to a language model. It is the **consumable face of the ChatInference subsystem** ([`chat-inference-dart`](../../../chat-inference-dart)) — nothing more. It opens a **device** — `/dev/llm/<vendor>/<model>` — and its `stdout` *is* the `Stream<ChatEvent>` that device produces, verbatim. `llm` is to the device what `cat` is to `read()`: a faithful, inert projection, oblivious to which company answered.
+`llm` is the ~~HumanOS~~  BentOS coreutil for talking to a language model. It is the **consumable face of the ChatInference subsystem** ([`chat-inference-dart`](../../../chat-inference-dart)) — nothing more. It opens a **device** — `/dev/llm/<vendor>/<model>` — and its `stdout` *is* the `Stream<ChatEvent>` that device produces, verbatim. `llm` is to the device what `cat` is to `read()`: a faithful, inert projection, oblivious to which company answered.
 
 It holds no API keys and knows no vendors. Provider, credentials, and wire protocol all live in the **driver** behind the device, where the OS manages them once for every program. Swap the device, swap the model — the tool never changes.
 
@@ -13,6 +13,21 @@ It holds no API keys and knows no vendors. Provider, credentials, and wire proto
 
 > [!TIP]
 > `llm` has two registers, same tool, same device — the flags pick the projection of the stream. **Casual**: `llm "…"` and `llm chat` — text out, the answer streaming to your terminal. **Scriptable**: `… | llm --output-format jsonl` — the structured `ChatEvent` stream, one frame per line, a Unix filter you compose a turn-loop out of.
+
+> [!WARNING]
+> The term `format` has specific meaning on the chat subsystem. (the format/encoding/mode) -- `llm` must be polished to project it faithfully. 
+> Authority: hq/workshop/bentos/chatinference-subsystem.md 
+> TL;DR:
+> - format = unstructured/structures
+> - encoding = wire binary encoding -- currently supported: protobuf, JSONL (any other que be added eventually, binary or text based, eg, BSON, TOML, ...)
+> - mode = streaming chat inference response
+> > [!IMPORTANT]
+> > Im mentioning this here, but thats actually chat-codec territory -- `llm` as well as all other coreutil/program that talks the chat inference protocol is a chat-codec consumer (as lib), because internally all work with typed data, ofc.
+> >
+> > Inside the workflow/pipeline job, bytes should flow in the most efficient encoding possible -- ie, pbuf marshaling is obviously cheaper than JSON, right? Pick text based encoding only on the nodes where it really pays off. (eg, IN/OUT from/to .jsonl file being the canonical use case)
+
+
+
 
 ---
 
