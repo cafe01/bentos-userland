@@ -3,6 +3,7 @@ library;
 import 'package:args/command_runner.dart';
 
 import 'commands/content_command.dart';
+import 'commands/event_command.dart';
 import 'commands/message_command.dart';
 
 CommandRunner<int> buildChatCodecRunner() {
@@ -12,5 +13,6 @@ CommandRunner<int> buildChatCodecRunner() {
     'Construct, transcode, inspect, and fold ChatContent / ChatMessage / ChatEvent from the shell.',
   )
     ..addCommand(MessageCommand())
-    ..addCommand(ContentCommand());
+    ..addCommand(ContentCommand())
+    ..addCommand(EventCommand());
 }

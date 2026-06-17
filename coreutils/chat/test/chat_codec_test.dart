@@ -25,7 +25,8 @@ CommandRunner<int> _buildTestRunner(StringBuffer buf) {
   final runner = CommandRunner<int>('chat-codec', 'test runner');
   runner
     ..addCommand(MessageCommand()..out = buf)
-    ..addCommand(ContentCommand()..out = buf);
+    ..addCommand(ContentCommand()..out = buf)
+    ..addCommand(EventCommand()..out = buf);
   return runner;
 }
 
@@ -128,6 +129,113 @@ void main() {
         () => runner.run(['content']),
         throwsA(isA<UsageException>()),
       );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // chat-codec event
+  // ---------------------------------------------------------------------------
+
+  group('chat-codec event', () {
+    test('text_start emits TextStart', () async {
+      final r = await runChatCodec(['event', 'text_start']);
+      expect(r.exitCode, 0);
+      final ev = decodeEventJson(r.out.trimRight());
+      expect(ev, isA<TextStart>());
+    });
+
+    test('text_delta:Hello emits TextDelta with correct text', () async {
+      final r = await runChatCodec(['event', 'text_delta:Hello']);
+      final ev = decodeEventJson(r.out.trimRight());
+      expect(ev, isA<TextDelta>());
+      expect((ev as TextDelta).text, 'Hello');
+    });
+
+    test('text_stop emits TextStop', () async {
+      final r = await runChatCodec(['event', 'text_stop']);
+      expect(decodeEventJson(r.out.trimRight()), isA<TextStop>());
+    });
+
+    test('multiple tokens emit one JSON line each', () async {
+      final r = await runChatCodec([
+        'event',
+        'text_start',
+        'text_delta:Hi',
+        'text_stop',
+        'complete',
+      ]);
+      final lines =
+          r.out.trimRight().split('\n').where((l) => l.isNotEmpty).toList();
+      expect(lines, hasLength(4));
+      expect(decodeEventJson(lines[0]), isA<TextStart>());
+      expect(decodeEventJson(lines[1]), isA<TextDelta>());
+      expect(decodeEventJson(lines[2]), isA<TextStop>());
+      expect(decodeEventJson(lines[3]), isA<Complete>());
+    });
+
+    test('complete uses stub metadata by default', () async {
+      final r = await runChatCodec(['event', 'complete']);
+      final ev = decodeEventJson(r.out.trimRight()) as Complete;
+      expect(ev.metadata.model, 'stub');
+      expect(ev.metadata.stopReason, isA<EndTurn>());
+    });
+
+    test('complete:mymodel:max_tokens uses provided metadata', () async {
+      final r = await runChatCodec(['event', 'complete:mymodel:max_tokens']);
+      final ev = decodeEventJson(r.out.trimRight()) as Complete;
+      expect(ev.metadata.model, 'mymodel');
+      expect(ev.metadata.stopReason, isA<MaxTokens>());
+    });
+
+    test('fn_start:call1:get_weather emits FunctionCallStart', () async {
+      final r = await runChatCodec(['event', 'fn_start:call1:get_weather']);
+      final ev = decodeEventJson(r.out.trimRight());
+      expect(ev, isA<FunctionCallStart>());
+      expect((ev as FunctionCallStart).id, 'call1');
+      expect(ev.name, 'get_weather');
+    });
+
+    test('fn_args emits FunctionArgsDelta', () async {
+      final r = await runChatCodec(['event', 'fn_args:{"q":"bentos"}']);
+      final ev = decodeEventJson(r.out.trimRight()) as FunctionArgsDelta;
+      expect(ev.partialJson, '{"q":"bentos"}');
+    });
+
+    test('fn_stop emits FunctionCallStop', () async {
+      final r = await runChatCodec(['event', 'fn_stop']);
+      expect(decodeEventJson(r.out.trimRight()), isA<FunctionCallStop>());
+    });
+
+    test('thinking_start/delta/stop emits correct events', () async {
+      final r = await runChatCodec([
+        'event',
+        'thinking_start',
+        'thinking_delta:let me think',
+        'thinking_stop',
+      ]);
+      final lines =
+          r.out.trimRight().split('\n').where((l) => l.isNotEmpty).toList();
+      expect(lines, hasLength(3));
+      expect(decodeEventJson(lines[0]), isA<ThinkingStart>());
+      expect(decodeEventJson(lines[1]), isA<ThinkingDelta>());
+      expect(decodeEventJson(lines[2]), isA<ThinkingStop>());
+    });
+
+    test('fixture DSL: every line round-trips through decodeEventJson', () async {
+      final r = await runChatCodec([
+        'event',
+        'text_start',
+        'text_delta:part one ',
+        'text_delta:part two',
+        'text_stop',
+        'complete:fixture-model:end_turn',
+      ]);
+      final lines =
+          r.out.trimRight().split('\n').where((l) => l.isNotEmpty).toList();
+      expect(lines, hasLength(5));
+      for (final line in lines) {
+        expect(() => decodeEventJson(line), returnsNormally);
+      }
     });
   });
 }
