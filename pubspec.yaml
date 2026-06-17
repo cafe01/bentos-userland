@@ -20,7 +20,6 @@ workspace:
   - coreutils/llm
   - coreutils/chatbot
   - coreutils/websearch
-  - coreutils/chat-data
   - coreutils/chat-render
   - coreutils/tx
   - coreutils/chat
@@ -28,7 +27,6 @@ workspace:
 executables:
   chat:
   chat-codec: chat_codec
-  chat-data: chat_data
   chat-render: chat_render
   chatbot:
   llm:
@@ -48,8 +46,6 @@ dependencies:
   # coreutil libs — exposed via bin/ shells
   chat:
     path: coreutils/chat
-  chat_data:
-    path: coreutils/chat-data
   chat_render:
     path: coreutils/chat-render
   chatbot:
