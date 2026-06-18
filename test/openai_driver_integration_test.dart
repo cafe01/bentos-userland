@@ -10,7 +10,6 @@
 
 import 'dart:typed_data';
 
-import 'package:bentos_driver_sdk/bentos_driver_sdk.dart';
 import 'package:bentos_userland/bentos_userland.dart';
 import 'package:bentos_userland/chat.dart';
 import 'package:openai_chat_driver/openai_chat_driver.dart';
@@ -22,7 +21,7 @@ import 'package:test/test.dart';
 // ---------------------------------------------------------------------------
 
 StreamChannelController<Uint8List> _bindDriver(
-  ConfiguredStreamDriver<ChatIOConfig, List<ChatMessage>, ChatEvent, Object> driver,
+  ChatInferenceDriver driver,
 ) {
   final pair = StreamChannelController<Uint8List>();
   driver.serveChannel(pair.foreign);
