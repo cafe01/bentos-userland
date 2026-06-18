@@ -132,8 +132,8 @@ void main() {
   group('draining regression', () {
     test('all TextDelta chunks survive multi-chunk fake stream', () async {
       // The fake provider emits 8-char chunks for a long enough reply that
-      // P4's coalescing can expose the draining bug if decodeEventFrames
-      // is not used correctly in the consumer.
+      // P4's coalescing can expose the draining bug if the consumer does not
+      // drain every buffered event.
       final pair = _bindDriver(openaiChatDriver(model: 'gpt-4o', apiKey: 'fake'));
       final bentos = InProcessBentos(capMap: {'/dev/llm/': pair.local});
       final device = BentosChatDevice(bentos, '/dev/llm/openai/multi');
