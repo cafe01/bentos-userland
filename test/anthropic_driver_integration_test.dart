@@ -17,7 +17,6 @@
 import 'dart:typed_data';
 
 import 'package:anthropic_chat_driver/anthropic_chat_driver.dart';
-import 'package:bentos_driver_sdk/bentos_driver_sdk.dart';
 import 'package:bentos_userland/bentos_userland.dart';
 import 'package:bentos_userland/chat.dart';
 import 'package:stream_channel/stream_channel.dart';
@@ -30,7 +29,7 @@ void main() {
 // ---------------------------------------------------------------------------
 
 StreamChannelController<Uint8List> bindDriver(
-  ConfiguredStreamDriver<ChatIOConfig, List<ChatMessage>, ChatEvent, Object> driver,
+  ChatInferenceDriver driver,
 ) {
   final pair = StreamChannelController<Uint8List>();
   driver.serveChannel(pair.foreign);
@@ -103,7 +102,7 @@ group('P4 ioctl config', () {
     expect(events.last, isA<Complete>());
   });
 
-  test('structured input format — messages encoded as length-prefixed frames', () async {
+  test('structured input format — messages encoded as RAW records', () async {
     final events = await inferEvents(
       pair,
       [ChatMessage.userText('structured')],

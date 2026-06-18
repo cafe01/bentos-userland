@@ -35,15 +35,15 @@ void main() {
       onOpen: (req, ctx) => FuseResponse(open: OpenReply()),
       onIoctl: (req, ctx) => FuseResponse(ioctl: IoctlReply()),
       onWrite: (req, ctx) {
-        // The binding's frames must be decodable by the subsystem codec.
-        // infer() writes encodeMessageFrame() — strip the 4-byte size prefix.
-        received.add(decodeMessage(req.data.sublist(4)));
+        // RAW wire (t-305): one write = one message record, no length-prefix.
+        // The record must decode straight via the subsystem codec.
+        received.add(decodeMessage(req.data));
         return FuseResponse(write: WriteReply(count: Int64(req.data.length)));
       },
       onRead: (req, ctx) => FuseResponse(
         buf: BufReply(
           data: cursor < script.length
-              ? encodeEventFrame(script[cursor++])
+              ? encodeEvent(script[cursor++])
               : Uint8List(0),
         ),
       ),
@@ -84,7 +84,7 @@ void main() {
       onRead: (req, ctx) => FuseResponse(
         buf: BufReply(
           data: cursor < script.length
-              ? encodeEventFrame(script[cursor++])
+              ? encodeEvent(script[cursor++])
               : Uint8List(0),
         ),
       ),

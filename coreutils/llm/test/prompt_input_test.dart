@@ -48,8 +48,9 @@ InertConsumer _makeConsumer(List<ChatEvent> script) {
         FuseResponse(write: WriteReply(count: Int64(req.data.length))),
     onRead: (req, ctx) => FuseResponse(
       buf: BufReply(
+        // RAW wire (t-305): one read = one event record, no length-prefix.
         data: cursor < script.length
-            ? encodeEventFrame(script[cursor++])
+            ? encodeEvent(script[cursor++])
             : Uint8List(0),
       ),
     ),

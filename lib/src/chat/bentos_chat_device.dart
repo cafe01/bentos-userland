@@ -11,14 +11,17 @@ import 'chat_ioctl_cmds.dart';
 ///
 /// 1. `open(devicePath)` — one session per inference cycle;
 /// 2. config fields → their `CHAT_SET_*` ioctls;
-/// 3. `messages.forEach(write)` — one message frame per `write()`;
-/// 4. the first `read()` triggers inference; each frame decodes to one
-///    [ChatEvent], yielded raw until [Complete];
+/// 3. `messages.forEach(write)` — one RAW message per `write()`;
+/// 4. the first `read()` triggers inference; each `read()` returns one RAW
+///    event payload, yielded until [Complete];
 /// 5. `close()`.
 ///
-/// Frames cross the boundary as canonical protobuf via the subsystem codec
-/// (`chat_inference`'s `encodeMessage`/`decodeEvent`) — opaque payload to the
-/// kernel, typed at both ends.
+/// The wire is RAW (t-305): the datagram boundary IS the I/O syscall — one
+/// write = one message record, one read = one event. No length-prefix; the
+/// framework (bentos_driver_sdk, t-306) preserves each boundary end to end.
+/// Payloads cross as canonical protobuf via the subsystem codec
+/// (`chat_inference`'s `encodeMessage`/`decodeEvent`) — opaque to the kernel,
+/// typed at both ends.
 class BentosChatDevice implements ChatDevice {
   final Bentos _bentos;
 
@@ -46,21 +49,25 @@ class BentosChatDevice implements ChatDevice {
   ]) async* {
     final fd = await _bentos.open(devicePath);
     try {
-      // infer() always writes encodeMessage() frames (structured format).
-      // Override inputFormat so the driver decodes proto frames, not raw text.
-      await _applyConfig(fd, config.copyWith(inputFormat: Format.structured));
+      // infer() is the full-fidelity, typed sugar: it speaks structured BOTH
+      // ways — writes RAW encodeMessage() records in, decodes RAW ChatEvent
+      // records out. Override both formats so the base decodes proto records
+      // (not raw text) and encodes proto events (not lossy UTF-8 text).
+      await _applyConfig(fd, config.copyWith(
+        inputFormat: Format.structured,
+        outputFormat: Format.structured,
+      ));
       for (final m in messages) {
-        await _bentos.write(fd, encodeMessageFrame(m));
+        await _bentos.write(fd, encodeMessage(m));
       }
       while (true) {
-        // The first read() returns one or more length-prefixed ChatEvent frames
-        // ([4-byte size][payload] per event — structured output spec §output-modes).
+        // Each read() returns one RAW ChatEvent payload — the framework
+        // preserves the per-event boundary the driver yielded (t-305/t-306).
         final raw = await _bentos.read(fd);
         if (raw.isEmpty) return; // EOF — driver closed the stream.
-        for (final event in decodeEventFrames(raw)) {
-          yield event;
-          if (event is Complete) return;
-        }
+        final event = decodeEvent(raw);
+        yield event;
+        if (event is Complete) return;
       }
     } finally {
       await _bentos.close(fd);
