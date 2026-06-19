@@ -1,7 +1,7 @@
 /// Tests for PromptCommand's jsonl input/output modes:
 /// - Input: line-by-line decoding turns a JSONL conversation into ChatMessages.
 /// - Output: eventTurn emits each ChatEvent as one JSON line (the raw event
-///   stream — never folds).  --echo-input re-emits input messages first.
+///   stream — never folds).
 /// - D2: FunctionDefinition loading from JSON files, function-choice wiring,
 ///   and a full turn with a scripted function-call reply.
 ///
@@ -191,7 +191,7 @@ void main() {
       final out = StringBuffer();
       await consumer.eventTurn(
         [const ChatMessage(role: ChatRole.user, content: [TextContent('hi')])],
-        outputEncoding: 'jsonl',
+        outputEncoding: 'json',
         out: out,
       );
 
@@ -224,7 +224,7 @@ void main() {
       final out = StringBuffer();
       await consumer.eventTurn(
         [const ChatMessage(role: ChatRole.user, content: [TextContent('search')])],
-        outputEncoding: 'jsonl',
+        outputEncoding: 'json',
         out: out,
       );
 
@@ -234,35 +234,6 @@ void main() {
       final first = decodeEventJson(lines.first);
       expect(first, isA<FunctionCallStart>());
       expect((first as FunctionCallStart).name, 'lookup');
-    });
-
-    test('--echo-input re-emits input messages before event stream', () async {
-      const input = [
-        ChatMessage(role: ChatRole.user, content: [TextContent('hi')]),
-      ];
-      final script = [
-        const TextStart(0),
-        const TextDelta(index: 0, text: 'hello'),
-        const TextStop(0),
-        Complete(_metadata),
-      ];
-      final consumer = _makeConsumer(script);
-
-      final out = StringBuffer();
-      await consumer.eventTurn(input, echoInput: true, outputEncoding: 'jsonl', out: out);
-
-      final lines = out.toString().trimRight().split('\n');
-      // input message (1) + script events (4) = 5 lines
-      expect(lines, hasLength(1 + script.length));
-
-      // First line is the echoed input ChatMessage
-      final echoed = decodeMessageJson(lines.first);
-      expect(echoed, equals(input.first));
-
-      // Remaining lines are ChatEvents
-      for (final line in lines.skip(1)) {
-        expect(() => decodeEventJson(line), returnsNormally);
-      }
     });
 
     test('filter pipeline end-to-end: input jsonl → eventTurn → event stream',
@@ -290,7 +261,7 @@ void main() {
 
       // Step 2: run the turn (eventTurn) — emits events, not a folded message
       final out = StringBuffer();
-      await consumer.eventTurn(messages, outputEncoding: 'jsonl', out: out);
+      await consumer.eventTurn(messages, outputEncoding: 'json', out: out);
 
       // Step 3: output is N event lines (one per script entry)
       final lines = out.toString().trimRight().split('\n');
@@ -396,7 +367,7 @@ void main() {
             content: [TextContent("What's the weather in Tokyo?")],
           ),
         ],
-        outputEncoding: 'jsonl',
+        outputEncoding: 'json',
         out: out,
       );
 

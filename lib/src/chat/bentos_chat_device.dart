@@ -56,6 +56,8 @@ class BentosChatDevice implements ChatDevice {
       await _applyConfig(fd, config.copyWith(
         inputFormat: Format.structured,
         outputFormat: Format.structured,
+        inputEncoding: Encoding.protobuf,
+        outputEncoding: Encoding.protobuf,
       ));
       for (final m in messages) {
         await _bentos.write(fd, encodeMessage(m));

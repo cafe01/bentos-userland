@@ -26,9 +26,9 @@ ArgParser _buildPromptArgParser() {
     ..addOption('input-format', allowed: ['text', 'typed'], defaultsTo: 'text')
     ..addOption('output-format', allowed: ['text', 'typed'], defaultsTo: 'text')
     ..addOption('input-encoding',
-        allowed: ['protobuf', 'jsonl'], defaultsTo: 'protobuf')
+        allowed: ['protobuf', 'json'], defaultsTo: 'protobuf')
     ..addOption('output-encoding',
-        allowed: ['protobuf', 'jsonl'], defaultsTo: 'protobuf')
+        allowed: ['protobuf', 'json'], defaultsTo: 'protobuf')
     ..addOption('output-mode',
         allowed: ['streaming', 'buffered'], defaultsTo: 'streaming')
     ..addMultiOption('function')
@@ -227,8 +227,8 @@ void main() {
     });
 
     test('jsonl is accepted', () {
-      final r = promptParser.parse(['--input-encoding', 'jsonl']);
-      expect(r['input-encoding'], 'jsonl');
+      final r = promptParser.parse(['--input-encoding', 'json']);
+      expect(r['input-encoding'], 'json');
     });
 
     test('protobuf is accepted', () {
@@ -244,10 +244,10 @@ void main() {
     test('encoding coexists with typed input format', () {
       final r = promptParser.parse([
         '--input-format', 'typed',
-        '--input-encoding', 'jsonl',
+        '--input-encoding', 'json',
       ]);
       expect(_promptIoConfig(r).inputFormat, Format.structured);
-      expect(r['input-encoding'], 'jsonl');
+      expect(r['input-encoding'], 'json');
     });
   });
 
@@ -260,8 +260,8 @@ void main() {
     });
 
     test('jsonl is accepted', () {
-      final r = promptParser.parse(['--output-encoding', 'jsonl']);
-      expect(r['output-encoding'], 'jsonl');
+      final r = promptParser.parse(['--output-encoding', 'json']);
+      expect(r['output-encoding'], 'json');
     });
 
     test('protobuf is accepted', () {
@@ -277,10 +277,10 @@ void main() {
     test('encoding coexists with typed output format', () {
       final r = promptParser.parse([
         '--output-format', 'typed',
-        '--output-encoding', 'jsonl',
+        '--output-encoding', 'json',
       ]);
       expect(_promptIoConfig(r).outputFormat, Format.structured);
-      expect(r['output-encoding'], 'jsonl');
+      expect(r['output-encoding'], 'json');
     });
   });
 
@@ -304,13 +304,13 @@ void main() {
     test('buffered with typed output and jsonl encoding coexist', () {
       final r = promptParser.parse([
         '--output-format', 'typed',
-        '--output-encoding', 'jsonl',
+        '--output-encoding', 'json',
         '--output-mode', 'buffered',
       ]);
       final cfg = _promptIoConfig(r);
       expect(cfg.outputFormat, Format.structured);
       expect(cfg.streaming, isFalse);
-      expect(r['output-encoding'], 'jsonl');
+      expect(r['output-encoding'], 'json');
     });
 
     test('streaming is independent of output format', () {
@@ -334,9 +334,9 @@ void main() {
     test('typed in+out, jsonl encoding, buffered, with generation flags', () {
       final r = promptParser.parse([
         '--input-format', 'typed',
-        '--input-encoding', 'jsonl',
+        '--input-encoding', 'json',
         '--output-format', 'typed',
-        '--output-encoding', 'jsonl',
+        '--output-encoding', 'json',
         '--output-mode', 'buffered',
         '-t', '1024',
         '--temperature', '0.2',
@@ -347,8 +347,8 @@ void main() {
       expect(cfg.streaming, isFalse);
       expect(cfg.maxTokens, 1024);
       expect(cfg.temperature, closeTo(0.2, 0.001));
-      expect(r['input-encoding'], 'jsonl');
-      expect(r['output-encoding'], 'jsonl');
+      expect(r['input-encoding'], 'json');
+      expect(r['output-encoding'], 'json');
     });
 
     test('text format, encoding flag present but silently ignored by design', () {

@@ -32,19 +32,19 @@ class PromptCommand extends LlmBaseCommand {
       )
       ..addOption(
         'input-encoding',
-        allowed: ['protobuf', 'jsonl'],
+        allowed: ['protobuf', 'json'],
         defaultsTo: 'protobuf',
         help: 'Input channel encoding (honoured when --input-format=typed). '
             'protobuf (default): length-prefix framed protobuf binary. '
-            'jsonl: newline-framed proto3-JSON records.',
+            'json: proto3-JSON records.',
       )
       ..addOption(
         'output-encoding',
-        allowed: ['protobuf', 'jsonl'],
+        allowed: ['protobuf', 'json'],
         defaultsTo: 'protobuf',
         help: 'Output channel encoding (honoured when --output-format=typed). '
             'protobuf (default): length-prefix framed protobuf binary. '
-            'jsonl: newline-framed proto3-JSON records.',
+            'json: proto3-JSON records.',
       )
       ..addOption(
         'output-mode',
@@ -53,13 +53,6 @@ class PromptCommand extends LlmBaseCommand {
         help: 'Output mode. '
             'streaming (default): typed triads — live, per-delta events. '
             'buffered: whole-Block events only (still events, no folding).',
-      )
-      ..addFlag(
-        'echo-input',
-        negatable: false,
-        help: 'Re-emit each input message on stdout before the event stream, '
-            'in the output vocabulary — so stdout carries the full turn transcript. '
-            'Requires --input-format typed and --output-format typed.',
       )
       ..addMultiOption(
         'function',
@@ -90,8 +83,8 @@ class PromptCommand extends LlmBaseCommand {
   String get invocation =>
       'llm [-d <device>] [-s <system>]... [-t <n>] [--temperature <f>] [-v] <prompt>\n'
       '  or: echo … | llm\n'
-      '  or: cat messages.jsonl | llm --input-format typed --input-encoding jsonl '
-      '--output-format typed --output-encoding jsonl';
+      '  or: cat messages.jsonl | llm --input-format typed --input-encoding json '
+      '--output-format typed --output-encoding json';
 
   /// Extends the base config with the scriptable-register flags.
   /// File loading (--function) and output-format validation happen in run().
@@ -158,19 +151,10 @@ class PromptCommand extends LlmBaseCommand {
         isTypedInput ? argResults!['input-encoding'] as String : 'protobuf';
     final outputEncoding =
         isTypedOutput ? argResults!['output-encoding'] as String : 'protobuf';
-    final echoInput = argResults!['echo-input'] as bool;
-
     if (functions != null && !isTypedOutput) {
       throw UsageException(
         '--function requires --output-format typed '
         '(function calls cannot be serialized in text mode)',
-        usage,
-      );
-    }
-
-    if (echoInput && !(isTypedInput && isTypedOutput)) {
-      throw UsageException(
-        '--echo-input requires --input-format typed and --output-format typed',
         usage,
       );
     }
@@ -191,7 +175,6 @@ class PromptCommand extends LlmBaseCommand {
           systemMessages: systemMessages,
           config: config,
           verbose: verbose,
-          echoInput: echoInput,
           outputEncoding: outputEncoding,
         );
       } else {

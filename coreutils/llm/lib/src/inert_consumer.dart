@@ -76,25 +76,19 @@ class InertConsumer {
   /// [ChatEvent] as one frame to [out] / [stdout], in the encoding selected
   /// by [outputEncoding]:
   ///
-  /// - `'jsonl'` (default): one proto3-JSON string per line on [out] (injectable
-  ///   for testing).
-  /// - `'protobuf'`: one length-prefix framed protobuf binary record written
-  ///   directly to [stdout] (binary; [out] is ignored for this path).
+  /// - `'json'`: one proto3-JSON string per line on [out] (injectable for
+  ///   testing).
+  /// - `'protobuf'` (default): one length-prefix framed protobuf binary record
+  ///   written directly to [stdout] (binary; [out] is ignored for this path).
   ///
-  /// Never folds; folding is downstream (`chat-data fold`).
+  /// Never folds; folding is downstream (`chat-codec fold`).
   ///
-  /// If [echoInput] is true, each input message is re-emitted before the event
-  /// stream — so stdout carries the full turn transcript (input messages +
-  /// output events) suitable for `>> messages.jsonl`. [systemMessages] are NOT
-  /// echoed (they are config, not transcript).
-  ///
-  /// [out] and [errOut] are injectable for testing (JSONL path only).
+  /// [out] and [errOut] are injectable for testing (JSON path only).
   Future<void> eventTurn(
     List<ChatMessage> messages, {
     List<ChatMessage> systemMessages = const [],
     ChatIOConfig config = const ChatIOConfig(),
     bool verbose = false,
-    bool echoInput = false,
     String outputEncoding = 'protobuf',
     StringSink? out,
     StringSink? errOut,
@@ -102,21 +96,11 @@ class InertConsumer {
     out ??= stdout;
     errOut ??= stderr;
 
-    final useJsonl = outputEncoding == 'jsonl';
-
-    if (echoInput) {
-      for (final m in messages) {
-        if (useJsonl) {
-          out.writeln(encodeMessageJson(m));
-        } else {
-          stdout.add(encodeMessageFrame(m));
-        }
-      }
-    }
+    final useJson = outputEncoding == 'json';
 
     final wire = [...systemMessages, ...messages];
     await for (final event in _device.infer(wire, config)) {
-      if (useJsonl) {
+      if (useJson) {
         out.writeln(encodeEventJson(event));
       } else {
         stdout.add(encodeEventFrame(event));
