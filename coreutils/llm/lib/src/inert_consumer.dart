@@ -6,7 +6,9 @@
 /// across turns — `chat` does not re-boot per turn.
 library;
 
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:bentos_userland/bentos_userland.dart';
 import 'package:bentos_userland/boot.dart';
@@ -16,14 +18,19 @@ import 'package:bentos_userland/chat.dart';
 class InertConsumer {
   final BentosChatDevice _device;
 
-  InertConsumer(this._device);
+  /// Raw syscall surface — used by [relayTurn] for zero-codec typed I/O.
+  final Bentos _bentos;
+
+  InertConsumer(this._device, this._bentos);
 
   /// Boots the in-process portal for [devicePath] once and returns a consumer
   /// over it. Throws [LlmBootException] if the path cannot be routed (malformed
   /// path / unknown vendor) — a missing credential is NOT raised here; it fails
   /// the later turn's `open` with EACCES (a [BentosException]).
-  factory InertConsumer.forDevice(String devicePath) =>
-      InertConsumer(BentosChatDevice(bootLlmDevice(devicePath), devicePath));
+  factory InertConsumer.forDevice(String devicePath) {
+    final bentos = bootLlmDevice(devicePath);
+    return InertConsumer(BentosChatDevice(bentos, devicePath), bentos);
+  }
 
   String get devicePath => _device.devicePath;
 
@@ -72,45 +79,131 @@ class InertConsumer {
     return reply.toString();
   }
 
-  /// Runs one inference cycle in the scriptable register: emits each
-  /// [ChatEvent] as one frame to [out] / [stdout], in the encoding selected
-  /// by [outputEncoding]:
+  /// Relay turn — pure POSIX I/O, zero codec of content on both seams.
   ///
-  /// - `'json'`: one proto3-JSON string per line on [out] (injectable for
-  ///   testing).
-  /// - `'protobuf'` (default): one length-prefix framed protobuf binary record
-  ///   written directly to [stdout] (binary; [out] is ignored for this path).
+  /// Used whenever `--input-format typed` OR `--output-format typed`. Input
+  /// bytes from [typedStdin] (or prompt bytes from [textPrompt]) are written
+  /// verbatim to the device; raw bytes from each `read()` are written verbatim
+  /// to [out], with only the framing delimiter added by the coreutil.
   ///
-  /// Never folds; folding is downstream (`chat-codec fold`).
+  /// Three output cases (encoding is inert under `outputFormat=text`):
+  /// - `outputFormat=text`:          raw passthrough, no per-record framing.
+  /// - `outputFormat=typed, json`:   each record + `\n`.
+  /// - `outputFormat=typed, protobuf`: each record prefixed with 4-byte
+  ///   big-endian length.
   ///
-  /// [out] and [errOut] are injectable for testing (JSON path only).
-  Future<void> eventTurn(
-    List<ChatMessage> messages, {
+  /// For the text-input path (when [textPrompt] is supplied), system messages
+  /// and the user prompt are CLI-constructed, so they are encoded and written
+  /// as structured records — the relay law governs user-supplied pipe content
+  /// only. For typed input ([typedStdin] supplied), system messages are encoded
+  /// in [inputEncoding] and prepended; user bytes from [typedStdin] are relayed
+  /// verbatim, never decoded.
+  ///
+  /// [out] and [typedStdin] are injectable for testing.
+  Future<void> relayTurn({
+    required ChatIOConfig config,
+    required String inputEncoding,
+    required String outputEncoding,
+    String? textPrompt,
+    Stream<List<int>>? typedStdin,
     List<ChatMessage> systemMessages = const [],
-    ChatIOConfig config = const ChatIOConfig(),
-    bool verbose = false,
-    String outputEncoding = 'protobuf',
-    StringSink? out,
+    IOSink? out,
     StringSink? errOut,
+    bool verbose = false,
   }) async {
+    assert(
+      (textPrompt != null) != (typedStdin != null),
+      'exactly one of textPrompt or typedStdin must be provided',
+    );
     out ??= stdout;
     errOut ??= stderr;
 
-    final useJson = outputEncoding == 'json';
+    // For text input we force structured so system+user messages are written
+    // as typed records (unstructured mode can't carry system role separately).
+    final isTextInput = textPrompt != null;
+    final effectiveConfig = isTextInput
+        ? config.copyWith(
+            inputFormat: Format.structured,
+            inputEncoding: Encoding.protobuf,
+          )
+        : config;
 
-    final wire = [...systemMessages, ...messages];
-    await for (final event in _device.infer(wire, config)) {
-      if (useJson) {
-        out.writeln(encodeEventJson(event));
-      } else {
-        stdout.add(encodeEventFrame(event));
+    final fd = await _bentos.open(devicePath);
+    try {
+      for (final (cmd, payload) in configToIoctls(effectiveConfig)) {
+        await _bentos.ioctl(fd, cmd, payload);
       }
-      if (verbose && event is Complete) {
-        final meta = event.metadata;
-        errOut.writeln(
-          '[${meta.model} · ${meta.stopReason} · '
-          '${meta.usage?.inputTokens}in/${meta.usage?.outputTokens}out]',
-        );
+
+      final resolvedPrompt = textPrompt;
+      final resolvedStdin = typedStdin;
+      if (resolvedPrompt != null) {
+        for (final m in systemMessages) {
+          await _bentos.write(fd, encodeMessage(m));
+        }
+        await _bentos.write(fd, encodeMessage(ChatMessage.userText(resolvedPrompt)));
+      } else if (resolvedStdin != null) {
+        // Typed input: system messages in the correct encoding, then raw stdin.
+        for (final m in systemMessages) {
+          final bytes = inputEncoding == 'json'
+              ? Uint8List.fromList(utf8.encode(encodeMessageJson(m)))
+              : encodeMessage(m);
+          await _bentos.write(fd, bytes);
+        }
+        await _relayInput(resolvedStdin, inputEncoding, fd);
+      }
+
+      // Output: relay raw bytes from device with appropriate framing.
+      final isTypedOutput = config.outputFormat == Format.structured;
+      while (true) {
+        final raw = await _bentos.read(fd);
+        if (raw.isEmpty) break;
+        if (!isTypedOutput) {
+          out.add(raw);
+        } else if (outputEncoding == 'json') {
+          out.add(raw);
+          out.add(const [10]); // '\n' — record framing for json
+        } else {
+          // protobuf: 4-byte big-endian length-prefix + payload
+          final frame = Uint8List(4 + raw.length);
+          ByteData.sublistView(frame).setUint32(0, raw.length);
+          frame.setRange(4, 4 + raw.length, raw);
+          out.add(frame);
+        }
+      }
+    } finally {
+      await _bentos.close(fd);
+    }
+  }
+
+  /// Relay raw bytes from [src] to the open fd: json = split on `\n` and
+  /// write each line's bytes; protobuf = read 4-byte big-endian
+  /// length-prefix frames and write each payload.
+  Future<void> _relayInput(
+    Stream<List<int>> src,
+    String inputEncoding,
+    int fd,
+  ) async {
+    if (inputEncoding == 'json') {
+      await for (final line in src.transform(utf8.decoder).transform(LineSplitter())) {
+        if (line.trim().isEmpty) continue;
+        await _bentos.write(fd, Uint8List.fromList(utf8.encode(line)));
+      }
+    } else {
+      // protobuf: buffer all, then slice length-prefix frames
+      final all = await src.fold<List<int>>([], (acc, chunk) => acc..addAll(chunk));
+      var offset = 0;
+      while (offset + 4 <= all.length) {
+        final len = ByteData.sublistView(
+          Uint8List.fromList(all.sublist(offset, offset + 4)),
+        ).getUint32(0);
+        offset += 4;
+        if (offset + len <= all.length) {
+          await _bentos.write(
+            fd,
+            Uint8List.fromList(all.sublist(offset, offset + len)),
+          );
+          offset += len;
+        }
       }
     }
   }

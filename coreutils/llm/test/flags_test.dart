@@ -226,7 +226,7 @@ void main() {
       expect(r['input-encoding'], 'protobuf');
     });
 
-    test('jsonl is accepted', () {
+    test('json is accepted', () {
       final r = promptParser.parse(['--input-encoding', 'json']);
       expect(r['input-encoding'], 'json');
     });
@@ -259,7 +259,7 @@ void main() {
       expect(r['output-encoding'], 'protobuf');
     });
 
-    test('jsonl is accepted', () {
+    test('json is accepted', () {
       final r = promptParser.parse(['--output-encoding', 'json']);
       expect(r['output-encoding'], 'json');
     });
@@ -301,7 +301,7 @@ void main() {
       expect(_promptIoConfig(r).streaming, isFalse);
     });
 
-    test('buffered with typed output and jsonl encoding coexist', () {
+    test('buffered with typed output and json encoding coexist', () {
       final r = promptParser.parse([
         '--output-format', 'typed',
         '--output-encoding', 'json',
@@ -331,7 +331,7 @@ void main() {
   group('full scriptable-register combination', () {
     final promptParser = _buildPromptArgParser();
 
-    test('typed in+out, jsonl encoding, buffered, with generation flags', () {
+    test('typed in+out, json encoding, buffered, with generation flags', () {
       final r = promptParser.parse([
         '--input-format', 'typed',
         '--input-encoding', 'json',

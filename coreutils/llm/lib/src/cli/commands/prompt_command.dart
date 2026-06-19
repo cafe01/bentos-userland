@@ -1,7 +1,6 @@
 /// `llm <prompt>` — the default command: stream one answer and exit.
 library;
 
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:args/command_runner.dart';
@@ -43,7 +42,7 @@ class PromptCommand extends LlmBaseCommand {
         allowed: ['protobuf', 'json'],
         defaultsTo: 'protobuf',
         help: 'Output channel encoding (honoured when --output-format=typed). '
-            'protobuf (default): length-prefix framed protobuf binary. '
+            'protobuf (default): length-prefix framed binary. '
             'json: proto3-JSON records.',
       )
       ..addOption(
@@ -87,7 +86,6 @@ class PromptCommand extends LlmBaseCommand {
       '--output-format typed --output-encoding json';
 
   /// Extends the base config with the scriptable-register flags.
-  /// File loading (--function) and output-format validation happen in run().
   @override
   ChatIOConfig get ioConfig {
     final inputFmt = (argResults!['input-format'] as String) == 'typed'
@@ -110,8 +108,6 @@ class PromptCommand extends LlmBaseCommand {
     );
   }
 
-  /// Maps the --function-choice string to a FunctionChoice variant.
-  /// null → null (absent flag). 'auto' / 'none' / name → typed variant.
   static FunctionChoice? _parseFunctionChoice(String? value) {
     return switch (value) {
       null => null,
@@ -121,8 +117,6 @@ class PromptCommand extends LlmBaseCommand {
     };
   }
 
-  /// Wraps [loadFunctionDefinitionFromFile], converting domain exceptions to
-  /// [UsageException] so the CLI runner prints them cleanly.
   FunctionDefinition _loadFunctionFile(String path) {
     try {
       return loadFunctionDefinitionFromFile(path);
@@ -138,7 +132,6 @@ class PromptCommand extends LlmBaseCommand {
     final consumer = await bootConsumer();
     if (consumer == null) return 3;
 
-    // Load --function files before resolving messages so the error surfaces early.
     final functionPaths = argResults!['function'] as List<String>;
     final functions =
         functionPaths.isEmpty ? null : functionPaths.map(_loadFunctionFile).toList();
@@ -151,6 +144,7 @@ class PromptCommand extends LlmBaseCommand {
         isTypedInput ? argResults!['input-encoding'] as String : 'protobuf';
     final outputEncoding =
         isTypedOutput ? argResults!['output-encoding'] as String : 'protobuf';
+
     if (functions != null && !isTypedOutput) {
       throw UsageException(
         '--function requires --output-format typed '
@@ -163,28 +157,54 @@ class PromptCommand extends LlmBaseCommand {
       config = config.copyWith(functions: functions);
     }
 
-    final messages = isTypedInput && inputEncoding == 'jsonl'
-        ? await _resolveJsonlMessages(argResults!.rest)
-        : await _resolveTextMessages(argResults!.rest);
-    if (messages == null) return 64; // usage error already reported
-
-    try {
-      if (isTypedOutput) {
-        await consumer.eventTurn(
-          messages,
-          systemMessages: systemMessages,
-          config: config,
-          verbose: verbose,
-          outputEncoding: outputEncoding,
-        );
-      } else {
-        await consumer.streamTurn(
-          messages,
-          systemMessages: systemMessages,
-          config: config,
-          verbose: verbose,
-        );
+    // Relay mode: any typed axis routes through relayTurn (zero codec on seams).
+    if (isTypedInput || isTypedOutput) {
+      try {
+        if (isTypedInput) {
+          if (stdin.hasTerminal) {
+            throw UsageException(
+              '--input-format typed requires piped stdin (no terminal)',
+              usage,
+            );
+          }
+          await consumer.relayTurn(
+            config: config,
+            inputEncoding: inputEncoding,
+            outputEncoding: outputEncoding,
+            typedStdin: stdin,
+            systemMessages: systemMessages,
+            verbose: verbose,
+          );
+        } else {
+          // text input + typed output
+          final prompt = await _resolveTextPrompt(argResults!.rest);
+          if (prompt == null) return 64;
+          await consumer.relayTurn(
+            config: config,
+            inputEncoding: inputEncoding,
+            outputEncoding: outputEncoding,
+            textPrompt: prompt,
+            systemMessages: systemMessages,
+            verbose: verbose,
+          );
+        }
+      } on BentosException catch (e) {
+        stderr.writeln('llm: $e');
+        return 1;
       }
+      return 0;
+    }
+
+    // Casual register: text in, text out — streamTurn via infer().
+    final messages = await _resolveTextMessages(argResults!.rest);
+    if (messages == null) return 64;
+    try {
+      await consumer.streamTurn(
+        messages,
+        systemMessages: systemMessages,
+        config: config,
+        verbose: verbose,
+      );
     } on BentosException catch (e) {
       stderr.writeln('llm: $e');
       return 1;
@@ -192,8 +212,8 @@ class PromptCommand extends LlmBaseCommand {
     return 0;
   }
 
-  /// text mode: arg or piped stdin → single userText message.
-  Future<List<ChatMessage>?> _resolveTextMessages(List<String> rest) async {
+  /// text input: arg or piped stdin → prompt string.
+  Future<String?> _resolveTextPrompt(List<String> rest) async {
     String? prompt;
     if (rest.isNotEmpty) {
       prompt = rest.join(' ');
@@ -203,40 +223,13 @@ class PromptCommand extends LlmBaseCommand {
     if (prompt == null || prompt.isEmpty) {
       throw UsageException('a prompt is required', usage);
     }
-    return [ChatMessage.userText(prompt)];
+    return prompt;
   }
 
-  /// typed+jsonl mode: stdin is a conversation — one ChatMessage per non-empty line.
-  /// Positional args are rejected (they would be silently ignored otherwise).
-  Future<List<ChatMessage>?> _resolveJsonlMessages(List<String> rest) async {
-    if (rest.isNotEmpty) {
-      throw UsageException(
-        '--input-format typed --input-encoding jsonl reads from stdin; '
-        'positional args are not accepted',
-        usage,
-      );
-    }
-    if (stdin.hasTerminal) {
-      throw UsageException(
-        '--input-format typed --input-encoding jsonl requires piped stdin (no terminal)',
-        usage,
-      );
-    }
-    final lines = await stdin
-        .transform(systemEncoding.decoder)
-        .transform(const LineSplitter())
-        .where((l) => l.trim().isNotEmpty)
-        .toList();
-    if (lines.isEmpty) {
-      stderr.writeln('llm: --input-format typed --input-encoding jsonl: empty input');
-      return null;
-    }
-    try {
-      return lines.map(decodeMessageJson).toList();
-    } on FormatException catch (e) {
-      stderr.writeln(
-          'llm: --input-format typed --input-encoding jsonl: malformed line — $e');
-      return null;
-    }
+  /// text mode: arg or piped stdin → single userText message.
+  Future<List<ChatMessage>?> _resolveTextMessages(List<String> rest) async {
+    final prompt = await _resolveTextPrompt(rest);
+    if (prompt == null) return null;
+    return [ChatMessage.userText(prompt)];
   }
 }

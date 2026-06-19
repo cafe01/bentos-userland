@@ -1,15 +1,17 @@
-/// Tests for PromptCommand's jsonl input/output modes:
-/// - Input: line-by-line decoding turns a JSONL conversation into ChatMessages.
-/// - Output: eventTurn emits each ChatEvent as one JSON line (the raw event
-///   stream — never folds).
-/// - D2: FunctionDefinition loading from JSON files, function-choice wiring,
-///   and a full turn with a scripted function-call reply.
+/// Tests for PromptCommand's typed input/output modes via relayTurn:
+/// - Typed input: raw json/protobuf bytes from stdin are written to the device
+///   verbatim — never decoded to ChatMessage.
+/// - Typed output: raw bytes from device read() are emitted verbatim with the
+///   coreutil's framing only (json: +\n; protobuf: +4-byte header).
+/// - D2: FunctionDefinition loading from JSON files, function-choice wiring.
 ///
-/// eventTurn tests use a scripted in-process driver (BentosDriver) so they
+/// relayTurn tests use a scripted in-process driver (BentosDriver) so they
 /// run without any network or API key.
 library;
 
-import 'dart:convert';
+import 'dart:async';
+import 'dart:convert' as dc show Encoding, utf8;
+import 'dart:convert' show utf8, jsonEncode;
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -22,35 +24,87 @@ import 'package:stream_channel/stream_channel.dart';
 import 'package:test/test.dart';
 
 // ---------------------------------------------------------------------------
-// Helpers — codec pipeline (same as PromptCommand._resolveJsonlMessages).
+// BytesIOSink — injectable output for relayTurn.
 // ---------------------------------------------------------------------------
 
-List<ChatMessage> parseJsonlConversation(String jsonl) {
-  return jsonl
-      .split('\n')
-      .where((l) => l.trim().isNotEmpty)
-      .map(decodeMessageJson)
-      .toList();
+class BytesIOSink implements IOSink {
+  final _bytes = BytesBuilder();
+
+  Uint8List get bytes => _bytes.toBytes();
+
+  @override
+  void add(List<int> data) => _bytes.add(data);
+
+  @override
+  void write(Object? object) =>
+      _bytes.add(dc.utf8.encode(object?.toString() ?? ''));
+
+  @override
+  void writeln([Object? object = '']) => write('$object\n');
+
+  @override
+  void writeAll(Iterable<Object?> objects, [String separator = '']) {
+    var first = true;
+    for (final o in objects) {
+      if (!first) write(separator);
+      write(o);
+      first = false;
+    }
+  }
+
+  @override
+  void writeCharCode(int charCode) =>
+      _bytes.add([charCode]);
+
+  @override
+  void addError(Object error, [StackTrace? stackTrace]) {}
+
+  @override
+  Future<void> addStream(Stream<List<int>> stream) async {
+    await for (final chunk in stream) { _bytes.add(chunk); }
+  }
+
+  @override
+  Future<void> flush() async {}
+
+  @override
+  Future<void> close() async {}
+
+  @override
+  Future<void> get done async {}
+
+  @override
+  dc.Encoding get encoding => dc.utf8;
+
+  @override
+  set encoding(dc.Encoding value) {}
 }
 
 // ---------------------------------------------------------------------------
-// Scripted driver builder.
-// Returns an InertConsumer whose device emits the given script of ChatEvents.
+// Scripted consumer builder.
+//
+// [onWriteCapture] receives every write() payload (for input zero-codec proof).
+// [readScript] is the list of raw byte records the fake driver returns from
+// read() in order; the last item should be Uint8List(0) (EOF sentinel).
 // ---------------------------------------------------------------------------
 
-InertConsumer _makeConsumer(List<ChatEvent> script) {
+InertConsumer _makeConsumer({
+  void Function(Uint8List)? onWriteCapture,
+  List<Uint8List> readScript = const [],
+}) {
   var cursor = 0;
 
   final driver = BentosDriver(
     onOpen: (req, ctx) => FuseResponse(open: OpenReply()),
     onIoctl: (req, ctx) => FuseResponse(ioctl: IoctlReply()),
-    onWrite: (req, ctx) =>
-        FuseResponse(write: WriteReply(count: Int64(req.data.length))),
+    onWrite: (req, ctx) {
+      onWriteCapture?.call(Uint8List.fromList(req.data));
+      return FuseResponse(write: WriteReply(count: Int64(req.data.length)));
+    },
     onRead: (req, ctx) => FuseResponse(
       buf: BufReply(
-        // RAW wire (t-305): one read = one event record, no length-prefix.
-        data: cursor < script.length
-            ? encodeEvent(script[cursor++])
+        data: cursor < readScript.length
+            ? readScript[cursor++]
             : Uint8List(0),
       ),
     ),
@@ -60,12 +114,14 @@ InertConsumer _makeConsumer(List<ChatEvent> script) {
 
   final pair = StreamChannelController<Uint8List>();
   driver.serveChannel(pair.foreign);
-  final device = BentosChatDevice(
-    InProcessBentos(capMap: {'/dev/llm/': pair.local}),
-    '/dev/llm/test/scripted',
-  );
-  return InertConsumer(device);
+  final inProcess = InProcessBentos(capMap: {'/dev/llm/': pair.local});
+  final device = BentosChatDevice(inProcess, '/dev/llm/test/scripted');
+  return InertConsumer(device, inProcess);
 }
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 final _metadata = ChatMetadata(
   model: 'test-1',
@@ -73,207 +129,293 @@ final _metadata = ChatMetadata(
   usage: const TokenUsage(inputTokens: 3, outputTokens: 5),
 );
 
+/// Builds a 4-byte big-endian length-prefix frame around [payload].
+Uint8List _frame(Uint8List payload) {
+  final out = Uint8List(4 + payload.length);
+  ByteData.sublistView(out).setUint32(0, payload.length);
+  out.setRange(4, 4 + payload.length, payload);
+  return out;
+}
+
+/// Builds a stream that emits [data] as a single chunk.
+Stream<List<int>> _streamOf(List<int> data) =>
+    Stream.fromIterable([Uint8List.fromList(data)]);
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 void main() {
-  group('jsonl input mode — line decoding', () {
-    test('single user message round-trips', () {
-      const m = ChatMessage(
-        role: ChatRole.user,
-        content: [TextContent('hello')],
+  group('relay input — typed json: zero codec proof', () {
+    test('raw json line bytes reach device write() verbatim', () async {
+      final writes = <Uint8List>[];
+      final consumer = _makeConsumer(
+        onWriteCapture: writes.add,
+        readScript: [Uint8List(0)],
       );
-      final line = encodeMessageJson(m);
-      final result = parseJsonlConversation(line);
-      expect(result, hasLength(1));
-      expect(result.first, equals(m));
+
+      const msg = ChatMessage(
+        role: ChatRole.user,
+        content: [TextContent('hello relay')],
+      );
+      final jsonLine = encodeMessageJson(msg);
+      final lineBytes = Uint8List.fromList(utf8.encode(jsonLine));
+
+      await consumer.relayTurn(
+        config: const ChatIOConfig().copyWith(inputFormat: Format.structured),
+        inputEncoding: 'json',
+        outputEncoding: 'protobuf',
+        typedStdin: _streamOf(lineBytes),
+      );
+
+      expect(writes, hasLength(1));
+      // The bytes written are the raw json line bytes — NOT protobuf.
+      expect(writes.first, equals(lineBytes));
+
+      // Zero-codec proof: the codec round-trip produces different bytes.
+      final codecBytes = encodeMessage(decodeMessageJson(jsonLine));
+      expect(writes.first, isNot(equals(codecBytes)));
     });
 
-    test('multi-turn conversation preserves order and roles', () {
+    test('multi-turn jsonl: each line is a separate write(), no decode', () async {
       const messages = [
         ChatMessage(role: ChatRole.user, content: [TextContent('turn 1')]),
-        ChatMessage(role: ChatRole.assistant, content: [TextContent('reply 1')]),
+        ChatMessage(
+            role: ChatRole.assistant, content: [TextContent('reply 1')]),
         ChatMessage(role: ChatRole.user, content: [TextContent('turn 2')]),
       ];
       final jsonl = messages.map(encodeMessageJson).join('\n');
-      final result = parseJsonlConversation(jsonl);
-      expect(result, equals(messages));
+      final inputBytes = Uint8List.fromList(utf8.encode(jsonl));
+
+      final writes = <Uint8List>[];
+      final consumer = _makeConsumer(
+        onWriteCapture: writes.add,
+        readScript: [Uint8List(0)],
+      );
+
+      await consumer.relayTurn(
+        config: const ChatIOConfig().copyWith(inputFormat: Format.structured),
+        inputEncoding: 'json',
+        outputEncoding: 'protobuf',
+        typedStdin: _streamOf(inputBytes),
+      );
+
+      // One write per non-empty line, never decoded.
+      expect(writes, hasLength(messages.length));
+      for (var i = 0; i < messages.length; i++) {
+        final expected = Uint8List.fromList(utf8.encode(encodeMessageJson(messages[i])));
+        expect(writes[i], equals(expected));
+      }
     });
 
-    test('blank lines between messages are ignored', () {
-      const m = ChatMessage(
+    test('blank lines between messages are skipped', () async {
+      const msg = ChatMessage(
         role: ChatRole.user,
-        content: [TextContent('hello')],
+        content: [TextContent('hi')],
       );
-      final line = encodeMessageJson(m);
-      final jsonl = '\n$line\n\n';
-      final result = parseJsonlConversation(jsonl);
-      expect(result, hasLength(1));
-      expect(result.first, equals(m));
-    });
+      final jsonl = '\n${encodeMessageJson(msg)}\n\n';
+      final inputBytes = Uint8List.fromList(utf8.encode(jsonl));
 
-    test('message with function call decodes correctly', () {
-      const m = ChatMessage(
-        role: ChatRole.assistant,
-        content: [
-          FunctionCallContent(
-            id: 'call_1',
-            name: 'get_weather',
-            arguments: {'city': 'Tokyo'},
-          ),
-        ],
+      final writes = <Uint8List>[];
+      final consumer = _makeConsumer(
+        onWriteCapture: writes.add,
+        readScript: [Uint8List(0)],
       );
-      final result = parseJsonlConversation(encodeMessageJson(m));
-      expect(result.first, equals(m));
-    });
 
-    test('heterogeneous message (text + function call) decodes correctly', () {
-      const m = ChatMessage(
-        role: ChatRole.assistant,
-        content: [
-          TextContent("I'll check that."),
-          FunctionCallContent(
-            id: 'call_2',
-            name: 'search',
-            arguments: {'q': 'BentOS'},
-          ),
-        ],
+      await consumer.relayTurn(
+        config: const ChatIOConfig().copyWith(inputFormat: Format.structured),
+        inputEncoding: 'json',
+        outputEncoding: 'protobuf',
+        typedStdin: _streamOf(inputBytes),
       );
-      final result = parseJsonlConversation(encodeMessageJson(m));
-      expect(result.first, equals(m));
-    });
 
-    test('filter pipeline (headline use-case): conversation with tool result', () {
-      const conversation = [
-        ChatMessage(
-          role: ChatRole.user,
-          content: [TextContent('What is the weather in SP?')],
-        ),
-        ChatMessage(
-          role: ChatRole.assistant,
-          content: [
-            FunctionCallContent(
-              id: 'call_x',
-              name: 'get_weather',
-              arguments: {'city': 'São Paulo'},
-            ),
-          ],
-        ),
-        ChatMessage(
-          role: ChatRole.user,
-          content: [
-            FunctionResultContent(
-              callId: 'call_x',
-              content: [TextContent('28°C and sunny')],
-              isError: false,
-            ),
-          ],
-        ),
-      ];
-      final jsonl = conversation.map(encodeMessageJson).join('\n');
-      final result = parseJsonlConversation(jsonl);
-      expect(result, equals(conversation));
+      expect(writes, hasLength(1));
     });
   });
 
-  group('jsonl output mode — eventTurn', () {
-    test('text reply emits one JSON line per ChatEvent, never folds', () async {
-      final script = [
-        const TextStart(0),
-        const TextDelta(index: 0, text: 'Hello, '),
-        const TextDelta(index: 0, text: 'world!'),
-        const TextStop(0),
-        Complete(_metadata),
-      ];
-      final consumer = _makeConsumer(script);
+  group('relay input — typed protobuf: zero codec proof', () {
+    test('protobuf frames: payload bytes reach device write() verbatim', () async {
+      const msg = ChatMessage(
+        role: ChatRole.user,
+        content: [TextContent('proto relay')],
+      );
+      final payload = encodeMessage(msg);
+      final framed = _frame(payload);
 
-      final out = StringBuffer();
-      await consumer.eventTurn(
-        [const ChatMessage(role: ChatRole.user, content: [TextContent('hi')])],
+      final writes = <Uint8List>[];
+      final consumer = _makeConsumer(
+        onWriteCapture: writes.add,
+        readScript: [Uint8List(0)],
+      );
+
+      await consumer.relayTurn(
+        config: const ChatIOConfig().copyWith(
+          inputFormat: Format.structured,
+          inputEncoding: Encoding.protobuf,
+        ),
+        inputEncoding: 'protobuf',
+        outputEncoding: 'protobuf',
+        typedStdin: _streamOf(framed),
+      );
+
+      // The payload bytes (without the 4-byte header) reach the device.
+      expect(writes, hasLength(1));
+      expect(writes.first, equals(payload));
+    });
+
+    test('multiple protobuf frames: each payload is a separate write()', () async {
+      const messages = [
+        ChatMessage(role: ChatRole.user, content: [TextContent('msg1')]),
+        ChatMessage(role: ChatRole.assistant, content: [TextContent('msg2')]),
+      ];
+      final framed = messages
+          .map(encodeMessage)
+          .map(_frame)
+          .expand((b) => b)
+          .toList();
+
+      final writes = <Uint8List>[];
+      final consumer = _makeConsumer(
+        onWriteCapture: writes.add,
+        readScript: [Uint8List(0)],
+      );
+
+      await consumer.relayTurn(
+        config: const ChatIOConfig().copyWith(inputFormat: Format.structured),
+        inputEncoding: 'protobuf',
+        outputEncoding: 'protobuf',
+        typedStdin: _streamOf(framed),
+      );
+
+      expect(writes, hasLength(messages.length));
+      for (var i = 0; i < messages.length; i++) {
+        expect(writes[i], equals(encodeMessage(messages[i])));
+      }
+    });
+  });
+
+  group('relay output — json framing: zero codec proof', () {
+    test('device bytes + \\n emitted verbatim per record', () async {
+      // Simulate driver returning json event bytes (what the real driver does
+      // when outputEncoding=json ioctl is set).
+      final rawEvents = [
+        Uint8List.fromList(utf8.encode('{"textStart":{"index":0}}')),
+        Uint8List.fromList(utf8.encode('{"textDelta":{"index":0,"text":"hi"}}')),
+        Uint8List.fromList(utf8.encode('{"complete":{"metadata":{"model":"m"}}}')),
+      ];
+      final consumer = _makeConsumer(
+        readScript: [...rawEvents, Uint8List(0)],
+      );
+
+      final out = BytesIOSink();
+      await consumer.relayTurn(
+        config: const ChatIOConfig().copyWith(outputFormat: Format.structured),
+        inputEncoding: 'protobuf',
         outputEncoding: 'json',
+        textPrompt: 'test',
         out: out,
       );
 
-      final lines = out.toString().trimRight().split('\n');
-      expect(lines, hasLength(script.length),
-          reason: 'one JSON line per ChatEvent');
-
-      for (final line in lines) {
-        expect(line.startsWith('{'), isTrue,
-            reason: 'every line must be a JSON object');
-        // must decode back to a ChatEvent without error
-        expect(() => decodeEventJson(line), returnsNormally);
+      final output = out.bytes;
+      // Reconstruct expected: each raw record + 0x0A ('\n').
+      final expected = BytesBuilder();
+      for (final r in rawEvents) {
+        expected.add(r);
+        expected.addByte(10);
       }
-
-      // Last event is Complete and carries the metadata
-      final last = decodeEventJson(lines.last);
-      expect(last, isA<Complete>());
-      expect((last as Complete).metadata.model, 'test-1');
+      expect(output, equals(expected.toBytes()));
     });
 
-    test('function-call reply emits function-call events verbatim', () async {
-      final script = [
-        const FunctionCallStart(index: 0, id: 'call_1', name: 'lookup'),
-        const FunctionArgsDelta(index: 0, partialJson: '{"q":"bentos"}'),
-        const FunctionCallStop(0),
-        Complete(_metadata),
-      ];
-      final consumer = _makeConsumer(script);
+    test('device bytes pass through unchanged (no decode+re-encode cycle)', () async {
+      // Use actual event bytes to prove identity.
+      const event = TextDelta(index: 0, text: 'relay');
+      final deviceBytes = Uint8List.fromList(utf8.encode(encodeEventJson(event)));
+      final consumer = _makeConsumer(
+        readScript: [deviceBytes, Uint8List(0)],
+      );
 
-      final out = StringBuffer();
-      await consumer.eventTurn(
-        [const ChatMessage(role: ChatRole.user, content: [TextContent('search')])],
+      final out = BytesIOSink();
+      await consumer.relayTurn(
+        config: const ChatIOConfig().copyWith(outputFormat: Format.structured),
+        inputEncoding: 'protobuf',
         outputEncoding: 'json',
+        textPrompt: 'x',
         out: out,
       );
 
-      final lines = out.toString().trimRight().split('\n');
-      expect(lines, hasLength(script.length));
-
-      final first = decodeEventJson(lines.first);
-      expect(first, isA<FunctionCallStart>());
-      expect((first as FunctionCallStart).name, 'lookup');
+      // Output is deviceBytes + '\n' — the device bytes are untouched.
+      expect(out.bytes, equals([...deviceBytes, 10]));
     });
+  });
 
-    test('filter pipeline end-to-end: input jsonl → eventTurn → event stream',
-        () async {
-      // Simulates: cat messages.jsonl | llm --input-format jsonl --output-format jsonl
-      const inputConversation = [
-        ChatMessage(role: ChatRole.user, content: [TextContent('first turn')]),
-        ChatMessage(
-            role: ChatRole.assistant, content: [TextContent('first reply')]),
-        ChatMessage(role: ChatRole.user, content: [TextContent('second turn')]),
-      ];
+  group('relay output — protobuf framing', () {
+    test('each read() record emitted with 4-byte big-endian header', () async {
       final script = [
-        const TextStart(0),
-        const TextDelta(index: 0, text: 'second reply'),
-        const TextStop(0),
+        TextStart(0),
+        TextDelta(index: 0, text: 'hello'),
+        TextStop(0),
         Complete(_metadata),
       ];
+      final rawRecords = script.map(encodeEvent).toList();
+      final consumer = _makeConsumer(
+        readScript: [...rawRecords, Uint8List(0)],
+      );
 
-      final consumer = _makeConsumer(script);
+      final out = BytesIOSink();
+      await consumer.relayTurn(
+        config: const ChatIOConfig().copyWith(outputFormat: Format.structured),
+        inputEncoding: 'protobuf',
+        outputEncoding: 'protobuf',
+        textPrompt: 'hi',
+        out: out,
+      );
 
-      // Step 1: parse input jsonl (PromptCommand._resolveJsonlMessages)
-      final jsonl = inputConversation.map(encodeMessageJson).join('\n');
-      final messages = parseJsonlConversation(jsonl);
-      expect(messages, equals(inputConversation));
-
-      // Step 2: run the turn (eventTurn) — emits events, not a folded message
-      final out = StringBuffer();
-      await consumer.eventTurn(messages, outputEncoding: 'json', out: out);
-
-      // Step 3: output is N event lines (one per script entry)
-      final lines = out.toString().trimRight().split('\n');
-      expect(lines, hasLength(script.length));
-      for (final line in lines) {
-        expect(() => decodeEventJson(line), returnsNormally);
+      // Parse the output frames and verify each decodes to the original event.
+      final outputBytes = out.bytes;
+      var offset = 0;
+      final decoded = <ChatEvent>[];
+      while (offset + 4 <= outputBytes.length) {
+        final len = ByteData.sublistView(outputBytes, offset, offset + 4).getUint32(0);
+        offset += 4;
+        decoded.add(decodeEvent(outputBytes.sublist(offset, offset + len)));
+        offset += len;
       }
+      expect(decoded, hasLength(script.length));
+      expect(decoded[0], isA<TextStart>());
+      expect(decoded[1], isA<TextDelta>());
+      expect((decoded[1] as TextDelta).text, 'hello');
+      expect(decoded[2], isA<TextStop>());
+      expect(decoded[3], isA<Complete>());
+    });
+  });
+
+  group('relay output — text passthrough (format=text, no framing)', () {
+    test('raw bytes reach stdout without framing', () async {
+      final textBytes = Uint8List.fromList(utf8.encode('hello world'));
+      final consumer = _makeConsumer(
+        readScript: [textBytes, Uint8List(0)],
+      );
+
+      final out = BytesIOSink();
+      // outputFormat=unstructured (text), outputEncoding inert
+      await consumer.relayTurn(
+        config: const ChatIOConfig().copyWith(
+          inputFormat: Format.structured,
+          // outputFormat stays unstructured (default)
+        ),
+        inputEncoding: 'protobuf',
+        outputEncoding: 'protobuf', // inert under format=text
+        typedStdin: Stream.empty(),
+        out: out,
+      );
+
+      // No newline, no header — raw passthrough.
+      expect(out.bytes, equals(textBytes));
     });
   });
 
   // ---------------------------------------------------------------------------
-  // D2 — function calling: file loading + ioConfig wiring + full turn
+  // D2 — function calling: file loading + ioConfig wiring
   // ---------------------------------------------------------------------------
 
   group('D2 — FunctionDefinition loading from JSON file', () {
@@ -345,49 +487,8 @@ void main() {
         throwsA(isA<ArgumentError>()),
       );
     });
-  });
-
-  group('D2 — function calling full turn: scripted driver → jsonl output', () {
-    test('driver reply with function-call events emits each event as JSON line',
-        () async {
-      final script = [
-        const FunctionCallStart(index: 0, id: 'call_w1', name: 'get_weather'),
-        const FunctionArgsDelta(index: 0, partialJson: '{"city":"'),
-        const FunctionArgsDelta(index: 0, partialJson: 'Tokyo"}'),
-        const FunctionCallStop(0),
-        Complete(_metadata),
-      ];
-      final consumer = _makeConsumer(script);
-
-      final out = StringBuffer();
-      await consumer.eventTurn(
-        [
-          const ChatMessage(
-            role: ChatRole.user,
-            content: [TextContent("What's the weather in Tokyo?")],
-          ),
-        ],
-        outputEncoding: 'json',
-        out: out,
-      );
-
-      final lines = out.toString().trimRight().split('\n');
-      expect(lines, hasLength(script.length),
-          reason: 'one JSON line per ChatEvent');
-
-      // First event is FunctionCallStart with the right name and id
-      final first = decodeEventJson(lines.first);
-      expect(first, isA<FunctionCallStart>());
-      expect((first as FunctionCallStart).id, 'call_w1');
-      expect(first.name, 'get_weather');
-
-      // Last event is Complete
-      expect(decodeEventJson(lines.last), isA<Complete>());
-    });
 
     test('wiring: functions and functionChoice flow into ChatIOConfig', () {
-      // Validates that the FunctionDefinition list and FunctionChoice
-      // are surfaced correctly when copyWith'd — exercises the substrate contract.
       const def = FunctionDefinition(
         name: 'search',
         description: 'Search the web.',
