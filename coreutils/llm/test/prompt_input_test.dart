@@ -24,6 +24,16 @@ import 'package:stream_channel/stream_channel.dart';
 import 'package:test/test.dart';
 
 // ---------------------------------------------------------------------------
+// Captured ioctl call.
+// ---------------------------------------------------------------------------
+
+class _IoctlCall {
+  final int cmd;
+  final Uint8List data;
+  _IoctlCall(this.cmd, this.data);
+}
+
+// ---------------------------------------------------------------------------
 // BytesIOSink — injectable output for relayTurn.
 // ---------------------------------------------------------------------------
 
@@ -87,6 +97,36 @@ class BytesIOSink implements IOSink {
 // [readScript] is the list of raw byte records the fake driver returns from
 // read() in order; the last item should be Uint8List(0) (EOF sentinel).
 // ---------------------------------------------------------------------------
+
+InertConsumer _makeConsumerWithIoctlCapture({
+  required List<_IoctlCall> ioctls,
+  List<Uint8List> readScript = const [],
+}) {
+  var cursor = 0;
+  final driver = BentosDriver(
+    onOpen: (req, ctx) => FuseResponse(open: OpenReply()),
+    onIoctl: (req, ctx) {
+      ioctls.add(_IoctlCall(req.cmd, Uint8List.fromList(req.inBuf)));
+      return FuseResponse(ioctl: IoctlReply());
+    },
+    onWrite: (req, ctx) =>
+        FuseResponse(write: WriteReply(count: Int64(req.data.length))),
+    onRead: (req, ctx) => FuseResponse(
+      buf: BufReply(
+        data: cursor < readScript.length
+            ? readScript[cursor++]
+            : Uint8List(0),
+      ),
+    ),
+    onFlush: (req, ctx) => FuseResponse(),
+    onRelease: (req, ctx) => FuseResponse(),
+  );
+  final pair = StreamChannelController<Uint8List>();
+  driver.serveChannel(pair.foreign);
+  final inProcess = InProcessBentos(capMap: {'/dev/llm/': pair.local});
+  final device = BentosChatDevice(inProcess, '/dev/llm/test/scripted');
+  return InertConsumer(device, inProcess);
+}
 
 InertConsumer _makeConsumer({
   void Function(Uint8List)? onWriteCapture,
@@ -415,6 +455,136 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
+  // Encoding ioctl dispatch — verifies that the encoding flags reach the device
+  // as CHAT_SET_INPUT_ENCODING (0x0D) / CHAT_SET_OUTPUT_ENCODING (0x0E) ioctls.
+  // The relay framing tests above use a scripted device that returns pre-baked
+  // bytes regardless of ioctls, so they cannot catch the bug where
+  // ioConfig omits encoding from ChatIOConfig (and configToIoctls never fires).
+  // ---------------------------------------------------------------------------
+
+  group('encoding ioctl dispatch', () {
+    const _chatSetInputEncoding  = 0x0D;
+    const _chatSetOutputEncoding = 0x0E;
+
+    test('outputEncoding=json + outputFormat=typed emits CHAT_SET_OUTPUT_ENCODING (0x0E)',
+        () async {
+      final ioctls = <_IoctlCall>[];
+      final consumer = _makeConsumerWithIoctlCapture(
+        ioctls: ioctls,
+        readScript: [Uint8List(0)],
+      );
+
+      await consumer.relayTurn(
+        config: const ChatIOConfig().copyWith(
+          outputFormat: Format.structured,
+          outputEncoding: Encoding.json,
+        ),
+        inputEncoding: 'protobuf',
+        outputEncoding: 'json',
+        textPrompt: 'ping',
+      );
+
+      final cmds = ioctls.map((c) => c.cmd).toList();
+      expect(
+        cmds,
+        contains(_chatSetOutputEncoding),
+        reason: 'CHAT_SET_OUTPUT_ENCODING (0x0E) must be dispatched when '
+            'outputEncoding=json; got ioctls: ${cmds.map((c) => '0x${c.toRadixString(16)}').toList()}',
+      );
+      // Input encoding is default (protobuf) — its ioctl must NOT fire.
+      expect(cmds, isNot(contains(_chatSetInputEncoding)));
+    });
+
+    test('inputEncoding=json + inputFormat=typed emits CHAT_SET_INPUT_ENCODING (0x0D)',
+        () async {
+      const msg = ChatMessage(
+        role: ChatRole.user,
+        content: [TextContent('hi')],
+      );
+      final jsonLine = encodeMessageJson(msg);
+      final inputBytes = Uint8List.fromList(utf8.encode(jsonLine));
+
+      final ioctls = <_IoctlCall>[];
+      final consumer = _makeConsumerWithIoctlCapture(
+        ioctls: ioctls,
+        readScript: [Uint8List(0)],
+      );
+
+      await consumer.relayTurn(
+        config: const ChatIOConfig().copyWith(
+          inputFormat: Format.structured,
+          inputEncoding: Encoding.json,
+        ),
+        inputEncoding: 'json',
+        outputEncoding: 'protobuf',
+        typedStdin: _streamOf(inputBytes),
+      );
+
+      final cmds = ioctls.map((c) => c.cmd).toList();
+      expect(
+        cmds,
+        contains(_chatSetInputEncoding),
+        reason: 'CHAT_SET_INPUT_ENCODING (0x0D) must be dispatched when '
+            'inputEncoding=json; got: ${cmds.map((c) => '0x${c.toRadixString(16)}').toList()}',
+      );
+      expect(cmds, isNot(contains(_chatSetOutputEncoding)));
+    });
+
+    test('both encodings=json emits both 0x0D and 0x0E', () async {
+      // Must use typedStdin — textPrompt forces inputEncoding=protobuf in relayTurn.
+      const msg = ChatMessage(
+        role: ChatRole.user,
+        content: [TextContent('both')],
+      );
+      final inputBytes =
+          Uint8List.fromList(utf8.encode(encodeMessageJson(msg)));
+
+      final ioctls = <_IoctlCall>[];
+      final consumer = _makeConsumerWithIoctlCapture(
+        ioctls: ioctls,
+        readScript: [Uint8List(0)],
+      );
+
+      await consumer.relayTurn(
+        config: const ChatIOConfig().copyWith(
+          inputFormat: Format.structured,
+          outputFormat: Format.structured,
+          inputEncoding: Encoding.json,
+          outputEncoding: Encoding.json,
+        ),
+        inputEncoding: 'json',
+        outputEncoding: 'json',
+        typedStdin: _streamOf(inputBytes),
+      );
+
+      final cmds = ioctls.map((c) => c.cmd).toList();
+      expect(cmds, contains(_chatSetInputEncoding));
+      expect(cmds, contains(_chatSetOutputEncoding));
+    });
+
+    test('default encodings (protobuf) emit neither 0x0D nor 0x0E', () async {
+      final ioctls = <_IoctlCall>[];
+      final consumer = _makeConsumerWithIoctlCapture(
+        ioctls: ioctls,
+        readScript: [Uint8List(0)],
+      );
+
+      await consumer.relayTurn(
+        config: const ChatIOConfig().copyWith(
+          outputFormat: Format.structured,
+        ),
+        inputEncoding: 'protobuf',
+        outputEncoding: 'protobuf',
+        textPrompt: 'ping',
+      );
+
+      final cmds = ioctls.map((c) => c.cmd).toList();
+      expect(cmds, isNot(contains(_chatSetInputEncoding)));
+      expect(cmds, isNot(contains(_chatSetOutputEncoding)));
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // D2 — function calling: file loading + ioConfig wiring
   // ---------------------------------------------------------------------------
 
@@ -487,6 +657,12 @@ void main() {
         throwsA(isA<ArgumentError>()),
       );
     });
+
+    // ---------------------------------------------------------------------------
+    // Encoding ioctl dispatch — this is what the relay tests above do NOT cover:
+    // the fake device returns scripted json regardless of which ioctls fire.
+    // These tests assert that the IOCTL layer is actually exercised.
+    // ---------------------------------------------------------------------------
 
     test('wiring: functions and functionChoice flow into ChatIOConfig', () {
       const def = FunctionDefinition(

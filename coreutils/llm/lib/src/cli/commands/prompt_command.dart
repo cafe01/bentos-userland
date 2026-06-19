@@ -98,10 +98,25 @@ class PromptCommand extends LlmBaseCommand {
     final bool streaming =
         (argResults!['output-mode'] as String) == 'streaming';
 
+    // Encoding is inert under format=text — only wire it when format=typed so
+    // configToIoctls doesn't emit a spurious CHAT_SET_*_ENCODING ioctl.
+    final inputEncoding = inputFmt == Format.structured
+        ? ((argResults!['input-encoding'] as String) == 'json'
+            ? Encoding.json
+            : Encoding.protobuf)
+        : Encoding.protobuf;
+    final outputEncoding = outputFmt == Format.structured
+        ? ((argResults!['output-encoding'] as String) == 'json'
+            ? Encoding.json
+            : Encoding.protobuf)
+        : Encoding.protobuf;
+
     return super.ioConfig.copyWith(
       inputFormat: inputFmt,
       outputFormat: outputFmt,
       streaming: streaming,
+      inputEncoding: inputEncoding,
+      outputEncoding: outputEncoding,
       functionChoice: _parseFunctionChoice(
         argResults!['function-choice'] as String?,
       ),
