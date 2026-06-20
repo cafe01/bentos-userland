@@ -23,18 +23,15 @@ EXECUTABLES=(
   "chat:chat"
   "chat-codec:chat_codec"
   "chat-render:chat_render"
-  "chatbot:chatbot"
   "llm:llm"
   "tx:tx"
   "websearch:websearch"
 )
 
 # Known-broken binaries and the reason each is blocked:
-#   chat, chatbot  — consume the retired package:tx API (pending #30 rewire)
-#   chat-codec, chat-render, llm — Encoding/inputEncoding API mismatch; blocked
-#                   on the chat-inference-dart submodule pointer being bumped in
-#                   the parent repo (pending pointer bump after #30 sweep)
-EXPECTED_FAIL="chat chatbot chat-codec chat-render llm"
+#   chat  — consumes the retired package:tx API (pending the Phase-3 chat
+#           coreutil rewire onto the new tx surface + #20 system-message bug)
+EXPECTED_FAIL="chat"
 
 installed=()
 failed=()
@@ -54,7 +51,7 @@ for entry in "${EXECUTABLES[@]}"; do
     # Re-run to capture the error for display.
     err=$(dart compile exe "$src" -o "$dest" 2>&1 || true)
     if echo "$EXPECTED_FAIL" | grep -qw "$exec_name"; then
-      printf "FAILED (expected — pending pointer bump / #30)\n"
+      printf "FAILED (expected — pending Phase-3 chat rewire onto new tx)\n"
       failed_expected+=("$exec_name")
     else
       printf "FAILED (unexpected)\n"
@@ -70,7 +67,7 @@ if [[ ${#installed[@]} -gt 0 ]]; then
   echo "  installed : ${installed[*]}"
 fi
 if [[ ${#failed_expected[@]} -gt 0 ]]; then
-  echo "  FAILED (expected, pending #30): ${failed_expected[*]}"
+  echo "  FAILED (expected, pending Phase-3 chat rewire): ${failed_expected[*]}"
 fi
 if [[ ${#failed[@]} -gt 0 ]]; then
   echo "  FAILED (unexpected): ${failed[*]}"
