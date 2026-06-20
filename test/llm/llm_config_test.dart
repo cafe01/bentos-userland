@@ -5,7 +5,7 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:llm/llm.dart';
+import 'package:bentos_userland/llm.dart';
 import 'package:test/test.dart';
 
 void main() {

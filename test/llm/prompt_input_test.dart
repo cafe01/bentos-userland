@@ -19,7 +19,7 @@ import 'package:bentos_driver_sdk/bentos_driver_sdk.dart';
 import 'package:bentos_userland/bentos_userland.dart';
 import 'package:chat_inference/chat_inference.dart';
 import 'package:fixnum/fixnum.dart';
-import 'package:llm/llm.dart';
+import 'package:bentos_userland/llm.dart';
 import 'package:stream_channel/stream_channel.dart';
 import 'package:test/test.dart';
 

@@ -1,5 +1,5 @@
-import 'package:llm/llm.dart';
-import 'package:llm/src/cli/commands/models_command.dart';
+import 'package:bentos_userland/llm.dart';
+import 'package:bentos_userland/src/llm/cli/commands/models_command.dart';
 import 'package:test/test.dart';
 
 void main() {

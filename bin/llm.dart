@@ -3,7 +3,7 @@ library;
 import 'dart:io';
 
 import '_drivers.dart';
-import 'package:llm/llm.dart';
+import 'package:bentos_userland/llm.dart';
 
 void main(List<String> args) async {
   registerBundledLlmDrivers();

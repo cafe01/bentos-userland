@@ -17,7 +17,6 @@ environment:
 # This repo IS "what you install when you install HumanOS": the libc plus its
 # coreutils, resolved as one pub workspace.
 workspace:
-  - coreutils/llm
   - coreutils/websearch
   - coreutils/chat-render
   - coreutils/chat
@@ -45,8 +44,6 @@ dependencies:
     path: coreutils/chat
   chat_render:
     path: coreutils/chat-render
-  llm:
-    path: coreutils/llm
   websearch:
     path: coreutils/websearch
   # Vendor drivers — needed by bin/_drivers.dart at AOT compile time.

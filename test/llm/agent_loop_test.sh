@@ -10,8 +10,8 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-AGENT_LOOP="$SCRIPT_DIR/../examples/agent-loop.sh"
-TOOLS_DIR="$SCRIPT_DIR/../examples/tools"
+AGENT_LOOP="$SCRIPT_DIR/examples/agent-loop.sh"
+TOOLS_DIR="$SCRIPT_DIR/examples/tools"
 
 PASS=0
 FAIL=0
