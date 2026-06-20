@@ -18,7 +18,6 @@ environment:
 # coreutils, resolved as one pub workspace.
 workspace:
   - coreutils/llm
-  - coreutils/chatbot
   - coreutils/websearch
   - coreutils/chat-render
   - coreutils/chat
@@ -27,7 +26,6 @@ executables:
   chat:
   chat-codec: chat_codec
   chat-render: chat_render
-  chatbot:
   llm:
   tx:
   websearch:
@@ -47,8 +45,6 @@ dependencies:
     path: coreutils/chat
   chat_render:
     path: coreutils/chat-render
-  chatbot:
-    path: coreutils/chatbot
   llm:
     path: coreutils/llm
   websearch:
