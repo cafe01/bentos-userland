@@ -65,6 +65,8 @@ root   = the governing place (walk up for place.yaml) → <place>/.tx/<entity>/<
 
 The default lets a process operating on its own state omit the flag: `tx` reads `$BENTOS_AGENT`. There is no fallback to the **caller** — the one running the command (the operator) and the owner being addressed (the entity) are distinct; a human in a raw shell must name the entity (`tx --entity john …`), or `tx` errors asking which one. `.tx/<entity>/` and `.mem/<entity>/` always land together, found by the same hierarchy.
 
+**`scope` and `thread`, by contrast, come from where you stand.** The entity is named (flag or env); the scope and thread are *inferred from CWD* — the worktree path you run the command in resolves against `<place>/.tx/<entity>/<scope>/<thread>/`, so the directory you are in **is** the scope and thread you act on. This is the same law that gives the day-to-day verbs their target ("the worktree you are in") and kills any hidden "current". The `--scope <name>` flag is the explicit override, for when you are *not* standing in a worktree — scripting, or topology commands run from elsewhere (`tx --scope cafe thread ls`); with `--scope` given and no thread named, `main` is assumed. Run a thread or day-to-day command from outside any scope worktree with no `--scope`, and `tx` errors naming the fix.
+
 ---
 
 ## Walkthrough

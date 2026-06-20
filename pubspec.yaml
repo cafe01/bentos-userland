@@ -21,7 +21,6 @@ workspace:
   - coreutils/chatbot
   - coreutils/websearch
   - coreutils/chat-render
-  - coreutils/tx
   - coreutils/chat
 
 executables:
@@ -52,8 +51,6 @@ dependencies:
     path: coreutils/chatbot
   llm:
     path: coreutils/llm
-  tx:
-    path: coreutils/tx
   websearch:
     path: coreutils/websearch
   # Vendor drivers — needed by bin/_drivers.dart at AOT compile time.
