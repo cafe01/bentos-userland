@@ -6,7 +6,7 @@ library;
 import 'dart:io';
 
 import 'package:bentos_userland/bentos_userland.dart';
-import 'package:bentos_userland/chat.dart';
+import 'package:chat_inference/chat_inference.dart';
 
 import 'llm_base_command.dart';
 
@@ -43,11 +43,10 @@ class ChatCommand extends LlmBaseCommand {
 
       conversation.add(ChatMessage.userText(input));
       try {
-        final reply = await consumer.streamTurn(
+        final reply = await consumer.textTurn(
           conversation,
           systemMessages: systemMessages,
           config: ioConfig,
-          verbose: verbose,
         );
         // Append the assistant's turn so the next turn sees it (RAM context).
         conversation.add(ChatMessage.assistantText(reply));

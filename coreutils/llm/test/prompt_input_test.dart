@@ -17,7 +17,7 @@ import 'dart:typed_data';
 
 import 'package:bentos_driver_sdk/bentos_driver_sdk.dart';
 import 'package:bentos_userland/bentos_userland.dart';
-import 'package:bentos_userland/chat.dart';
+import 'package:chat_inference/chat_inference.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:llm/llm.dart';
 import 'package:stream_channel/stream_channel.dart';
@@ -124,8 +124,7 @@ InertConsumer _makeConsumerWithIoctlCapture({
   final pair = StreamChannelController<Uint8List>();
   driver.serveChannel(pair.foreign);
   final inProcess = InProcessBentos(capMap: {'/dev/llm/': pair.local});
-  final device = BentosChatDevice(inProcess, '/dev/llm/test/scripted');
-  return InertConsumer(device, inProcess);
+  return InertConsumer(inProcess, '/dev/llm/test/scripted');
 }
 
 InertConsumer _makeConsumer({
@@ -155,8 +154,7 @@ InertConsumer _makeConsumer({
   final pair = StreamChannelController<Uint8List>();
   driver.serveChannel(pair.foreign);
   final inProcess = InProcessBentos(capMap: {'/dev/llm/': pair.local});
-  final device = BentosChatDevice(inProcess, '/dev/llm/test/scripted');
-  return InertConsumer(device, inProcess);
+  return InertConsumer(inProcess, '/dev/llm/test/scripted');
 }
 
 // ---------------------------------------------------------------------------

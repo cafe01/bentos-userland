@@ -5,7 +5,7 @@ import 'dart:io';
 
 import 'package:args/command_runner.dart';
 import 'package:bentos_userland/bentos_userland.dart';
-import 'package:bentos_userland/chat.dart';
+import 'package:chat_inference/chat_inference.dart';
 
 import '../../function_file.dart';
 import 'llm_base_command.dart';
@@ -210,15 +210,14 @@ class PromptCommand extends LlmBaseCommand {
       return 0;
     }
 
-    // Casual register: text in, text out — streamTurn via infer().
-    final messages = await _resolveTextMessages(argResults!.rest);
-    if (messages == null) return 64;
+    // Casual register: text in, text out — raw passthrough, zero codec (#33).
+    final prompt = await _resolveTextPrompt(argResults!.rest);
+    if (prompt == null) return 64;
     try {
-      await consumer.streamTurn(
-        messages,
+      await consumer.textTurn(
+        [ChatMessage.userText(prompt)],
         systemMessages: systemMessages,
         config: config,
-        verbose: verbose,
       );
     } on BentosException catch (e) {
       stderr.writeln('llm: $e');
@@ -239,12 +238,5 @@ class PromptCommand extends LlmBaseCommand {
       throw UsageException('a prompt is required', usage);
     }
     return prompt;
-  }
-
-  /// text mode: arg or piped stdin → single userText message.
-  Future<List<ChatMessage>?> _resolveTextMessages(List<String> rest) async {
-    final prompt = await _resolveTextPrompt(rest);
-    if (prompt == null) return null;
-    return [ChatMessage.userText(prompt)];
   }
 }

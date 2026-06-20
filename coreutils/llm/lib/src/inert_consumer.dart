@@ -12,16 +12,22 @@ import 'dart:typed_data';
 
 import 'package:bentos_userland/bentos_userland.dart';
 import 'package:bentos_userland/boot.dart';
-import 'package:bentos_userland/chat.dart';
+import 'package:chat_inference/chat_inference.dart';
 
 /// A booted, reusable handle on one `/dev/llm/*` device.
+///
+/// The consumer reaches Bentos through the raw syscall surface only —
+/// `open/ioctl/write/read`, zero device sugar (the relay law, #33). The
+/// `chat_inference` codec it pulls is userland flattening (CLI-constructed
+/// records in, byte-stream framing out), never the `BentosChatDevice` sugar.
 class InertConsumer {
-  final BentosChatDevice _device;
-
-  /// Raw syscall surface — used by [relayTurn] for zero-codec typed I/O.
+  /// Raw syscall surface — used by [relayTurn] and [textTurn] for direct,
+  /// zero-sugar device I/O.
   final Bentos _bentos;
 
-  InertConsumer(this._device, this._bentos);
+  final String devicePath;
+
+  InertConsumer(this._bentos, this.devicePath);
 
   /// Boots the in-process portal for [devicePath] once and returns a consumer
   /// over it. Throws [LlmBootException] if the path cannot be routed (malformed
@@ -29,52 +35,61 @@ class InertConsumer {
   /// the later turn's `open` with EACCES (a [BentosException]).
   factory InertConsumer.forDevice(String devicePath) {
     final bentos = bootLlmDevice(devicePath);
-    return InertConsumer(BentosChatDevice(bentos, devicePath), bentos);
+    return InertConsumer(bentos, devicePath);
   }
 
-  String get devicePath => _device.devicePath;
-
-  /// Streams one inference cycle over the open device: writes each `TextDelta`
-  /// (or `Block` with `TextContent` when streaming is off) to stdout, optionally
-  /// prints `Complete` metadata to stderr ([verbose]), and returns the
-  /// assistant's full text — so a caller holding a conversation can append it
-  /// and carry context forward.
+  /// The casual register — text in, text out — over raw syscalls, zero codec
+  /// on the wire (the relay law, #33). The CLI-constructed system + user
+  /// messages are written as structured protobuf records (userland flattening);
+  /// the device's unstructured text output is relayed verbatim to [out] and
+  /// accumulated as UTF-8 into the returned string — so a caller holding a
+  /// conversation (`llm chat`) can append the reply and carry context forward.
   ///
-  /// [systemMessages] are prepended before [messages] (system role first).
-  /// [config] carries `maxTokens` / `temperature` / `streaming` ioctls; defaults
-  /// are fine.
+  /// Text mode carries no metadata: there is no `Complete` record on the text
+  /// seam, so `-v` prints nothing here — `[model · stopReason · usage]` is a
+  /// property of `--output-format typed`, where the consumer decodes it.
+  ///
+  /// [systemMessages] are prepended before [messages] (system role first); the
+  /// caller passes the whole conversation so `llm chat` can carry multi-turn
+  /// context across turns. [config] carries `maxTokens` / `temperature` /
+  /// `streaming` ioctls.
   ///
   /// A `BentosException` (e.g. EACCES with no credential) propagates to the
   /// caller, surfaced exactly as a POSIX/IO error from behind the device.
-  Future<String> streamTurn(
+  Future<String> textTurn(
     List<ChatMessage> messages, {
     List<ChatMessage> systemMessages = const [],
     ChatIOConfig config = const ChatIOConfig(),
-    bool verbose = false,
+    IOSink? out,
   }) async {
+    out ??= stdout;
+    // Input is CLI-constructed records (structured protobuf so system role is
+    // carried separately); output is unstructured text relayed verbatim.
+    final effectiveConfig = config.copyWith(
+      inputFormat: Format.structured,
+      inputEncoding: Encoding.protobuf,
+      outputFormat: Format.unstructured,
+    );
+
     final reply = StringBuffer();
-    final wire = [...systemMessages, ...messages];
-    await for (final event in _device.infer(wire, config)) {
-      switch (event) {
-        case TextDelta(:final text):
-          stdout.write(text);
-          reply.write(text);
-        // When streaming=false the driver emits Block events instead of triads.
-        case Block(:final content) when content is TextContent:
-          stdout.write(content.text);
-          reply.write(content.text);
-        case Complete(:final metadata):
-          stdout.writeln();
-          if (verbose) {
-            stderr.writeln(
-              '[${metadata.model} · ${metadata.stopReason} · '
-              '${metadata.usage?.inputTokens}in/'
-              '${metadata.usage?.outputTokens}out]',
-            );
-          }
-        default:
-          break; // thinking / function events: not surfaced by the casual register.
+    final fd = await _bentos.open(devicePath);
+    try {
+      for (final (cmd, payload) in configToIoctls(effectiveConfig)) {
+        await _bentos.ioctl(fd, cmd, payload);
       }
+      for (final m in [...systemMessages, ...messages]) {
+        await _bentos.write(fd, encodeMessage(m));
+      }
+
+      while (true) {
+        final raw = await _bentos.read(fd);
+        if (raw.isEmpty) break;
+        out.add(raw);
+        reply.write(utf8.decode(raw, allowMalformed: true));
+      }
+      out.writeln(); // userland trailing newline after the turn
+    } finally {
+      await _bentos.close(fd);
     }
     return reply.toString();
   }
