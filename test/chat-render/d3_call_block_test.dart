@@ -4,7 +4,7 @@ library;
 import 'dart:io';
 
 import 'package:ansicolor/ansicolor.dart';
-import 'package:chat_render/chat_render.dart';
+import 'package:bentos_userland/chat_render.dart';
 import 'package:term_glyph/term_glyph.dart' as tg;
 import 'package:test/test.dart';
 
@@ -52,7 +52,7 @@ Future<String> render(
 }
 
 List<String> fixture(String name) =>
-    File('fixtures/$name.jsonl').readAsLinesSync();
+    File('test/chat-render/fixtures/$name.jsonl').readAsLinesSync();
 
 // ---------------------------------------------------------------------------
 // Function call — streaming triads

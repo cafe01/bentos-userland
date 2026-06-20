@@ -8,7 +8,7 @@ import 'dart:io';
 
 import 'package:ansicolor/ansicolor.dart';
 import 'package:chat_inference/chat_inference.dart';
-import 'package:chat_render/chat_render.dart';
+import 'package:bentos_userland/chat_render.dart';
 import 'package:term_glyph/term_glyph.dart' as tg;
 import 'package:test/test.dart';
 
@@ -59,7 +59,7 @@ Future<String> render(
 
 /// Read a fixture file's lines.
 List<String> fixture(String name) =>
-    File('fixtures/$name.jsonl').readAsLinesSync();
+    File('test/chat-render/fixtures/$name.jsonl').readAsLinesSync();
 
 // ---------------------------------------------------------------------------
 // Speech — text-simple

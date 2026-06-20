@@ -18,7 +18,6 @@ environment:
 # coreutils, resolved as one pub workspace.
 workspace:
   - coreutils/websearch
-  - coreutils/chat-render
   - coreutils/chat
 
 executables:
@@ -31,6 +30,8 @@ executables:
 
 dependencies:
   args: ^2.4.0
+  ansicolor: ^2.0.3
+  term_glyph: ^1.2.2
   bentos_abi:
     path: ../bentos-abi
   bentos_driver_sdk:
@@ -42,8 +43,6 @@ dependencies:
   # coreutil libs — exposed via bin/ shells
   chat:
     path: coreutils/chat
-  chat_render:
-    path: coreutils/chat-render
   websearch:
     path: coreutils/websearch
   # Vendor drivers — needed by bin/_drivers.dart at AOT compile time.

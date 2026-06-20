@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:args/command_runner.dart';
-import 'package:chat/chat.dart';
+import 'package:bentos_userland/chat_codec.dart';
 
 Future<void> main(List<String> args) async {
   final runner = buildChatCodecRunner();

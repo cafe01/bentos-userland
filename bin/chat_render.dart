@@ -4,7 +4,7 @@ library;
 import 'dart:io';
 
 import 'package:args/args.dart';
-import 'package:chat_render/chat_render.dart';
+import 'package:bentos_userland/chat_render.dart';
 
 const _usage = '''
 Usage: llm … | chat-render [options]
