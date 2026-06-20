@@ -28,10 +28,9 @@ EXECUTABLES=(
   "websearch:websearch"
 )
 
-# Known-broken binaries and the reason each is blocked:
-#   chat  — consumes the retired package:tx API (pending the Phase-3 chat
-#           coreutil rewire onto the new tx surface + #20 system-message bug)
-EXPECTED_FAIL="chat"
+# Known-broken binaries and the reason each is blocked. Empty: the whole
+# busybox builds clean (chat rewired onto the new tx surface, #19 Phase 3).
+EXPECTED_FAIL=""
 
 installed=()
 failed=()
