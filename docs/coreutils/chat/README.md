@@ -1,3 +1,6 @@
+> [!CAUTION]
+> **SUPERSEDED — this coreutil no longer exists.** `chat` is now an *application*, not a one-turn coreutil. A turn is a step *inside* the app (a composition of `llm`, `chat-codec`, and `chat-render` over `tx`), never a command you call. This whole doc — and the `coreutils/chat` directory — dies when the chat app ships. Source of truth: `hq/workshop/humanos/apps/chat/product.md` and `engineering.md`; user-facing face: `../../apps/chat/README.md`. Everything below is the dead model (and uses the retired `tx cat`/`append` surface); do not build against it.
+
 # `chat` — the turn as a command
 
 ```sh
