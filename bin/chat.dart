@@ -5,8 +5,8 @@ import 'package:args/args.dart';
 import 'package:bentos_userland/bentos_userland.dart';
 import 'package:bentos_userland/boot.dart';
 import 'package:bentos_userland/chat.dart';
+import 'package:bentos_userland/tx.dart';
 import 'package:chat/chat.dart';
-import 'package:tx/tx.dart';
 
 const _usage = '''
 Usage: chat [options] <prompt>
@@ -59,13 +59,25 @@ Future<int> main(List<String> args) async {
     return 1;
   }
 
-  // Resolve the being and its log (reuses tx's proven resolution).
+  final systemSegments = parsed['system'] as List<String>;
+  final systemMessages = systemSegments.isEmpty
+      ? const <ChatMessage>[]
+      : [ChatMessage.systemText(systemSegments.join('\n'))];
+
+  // Resolve the being and open its ambient session (scope=main, thread=main).
+  // On a fresh session the system message is recorded so it lands in the log —
+  // a native turn carries its system message.
   final ChatSession session;
   try {
-    final entity = resolveEntity(parsed['agent'] as String?, Platform.environment);
-    final repo = TxRepo(resolveRepoDir(entity, Directory.current), entity);
-    session = ChatSession(repo);
-    await session.ensureOpen();
+    final entity = resolveEntity(
+      agentFlag: parsed['agent'] as String?,
+      environment: Platform.environment,
+    );
+    session = await ChatSession.open(
+      entity,
+      Directory.current,
+      systemMessages: systemMessages,
+    );
   } on TxResolveError catch (e) {
     stderr.writeln(e);
     return 1;
@@ -87,22 +99,19 @@ Future<int> main(List<String> args) async {
   final toolsDir = parsed['tools'] as String?;
   final tools = [...builtinTools(), if (toolsDir != null) ...loadTools(toolsDir)];
   final config = ChatIOConfig(functions: tools.isEmpty ? null : tools);
-  final systemSegments = parsed['system'] as List<String>;
-  final systemMessages = systemSegments.isEmpty
-      ? const <ChatMessage>[]
-      : [ChatMessage.systemText(systemSegments.join('\n'))];
 
-  // The seam: read context from tx, run the turn, append each mutation.
+  // The seam: read context from tx (system message included), run the turn,
+  // append each mutation, then seal the turn with one commit.
   // Growable copy — history() may return an unmodifiable empty list.
   final conversation = [...session.history()];
   final userMsg = ChatMessage.userText(positional.join(' '));
-  // Write-ahead: the input commits BEFORE inference — a crash never loses it.
+  // Write-ahead: the input lands on disk BEFORE inference — a crash never loses
+  // it. The git commit at the turn boundary seals the whole batch.
   await session.record(userMsg);
   conversation.add(userMsg);
 
   final turn = Turn(
     device: device,
-    systemMessages: systemMessages,
     config: config,
     toolsDir: toolsDir,
     verbose: parsed['verbose'] as bool,
@@ -111,6 +120,7 @@ Future<int> main(List<String> args) async {
 
   try {
     await turn.run(conversation);
+    await session.commitTurn();
     return 0;
   } on BentosException catch (e) {
     stderr.writeln('chat: $e');

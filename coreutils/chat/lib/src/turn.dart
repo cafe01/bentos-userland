@@ -13,7 +13,6 @@ typedef MessageSink = Future<void> Function(ChatMessage message);
 final class Turn {
   Turn({
     required this.device,
-    required this.systemMessages,
     required this.config,
     required this.toolsDir,
     required this.verbose,
@@ -23,7 +22,6 @@ final class Turn {
   static const _maxToolIter = 20;
 
   final BentosChatDevice device;
-  final List<ChatMessage> systemMessages;
   final ChatIOConfig config;
   final String? toolsDir;
   final bool verbose;
@@ -60,7 +58,7 @@ final class Turn {
   /// One inference turn, streaming text deltas to stdout; returns the full
   /// assembled assistant message (text + any function-call blocks).
   Future<ChatMessage> _streamTurn(List<ChatMessage> messages) async {
-    final wire = [...systemMessages, ...messages];
+    final wire = messages;
     final textBufs = <int, StringBuffer>{};
     final blockContents = <int, ChatContent>{};
 

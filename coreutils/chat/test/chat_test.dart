@@ -3,38 +3,38 @@ import 'dart:io';
 import 'package:chat/chat.dart';
 import 'package:chat_inference/chat_inference.dart';
 import 'package:test/test.dart';
-import 'package:tx/tx.dart';
 
 void main() {
   late Directory tmp;
-  late TxRepo repo;
-  late ChatSession session;
 
   setUp(() {
     tmp = Directory.systemTemp.createTempSync('chat_test_');
     File('${tmp.path}/place.yaml').writeAsStringSync('place: test\n');
-    repo = TxRepo(Directory('${tmp.path}/.tx/john'), 'john');
-    session = ChatSession(repo);
   });
   tearDown(() => tmp.deleteSync(recursive: true));
 
-  Future<int> commitCount() async {
+  // The session worktree on the tx model: <place>/.tx/<entity>/<scope>/<thread>/.
+  File logFile(String entity, {String scope = 'main', String thread = 'main'}) =>
+      File('${tmp.path}/.tx/$entity/$scope/$thread/session.jsonl');
+
+  Future<int> commitCount(String entity,
+      {String scope = 'main', String thread = 'main'}) async {
+    final worktree = '${tmp.path}/.tx/$entity/$scope/$thread';
     final r = await Process.run(
       'git',
-      ['-C', repo.dir.path, 'rev-list', '--count', 'HEAD'],
+      ['-C', worktree, 'rev-list', '--count', 'HEAD'],
     );
     return int.parse((r.stdout as String).trim());
   }
 
-  group('ChatSession — the chat↔tx seam', () {
-    test('ensureOpen creates a session on first turn; history starts empty', () async {
-      await session.ensureOpen();
-      expect(repo.hasSession, isTrue);
+  group('ChatSession — the chat↔tx seam on the worktree model', () {
+    test('open creates a session; a system-less history starts empty', () async {
+      final session = await ChatSession.open('john', tmp);
       expect(session.history(), isEmpty);
     });
 
     test('a recorded message round-trips through the framing', () async {
-      await session.ensureOpen();
+      final session = await ChatSession.open('john', tmp);
       await session.record(ChatMessage.userText('hello'));
 
       final history = session.history();
@@ -46,8 +46,9 @@ void main() {
       );
     });
 
-    test('a full turn (user, assistant+funccall, tool-result) round-trips', () async {
-      await session.ensureOpen();
+    test('a full turn (user, assistant+funccall, tool-result) round-trips',
+        () async {
+      final session = await ChatSession.open('john', tmp);
       await session.record(ChatMessage.userText('search dart'));
       await session.record(ChatMessage(role: ChatRole.assistant, content: [
         TextContent('let me look'),
@@ -72,26 +73,29 @@ void main() {
           equals('c1'));
     });
 
-    test('one record == one commit (per-mutation write-ahead)', () async {
-      await session.ensureOpen(); // base commit
+    test('one commitTurn == one commit on top of the base (turns = commits)',
+        () async {
+      final session = await ChatSession.open('john', tmp);
+      final base = await commitCount('john'); // scope-new base commit
       await session.record(ChatMessage.userText('a'));
       await session.record(ChatMessage(role: ChatRole.assistant, content: [
         TextContent('b'),
       ]));
-      // base (1) + 2 records = 3 commits.
-      expect(await commitCount(), equals(3));
+      await session.commitTurn();
+      // The whole turn's batch of records seals as ONE commit.
+      expect(await commitCount('john'), equals(base + 1));
     });
 
-    test('continuity lives on disk, not memory: a fresh session reads it back',
+    test('continuity lives on disk, not memory: a fresh open reads it back',
         () async {
-      await session.ensureOpen();
+      final session = await ChatSession.open('john', tmp);
       await session.record(ChatMessage.userText('remember electric blue'));
       await session.record(ChatMessage(role: ChatRole.assistant, content: [
         TextContent('noted'),
       ]));
 
-      // A brand-new ChatSession over the SAME repo dir — no shared memory.
-      final reopened = ChatSession(TxRepo(repo.dir, 'john'));
+      // A brand-new ChatSession over the SAME place — no shared memory.
+      final reopened = await ChatSession.open('john', tmp);
       final h = reopened.history();
       expect(h, hasLength(2));
       expect(h.first.content.whereType<TextContent>().single.text,
@@ -99,7 +103,7 @@ void main() {
     });
 
     test('multi-line text does not break the JSONL framing', () async {
-      await session.ensureOpen();
+      final session = await ChatSession.open('john', tmp);
       await session.record(ChatMessage.userText('line one\nline two\nline three'));
 
       final h = session.history();
@@ -108,6 +112,63 @@ void main() {
         h.single.content.whereType<TextContent>().single.text,
         equals('line one\nline two\nline three'),
       );
+    });
+
+    test('reopening an existing session does NOT re-record the system message',
+        () async {
+      const sys = 'You are a helpful assistant named Iris.';
+      await ChatSession.open('john', tmp,
+          systemMessages: [ChatMessage.systemText(sys)]);
+      // Second open over the SAME place: the scope already exists, so the
+      // establishment-time system write must NOT fire again.
+      final reopened = await ChatSession.open('john', tmp,
+          systemMessages: [ChatMessage.systemText(sys)]);
+      expect(reopened.history(), hasLength(1));
+    });
+
+    // --- #20 regression: a native turn carries its system message ----------
+    //
+    // The trap (golden-rule-applies-to-assertions): a non-empty / "some
+    // system message exists" assert passes by accident. We assert the EXACT
+    // system text — both decoded from history and present in the raw log on
+    // disk — so a wrong serialization actually fails.
+    group('#20 — system message recorded at establishment', () {
+      const sys = 'You are Iris. Be terse. Marker: electric-blue-7741.';
+
+      test('history carries the system message with its EXACT text', () async {
+        final session = await ChatSession.open('john', tmp,
+            systemMessages: [ChatMessage.systemText(sys)]);
+
+        final h = session.history();
+        expect(h, hasLength(1));
+        expect(h.single.role, equals(ChatRole.system));
+        expect(
+          h.single.content.whereType<TextContent>().single.text,
+          equals(sys),
+        );
+      });
+
+      test('the EXACT system text lands in session.jsonl on disk', () async {
+        await ChatSession.open('john', tmp,
+            systemMessages: [ChatMessage.systemText(sys)]);
+
+        final raw = logFile('john').readAsStringSync();
+        expect(raw, contains(sys));
+      });
+
+      test('it survives a fresh open — continuity on disk, not memory',
+          () async {
+        await ChatSession.open('john', tmp,
+            systemMessages: [ChatMessage.systemText(sys)]);
+
+        final reopened = await ChatSession.open('john', tmp);
+        final h = reopened.history();
+        expect(h, hasLength(1));
+        expect(
+          h.single.content.whereType<TextContent>().single.text,
+          equals(sys),
+        );
+      });
     });
   });
 
