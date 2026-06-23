@@ -17,13 +17,15 @@ set -euo pipefail
 PREFIX="${PREFIX:-$HOME/.local/bin}"
 mkdir -p "$PREFIX"
 
-# Executable name → bin/ source file (pubspec.yaml executables: section).
+# Executable name → bin/ source file. This list IS the registry (the pubspec
+# executables: section is gone — install is AOT via this script, not pub global).
 # Format: "exec-name:bin_file"  (file has no .dart suffix here)
 EXECUTABLES=(
   "chat:chat"
   "chat-codec:chat_codec"
   "chat-render:chat_render"
   "llm:llm"
+  "manifest:manifest"
   "tx:tx"
   "websearch:websearch"
 )

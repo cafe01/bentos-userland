@@ -20,18 +20,13 @@ workspace:
   - coreutils/websearch
   - coreutils/chat
 
-executables:
-  chat:
-  chat-codec: chat_codec
-  chat-render: chat_render
-  llm:
-  tx:
-  websearch:
-
 dependencies:
   args: ^2.4.0
   ansicolor: ^2.0.3
   term_glyph: ^1.2.2
+  file: ^7.0.0
+  path: ^1.9.0
+  xml: ^6.5.0
   bentos_abi:
     path: ../bentos-abi
   bentos_driver_sdk:
