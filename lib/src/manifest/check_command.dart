@@ -23,7 +23,8 @@ final class CheckCommand extends Command<int> {
 
   @override
   Future<int> run() async {
-    final roots = resolveTreeRoots();
+    final localFs = const LocalFileSystem();
+    final roots = resolveTreeRoots(localFs, localFs.currentDirectory.path, Platform.environment);
     final resolver = PathResolver(const LocalFileSystem(), roots);
     final engine = ComposeEngine(resolver);
 

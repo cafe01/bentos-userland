@@ -35,7 +35,8 @@ final class BuildCommand extends Command<int> {
 
   @override
   Future<int> run() async {
-    final roots = resolveTreeRoots();
+    final localFs = const LocalFileSystem();
+    final roots = resolveTreeRoots(localFs, localFs.currentDirectory.path, Platform.environment);
     final resolver = PathResolver(const LocalFileSystem(), roots);
     final engine = ComposeEngine(resolver);
 
@@ -59,7 +60,7 @@ final class BuildCommand extends Command<int> {
 
     try {
       final doc = engine.compose(source, baseDir);
-      stdout.writeln(doc.toXmlString(pretty: true));
+      stdout.writeln(serializeComposed(doc));
       return 0;
     } on ComposeException catch (e) {
       stderr.writeln(e.message);

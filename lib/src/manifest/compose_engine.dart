@@ -2,6 +2,48 @@ import 'package:xml/xml.dart';
 
 import 'path_resolver.dart';
 
+const _xiNs = 'http://www.w3.org/2001/XInclude';
+
+const _preservedElements = {
+  'knowledge',
+  'protocol',
+  'pattern',
+  'antipattern',
+  'essence',
+  'purpose',
+  'capacity',
+  'principle',
+  'genesis',
+};
+
+/// Serialize a composed [XmlDocument] to a pretty-printed XML string.
+///
+/// - Preserves whitespace inside text-heavy elements (genesis, protocol, …).
+/// - Strips orphaned `xmlns:xi` namespace declarations left after xi:include
+///   resolution — all includes are already spliced out; the declaration is dead.
+String serializeComposed(XmlDocument doc) {
+  _stripXiNamespace(doc.rootElement);
+  return doc.toXmlString(
+    pretty: true,
+    indent: '  ',
+    preserveWhitespace: (node) =>
+        node is XmlElement && _preservedElements.contains(node.name.local),
+  );
+}
+
+void _stripXiNamespace(XmlElement el) {
+  el.attributes.removeWhere(
+    (attr) =>
+        (attr.name.local == 'xi' && attr.name.prefix == 'xmlns') ||
+        (attr.name.prefix == null &&
+            attr.name.local == 'xmlns' &&
+            attr.value == _xiNs),
+  );
+  for (final child in el.childElements) {
+    _stripXiNamespace(child);
+  }
+}
+
 /// Raised when a composition cannot complete: a missing include, an unresolvable
 /// `href`, or an include cycle. The command layer catches it, writes [message] to
 /// stderr, and exits 1.
