@@ -41,6 +41,8 @@ void main() {
       _seed(fs, '/tree/skill/craft/coding/dart/dart.xml', '<atom/>');
       // A member file (basename ≠ dir) — an xi:include part, NOT a particle root.
       _seed(fs, '/tree/skill/craft/coding/dart/skill_abstract.xml', '<x/>');
+      // A deep particle using the canonical atom.xml convention.
+      _seed(fs, '/tree/skill/tools/git/atom.xml', '<atom/>');
       lister = TreeLister(fs, const ['/tree']);
     });
 
@@ -49,7 +51,12 @@ void main() {
         'alfred.soul',
         'anamnesis.faculty',
         'dart.coding.craft.skill',
+        'git.tools.skill',
       ]);
+    });
+
+    test('a deep atom.xml particle appears (the ls bug fix)', () {
+      expect(lister.list('**.skill'), contains('git.tools.skill'));
     });
 
     test('a member file never appears as a particle', () {
@@ -62,7 +69,10 @@ void main() {
 
     test('glob filters by family', () {
       expect(lister.list('*.soul'), ['alfred.soul']);
-      expect(lister.list('**.skill'), ['dart.coding.craft.skill']);
+      expect(lister.list('**.skill'), [
+        'dart.coding.craft.skill',
+        'git.tools.skill',
+      ]);
     });
   });
 

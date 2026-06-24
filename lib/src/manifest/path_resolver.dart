@@ -51,14 +51,16 @@ final class PathResolver {
   /// The symmetric inverse of [fqdnToRelPath]: a tree-relative particle path back
   /// to its FQDN, or null if [relPath] is not a particle root. Pure — no IO.
   ///
-  /// A particle root is `<dir>/<first-segment>.xml` — the basename must equal the
-  /// last directory segment (which becomes the FQDN's first segment). Reverse the
-  /// directory segments for the rest. A file whose basename does NOT match its
-  /// directory (an `xi:include` member like `skill_abstract.xml`) is not a
-  /// particle root → null.
+  /// A particle root is either `<dir>/atom.xml` (the canonical convention, FQDN in
+  /// the file's `id` attribute) OR `<dir>/<first-segment>.xml` (the named
+  /// convention, basename equal to the last directory segment). Both map to the
+  /// same FQDN: reverse the directory segments. A file that is neither (an
+  /// `xi:include` member like `skill_abstract.xml` or `soul.xml`) is not a particle
+  /// root → null.
   ///
   ///   soul/alfred/alfred.xml            → alfred.soul
   ///   skill/craft/coding/swift/swift.xml → swift.coding.craft.skill
+  ///   skill/tools/git/atom.xml          → git.tools.skill   (canonical)
   ///   baz/bar/foo/foo.xml               → foo.bar.baz
   ///   skill/craft/coding/dart/skill_abstract.xml → null (a member, not a root)
   String? relPathToFqdn(String relPath) {
@@ -68,7 +70,7 @@ final class PathResolver {
     if (!basename.endsWith('.xml')) return null;
     final stem = basename.substring(0, basename.length - 4);
     final parentDir = parts[parts.length - 2];
-    if (stem != parentDir) return null;
+    if (stem != 'atom' && stem != parentDir) return null;
     // dirs = all but the last (the file); reverse them to form FQDN
     final dirs = parts.sublist(0, parts.length - 1);
     return dirs.reversed.join('.');
@@ -85,13 +87,19 @@ final class PathResolver {
         canonicalPath: relFile.path,
       );
     }
-    // 2. FQDN which(1)-style across roots
+    // 2. FQDN which(1)-style across roots. Each root tries the named convention
+    //    (<name>.xml) first, then the canonical atom.xml in the same dir — so a dir
+    //    holding both prefers the named file, and a skill that only ships atom.xml
+    //    still resolves.
     final relPath = fqdnToRelPath(href);
     if (relPath != null) {
+      final atomVariant = p.join(p.dirname(relPath), 'atom.xml');
       for (final root in _treeRoots) {
-        final f = _fs.file(p.join(root, relPath));
-        if (f.existsSync()) {
-          return (content: f.readAsStringSync(), canonicalPath: f.path);
+        for (final candidate in [relPath, atomVariant]) {
+          final f = _fs.file(p.join(root, candidate));
+          if (f.existsSync()) {
+            return (content: f.readAsStringSync(), canonicalPath: f.path);
+          }
         }
       }
     }
