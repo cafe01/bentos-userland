@@ -51,7 +51,7 @@ The default *is* the verb; the rest are the acts a genesis engine owes — read,
 | invocation | does |
 |---|---|
 | `manifest <id\|->` | **(default)** compose an atom / molecule / organism to stdout |
-| `manifest edit <id> <op>` | surgically mutate one particle of an atom — the write-half |
+| `manifest edit <id> --<verb>-<particle> [name]` | surgically mutate one particle of an atom — the write-half |
 | `manifest new <family/path>` | scaffold a new v0.1 atom on disk |
 | `manifest ls <id\|glob>` | survey the tree — matching ids, one per line |
 
@@ -81,25 +81,31 @@ The entrypoint is an **id argument** or **XML on stdin**; output is always **std
 `edit` completes the body's CRUD: read is the default verb, **write is `edit`** — `manifest`'s `remember` to match `mem`'s. It gives plasticity a body to evolve atoms through. It mutates an atom's XML tree in place, so the mind changes one particle without loading a whole file into context and string-matching a line. Editing a *tree* by text substitution is the wrong altitude; `edit` speaks the periodic table instead.
 
 ```sh
-manifest edit alfred.soul --set trait:refined <<'EOF'
+manifest edit alfred.soul --add-trait refined <<'EOF'
 Form matters. Sentences with rhythm, arguments with structure, XML as craft.
 EOF
-manifest edit alfred.soul --add principle:demonstrated-loyalty --realm concrete < body.txt
-manifest edit alfred.soul --remove antipattern:voice-drift
-manifest edit alfred.soul --rename trait:refined polished
-manifest edit alfred.soul --set-attr v=0.3
-manifest edit alfred.soul --set trait:refined --dry-run   # show the diff, write nothing
+manifest edit alfred.soul --set-trait refined < body.txt
+manifest edit alfred.soul --remove-antipattern voice-drift
+manifest edit alfred.soul --rename-trait refined polished
+manifest edit alfred.soul --set-v 0.3
+manifest edit alfred.soul --set-trait refined --dry-run   # show the diff, write nothing
 ```
 
 | flag | does |
 |---|---|
-| `--add <type:name>` | add a particle that does not exist (content on stdin) |
-| `--set <type:name>` | replace a particle's content (content on stdin) |
-| `--remove <type:name>` | delete a particle |
-| `--rename <type:name> <new>` | rename a particle's handle |
-| `--set-attr <key>=<value>` | set an atom attribute (e.g. `v`) |
+| `--add-<particle> <name>` | add a particle that does not exist (content on stdin) |
+| `--set-<particle> <name>` | replace a particle's content (content on stdin) |
+| `--remove-<particle> <name>` | delete a particle |
+| `--rename-<particle> <name> <new>` | rename a particle's handle |
+| `--set-<attr> <value>` | set an atom attribute (e.g. `--set-v 0.3`) |
 
-The shape is uniform. The **operation is a flag**; the **particle is `type:name`** — the vocabulary's own address, a compact handle, never XPath. The verb knows the periodic table, so it speaks `principle` and `trait`, not `//living-abstract/principle[@name=…]`. Names are unique within an atom, so `principle:orthogonality` resolves on its own; only a name that lives in both realms needs `--realm abstract|concrete` to disambiguate, and the body asks for it in the atom's own words rather than guessing. Long **content arrives on stdin**, exactly as `mem remember` takes its body — prose is never crammed into argv; short scalar attributes ride argv via `--set-attr`. `--dry-run` prints the unified diff and writes nothing — the lens for a bulk pass that wants to see every cut before it lands.
+**The vocabulary is the grammar.** The flag fuses the operation with the particle — `--add-trait`, `--remove-antipattern` — so the periodic table *is* the option surface and `--help` enumerates it. The verb speaks `trait` and `principle`, never `//living-abstract/principle[@name=…]`. Three things follow from the body knowing each particle:
+
+- **No realm flag, ever.** Each particle inhabits exactly one realm ([Standard Model §V](../../../../hq/workshop/bentos-agent/science/bentos-standard-model.md)), so the name alone resolves where the edit lands — there is no particle living in two worlds to disambiguate.
+- **Arity is known.** A named particle (`trait`, `knowledge`, `pattern`…) takes its handle in argv; a singleton (`essence`, `purpose`) takes none. The body knows which is which.
+- **Content vs scalar is known.** A particle's body is long prose and **arrives on stdin**, exactly as `mem remember` takes its body; an attribute is a short scalar and rides argv. `--set-trait` reads stdin, `--set-v` does not — because the body knows `trait` is a particle and `v` an attribute.
+
+`--dry-run` prints the unified diff and writes nothing — the lens for a bulk pass that wants to see every cut before it lands.
 
 **Round-trip fidelity reduces to idempotency.** Because the body is the *sole* author of atoms, there is no foreign formatting to preserve: the canonical format simply *is* `manifest`'s serialization. The only requirement is `serialize(parse(x)) == x`. A legacy hand-authored atom is canonicalized on its first edit — one desirable diff — and is stable thereafter.
 
