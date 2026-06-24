@@ -1,19 +1,23 @@
+import 'dart:io';
+
 import 'package:args/command_runner.dart';
 
 import 'build_command.dart';
 import 'check_command.dart';
+import 'edit_command.dart';
 import 'ls_command.dart';
 import 'new_command.dart';
 
 /// The `manifest` coreutil — genesis engine of the periodic table.
 final class ManifestRunner extends CommandRunner<int> {
-  static const _knownSubcommands = {'build', 'check', 'ls', 'new', 'help'};
+  static const _knownSubcommands = {'build', 'check', 'edit', 'ls', 'new', 'help'};
 
   ManifestRunner() : super('manifest', 'Conjure a being from its particles.') {
     addCommand(BuildCommand());
     addCommand(NewCommand());
     addCommand(LsCommand());
     addCommand(CheckCommand());
+    addCommand(EditCommand());
   }
 
   /// Rewrite args so that a bare FQDN (or `-`) routes to `build` by default.
@@ -33,5 +37,15 @@ final class ManifestRunner extends CommandRunner<int> {
   }
 
   @override
-  Future<int?> run(Iterable<String> args) => super.run(normalizeArgs(args.toList()));
+  Future<int?> run(Iterable<String> args) async {
+    try {
+      return await super.run(normalizeArgs(args.toList()));
+    } on UsageException catch (e) {
+      stderr.writeln(e.message);
+      if (e.message.contains('Could not find an option')) {
+        stderr.writeln('  Run `manifest edit --help` to see the vocabulary.');
+      }
+      return 64; // EX_USAGE
+    }
+  }
 }
