@@ -2,6 +2,9 @@
 
 The chat turn as a **circuit**: logical components wired in the shell, each a physical executable (`chat-codec`, `chat-render`, `llm`) abstracted behind a logical role so the schematic never couples to invocation syntax. This is the engineering twin of the [README](README.md) — the spec sheet of the part.
 
+> [!WARNING]
+> **Correction pending — S449 vision session (not yet folded in).** This datasheet draws the frontend as a symmetric `(emit, render)` pair teed on one circuit. The realization since: the **emit is a decoupled communication client** that does `send(coordinate, signal)` and dies; **write, trigger/routing, and output are three separate transactions** — logically *and* physically, possibly different circuits, asynchronous — with storage and routing abstracted behind the TX coordinate. The chat circuit is the **degenerate case of the universal communication client** between any two entities. The `dispatch_delta` tee stays valid *inside* the processing transaction; it is the emit that detaches. Full signal: `hq/inbox/datasheet-correction-chat-recategorization.md` and `hq/inbox/console-as-communication-client.md` — to be folded in at digestion.
+
 ---
 
 ## 1. The invariant
