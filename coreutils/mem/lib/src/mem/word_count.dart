@@ -9,11 +9,14 @@ final class WordCount {
 
   /// Count words in [body] (frontmatter already stripped).
   int count(String body) {
-    throw UnimplementedError('WordCount.count not yet implemented');
+    final trimmed = body.trim();
+    if (trimmed.isEmpty) return 0;
+    return trimmed.split(RegExp(r'\s+')).length;
   }
 
   /// Returns `[Nw]` when [body] meets or exceeds [threshold]; null otherwise.
   String? hint(String body) {
-    throw UnimplementedError('WordCount.hint not yet implemented');
+    final n = count(body);
+    return n >= threshold ? '[${n}w]' : null;
   }
 }

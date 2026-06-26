@@ -12,7 +12,10 @@ final class SurveyRender {
   ///
   /// Groups by mode (label once), line shape: `weight  name — gist [Nw?]`.
   /// Appends the affordance footer. Returns stderr guidance on empty input.
-  String render(List<MemPage> pages) {
+  ///
+  /// [bodies] maps page name → raw content (frontmatter + body). When present,
+  /// gist is extracted from frontmatter and word count drives the size hint.
+  String render(List<MemPage> pages, {Map<String, String> bodies = const {}}) {
     throw UnimplementedError('SurveyRender.render not yet implemented');
   }
 }

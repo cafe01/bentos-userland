@@ -1,4 +1,5 @@
 import 'package:file/file.dart';
+import 'package:file/local.dart';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 
@@ -63,10 +64,7 @@ final class MemPage {
   }
 
   final MemPageType type;
-
-  /// Target filename (relative to agent directory `.mem/<agent>/`).
   final String target;
-
   final double weight;
 
   String get weightLabel => 'w:${weight.toStringAsFixed(1)}';
@@ -87,6 +85,7 @@ final class MemNode {
     this.session,
     this.updated,
     this.pages = const {},
+    this.fileSystem,
   });
 
   static MemNode? load(String filePath, FileSystem fs) {
@@ -95,13 +94,13 @@ final class MemNode {
     try {
       final doc = loadYaml(file.readAsStringSync());
       if (doc is! YamlMap) return null;
-      return MemNode._fromYaml(filePath, doc);
+      return MemNode._fromYaml(filePath, doc, fs);
     } on YamlException {
       return null;
     }
   }
 
-  factory MemNode._fromYaml(String filePath, YamlMap doc) {
+  factory MemNode._fromYaml(String filePath, YamlMap doc, [FileSystem? fs]) {
     final pages = <MemPageType, List<MemPage>>{};
     final edgesYaml = doc['edges'];
     if (edgesYaml is YamlMap) {
@@ -119,6 +118,7 @@ final class MemNode {
       session: _parseInt(doc['session']),
       updated: doc['updated']?.toString(),
       pages: pages,
+      fileSystem: fs,
     );
   }
 
@@ -135,6 +135,11 @@ final class MemNode {
   final String? updated;
   final Map<MemPageType, List<MemPage>> pages;
 
+  /// Injected filesystem — available when node was loaded via [MemNode.load].
+  final FileSystem? fileSystem;
+
+  FileSystem get _fs => fileSystem ?? const LocalFileSystem();
+
   String get agentDir => p.dirname(path);
   String get placeDir => p.dirname(p.dirname(agentDir));
 
@@ -146,4 +151,10 @@ final class MemNode {
       pagesOf(type).where((e) => e.weight >= minWeight).toList();
 
   String resolveTarget(MemPage page) => p.normalize(p.join(agentDir, page.target));
+
+  /// Read the raw content of [page], or null if the file doesn't exist.
+  String? readContent(MemPage page) {
+    final file = _fs.file(resolveTarget(page));
+    return file.existsSync() ? file.readAsStringSync() : null;
+  }
 }
