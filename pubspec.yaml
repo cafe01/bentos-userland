@@ -19,6 +19,7 @@ environment:
 workspace:
   - coreutils/websearch
   - coreutils/chat
+  - coreutils/mem
 
 dependencies:
   args: ^2.4.0
