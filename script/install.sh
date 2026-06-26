@@ -26,6 +26,7 @@ EXECUTABLES=(
   "chat-render:chat_render"
   "llm:llm"
   "manifest:manifest"
+  "mem:mem"
   "tx:tx"
   "websearch:websearch"
 )

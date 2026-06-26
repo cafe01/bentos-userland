@@ -4,14 +4,18 @@ import 'package:file/file.dart';
 
 /// Reads a page body from stdin or --file.
 ///
-/// FileSystem is injected for hermetic tests.
+/// FileSystem is injected for hermetic tests. [stdinOverride] replaces real
+/// stdin for hermetic tests.
 final class BodySource {
-  const BodySource(this.fileSystem);
+  const BodySource(this.fileSystem, {this.stdinOverride});
 
   final FileSystem fileSystem;
 
-  /// Read from [filePath] when given; fall back to real stdin otherwise.
-  Future<String> read({String? filePath, StringSink? stdinSink}) async {
+  /// Pre-canned stdin content; null = use real stdin.
+  final String? stdinOverride;
+
+  /// Read from [filePath] when given; fall back to stdin (real or override) otherwise.
+  Future<String> read({String? filePath}) async {
     if (filePath != null) {
       final file = fileSystem.file(filePath);
       if (!file.existsSync()) {
@@ -19,6 +23,7 @@ final class BodySource {
       }
       return file.readAsStringSync();
     }
+    if (stdinOverride != null) return stdinOverride!;
     return io.stdin.transform(io.systemEncoding.decoder).join();
   }
 }

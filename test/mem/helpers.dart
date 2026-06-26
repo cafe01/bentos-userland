@@ -1,6 +1,6 @@
 import 'package:file/memory.dart';
-import 'package:mem/src/mem/mem_runner.dart';
-import 'package:mem/src/mem/model/mem_node.dart';
+import 'package:bentos_userland/src/mem/mem_runner.dart';
+import 'package:bentos_userland/src/mem/model/mem_node.dart';
 import 'package:path/path.dart' as p;
 
 const kPlace = '/test-place';
@@ -48,10 +48,17 @@ Future<RunResult> runMem(
   List<String> args, {
   MemoryFileSystem? fs,
   String? stdinContent,
+  Map<String, String> environment = const {},
 }) async {
   final outBuf = StringBuffer();
   final errBuf = StringBuffer();
-  final runner = MemRunner(out: outBuf, err: errBuf, fileSystem: fs, stdinContent: stdinContent);
+  final runner = MemRunner(
+    out: outBuf,
+    err: errBuf,
+    fileSystem: fs,
+    stdinContent: stdinContent,
+    environment: environment,
+  );
   await runner.run(args);
   return (
     exitCode: runner.exitCode,

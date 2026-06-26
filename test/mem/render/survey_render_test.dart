@@ -1,6 +1,6 @@
-import 'package:mem/src/mem/model/mem_node.dart';
-import 'package:mem/src/mem/render/survey_render.dart';
-import 'package:mem/src/mem/word_count.dart';
+import 'package:bentos_userland/src/mem/model/mem_node.dart';
+import 'package:bentos_userland/src/mem/render/survey_render.dart';
+import 'package:bentos_userland/src/mem/word_count.dart';
 import 'package:test/test.dart';
 
 MemPage pg(MemPageType type, String name, {double weight = 0.8, String? gist}) =>

@@ -1,5 +1,5 @@
-import 'package:mem/src/mem/model/mem_node.dart';
-import 'package:mem/src/mem/model/mem_resolver.dart';
+import 'package:bentos_userland/src/mem/model/mem_node.dart';
+import 'package:bentos_userland/src/mem/model/mem_resolver.dart';
 import 'package:test/test.dart';
 
 import '../helpers.dart';
