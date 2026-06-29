@@ -72,9 +72,9 @@ void main() {
       );
     });
 
-    test('atom.xml is a particle root too (the canonical convention)', () {
-      expect(r.relPathToFqdn('skill/tools/git/atom.xml'), 'git.tools.skill');
-      expect(r.relPathToFqdn('app/journal/atom.xml'), 'journal.app');
+    test('atom.xml is NOT a particle root (basename ≠ dir) → null', () {
+      expect(r.relPathToFqdn('skill/tools/git/atom.xml'), isNull);
+      expect(r.relPathToFqdn('app/journal/atom.xml'), isNull);
     });
 
     test('bijection: fqdnToRelPath ∘ relPathToFqdn is identity', () {
@@ -102,13 +102,12 @@ void main() {
       r = PathResolver(fs, const ['/tree']);
     });
 
-    test('FQDN resolves to atom.xml when no <name>.xml exists', () {
+    test('FQDN does NOT resolve to atom.xml — the named file IS the identity', () {
       final got = r.resolve('git.tools.skill', '/x');
-      expect(got, isNotNull, reason: 'atom.xml is a valid particle root');
-      expect(got!.content, 'GIT_ATOM');
+      expect(got, isNull, reason: 'atom.xml is not a particle root; only git.xml is');
     });
 
-    test('prefers <name>.xml over atom.xml when both exist', () {
+    test('FQDN resolves to <name>.xml', () {
       _seed(fs, '/tree/skill/tools/git/git.xml', 'GIT_NAMED');
       expect(r.resolve('git.tools.skill', '/x')!.content, 'GIT_NAMED');
     });

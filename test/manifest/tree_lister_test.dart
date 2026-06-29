@@ -41,7 +41,8 @@ void main() {
       _seed(fs, '/tree/skill/craft/coding/dart/dart.xml', '<atom/>');
       // A member file (basename ≠ dir) — an xi:include part, NOT a particle root.
       _seed(fs, '/tree/skill/craft/coding/dart/skill_abstract.xml', '<x/>');
-      // A deep particle using the canonical atom.xml convention.
+      // A deep particle (named convention) plus a stray atom.xml that must be ignored.
+      _seed(fs, '/tree/skill/tools/git/git.xml', '<atom/>');
       _seed(fs, '/tree/skill/tools/git/atom.xml', '<atom/>');
       lister = TreeLister(fs, const ['/tree']);
     });
@@ -55,7 +56,7 @@ void main() {
       ]);
     });
 
-    test('a deep atom.xml particle appears (the ls bug fix)', () {
+    test('a deep named particle appears; a sibling atom.xml is ignored', () {
       expect(lister.list('**.skill'), contains('git.tools.skill'));
     });
 
