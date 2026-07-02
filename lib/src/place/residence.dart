@@ -18,6 +18,14 @@ final class Residence {
   static File metaFile(Directory placeRoot, FileSystem fs) =>
       fs.file(fs.path.join(placeRoot.path, dirName, 'place.yaml'));
 
+  /// The base of every inhabitant's memory store: `<place>/.place/mem/`.
+  static Directory memBase(Directory placeRoot, FileSystem fs) =>
+      fs.directory(fs.path.join(placeRoot.path, dirName, 'mem'));
+
+  /// The base of every inhabitant's execution state: `<place>/.place/tx/`.
+  static Directory txBase(Directory placeRoot, FileSystem fs) =>
+      fs.directory(fs.path.join(placeRoot.path, dirName, 'tx'));
+
   /// [entity]'s memory store: `<place>/.place/mem/<entity>/`.
   static Directory memoryRoot(
     Directory placeRoot,

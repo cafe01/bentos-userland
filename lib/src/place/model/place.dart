@@ -1,5 +1,6 @@
 import 'package:file/file.dart';
 
+import '../inhabitants.dart';
 import '../place_resolver.dart';
 import '../residence.dart';
 import 'place_meta.dart';
@@ -39,6 +40,9 @@ final class Place {
   /// The ordered ancestor chain, nearest parent → the machine root; excludes
   /// this place. Empty for a place at the machine root.
   List<Place> get ancestors => _resolver.ancestorsOf(this);
+
+  /// The entity namespaces anchored directly here, structurally enumerated.
+  List<String> get inhabitants => Inhabitants.of(root, _resolver.fs);
 
   /// Handle to [entity]'s memory store at this place. Creates nothing.
   Directory memoryRoot(String entity) =>

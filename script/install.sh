@@ -27,6 +27,7 @@ EXECUTABLES=(
   "llm:llm"
   "manifest:manifest"
   "mem:mem"
+  "place:place"
   "tx:tx"
   "websearch:websearch"
 )
