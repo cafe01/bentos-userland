@@ -11,6 +11,7 @@ import 'commands/recall_command.dart';
 import 'commands/refocus_command.dart';
 import 'commands/remember_command.dart';
 import 'commands/survey_command.dart';
+import 'gist_deriver.dart';
 import 'mem_store.dart';
 import 'model/mem_writer.dart';
 
@@ -27,11 +28,13 @@ final class MemRunner {
     DateTime Function()? clock,
     String? home,
     Map<String, String>? environment,
+    GistLlm? gistLlm,
     this.stdinContent,
   })  : out = out ?? io.stdout,
         err = err ?? io.stderr,
         fileSystem = fileSystem ?? const LocalFileSystem(),
         clock = clock ?? DateTime.now,
+        gistLlm = gistLlm ?? llmGist,
         _home = home,
         _environment = environment ?? io.Platform.environment {
     _runner = CommandRunner<void>(
@@ -57,6 +60,11 @@ final class MemRunner {
   final StringSink err;
   final FileSystem fileSystem;
   final DateTime Function() clock;
+
+  /// The llm seam gist derivation pipes bodies through. Injected here so tests
+  /// stub it and the write path never reaches a live model.
+  final GistLlm gistLlm;
+
   final String? _home;
   final Map<String, String> _environment;
 

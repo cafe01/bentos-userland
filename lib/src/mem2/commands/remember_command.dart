@@ -1,6 +1,7 @@
 import 'package:args/command_runner.dart';
 
 import '../body_source.dart';
+import '../gist_deriver.dart';
 import '../mem_runner.dart';
 import '../model/attention.dart';
 import '../model/mem_page.dart';
@@ -60,13 +61,23 @@ final class RememberCommand extends Command<void> {
       return;
     }
 
+    final String gist;
+    try {
+      gist = await GistDeriver(_runner.gistLlm)
+          .derive(body, manualGist: argResults!['gist'] as String?);
+    } on GistDerivationFailed catch (e) {
+      _runner.err.writeln('mem: $e');
+      _runner.exitCode = 1;
+      return;
+    }
+
     final tags = argResults!['tag'] as List<String>;
     final page = store.write(
       topic,
       type: type,
       attention: attention,
       tags: tags.isNotEmpty ? tags : (existing?.fields.tags ?? const []),
-      gist: (argResults!['gist'] as String?) ?? existing?.fields.gist,
+      gist: gist,
       body: body,
     );
 

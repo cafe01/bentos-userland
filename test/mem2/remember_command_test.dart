@@ -14,7 +14,11 @@ void main() {
       hab.place('/hq/cto');
     });
 
-    Future<(String, String, int)> run(List<String> args, {String? stdin}) async {
+    Future<(String, String, int)> run(
+      List<String> args, {
+      String? stdin,
+      Future<String> Function(String body)? gistLlm,
+    }) async {
       final out = StringBuffer();
       final err = StringBuffer();
       final runner = MemRunner(
@@ -25,6 +29,7 @@ void main() {
         home: hab.home,
         environment: {'BENTOS_AGENT': hab.entity},
         stdinContent: stdin,
+        gistLlm: gistLlm ?? (body) async => 'stub gist',
       );
       await runner.run(args);
       return (out.toString(), err.toString(), runner.exitCode);
@@ -105,6 +110,37 @@ void main() {
       final page = MemPage.parse('t', read('/hq/cto', 't')!);
       expect(page.fields.created, MemHabitat.clock);
       expect(page.fields.modified, MemHabitat.clock);
+    });
+
+    test('a body write with no --gist auto-derives the gist', () async {
+      await run(['remember', '-p', '/hq/cto', 't', '-t', 'semantic', '-A', '0.5'],
+          stdin: 'body', gistLlm: (body) async => 'open here for the derived line');
+      final page = MemPage.parse('t', read('/hq/cto', 't')!);
+      expect(page.fields.gist, 'open here for the derived line');
+    });
+
+    test('an explicit --gist wins and skips derivation', () async {
+      var called = false;
+      await run([
+        'remember', '-p', '/hq/cto', 't', '-t', 'semantic', '-A', '0.5', '--gist', 'hand-written',
+      ], stdin: 'body', gistLlm: (body) async {
+        called = true;
+        return 'derived';
+      });
+      final page = MemPage.parse('t', read('/hq/cto', 't')!);
+      expect(page.fields.gist, 'hand-written');
+      expect(called, isFalse, reason: 'the seam is never touched when --gist is given');
+    });
+
+    test('a derivation failure surfaces and lands no page', () async {
+      final (_, err, code) = await run(
+        ['remember', '-p', '/hq/cto', 't', '-t', 'semantic', '-A', '0.5'],
+        stdin: 'body',
+        gistLlm: (body) async => throw Exception('model down'),
+      );
+      expect(code, 1);
+      expect(err, contains('gist derivation failed'));
+      expect(read('/hq/cto', 't'), isNull, reason: 'no page lands when the gist cannot be derived');
     });
 
     test('a create with no body fails', () async {
