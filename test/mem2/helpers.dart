@@ -1,6 +1,33 @@
+import 'package:bentos_userland/src/mem2/model/attention.dart';
+import 'package:bentos_userland/src/mem2/model/mem_page.dart';
+import 'package:bentos_userland/src/place/model/place.dart';
 import 'package:bentos_userland/src/place/place_resolver.dart';
 import 'package:file/file.dart';
 import 'package:file/memory.dart';
+
+/// Build a bare [MemPage] for pure-component tests — no filesystem.
+MemPage memPage(
+  String topic, {
+  MemType type = MemType.semantic,
+  String attention = '0.5',
+  List<String> tags = const [],
+  String gist = '',
+  String body = 'body',
+  DateTime? modified,
+  Place? origin,
+}) =>
+    MemPage(
+      topic: topic,
+      fields: FrontmatterFields(
+        type: type,
+        attention: Attention.parse(attention),
+        tags: tags,
+        gist: gist.isEmpty ? null : gist,
+        modified: modified,
+      ),
+      body: body,
+      origin: origin,
+    );
 
 /// A hermetic memory habitat: a MemoryFileSystem with an injected home and a
 /// [PlaceResolver], plus helpers to mark places and seed page files.
