@@ -27,6 +27,19 @@ void main() {
       expect(Attention.parse('1.0').compareTo(Attention.parse('0.3')), greaterThan(0));
     });
 
+    test('parseDelta reads signed notch deltas for --by', () {
+      expect(Attention.parseDelta('-0.3'), -3);
+      expect(Attention.parseDelta('0.2'), 2);
+      expect(Attention.parseDelta('+0.4'), 4);
+      expect(Attention.parseDelta('1.0'), 10);
+    });
+
+    test('parseDelta rejects off-notch magnitude', () {
+      for (final bad in ['0.75', '1.5', '-0.55', 'x']) {
+        expect(() => Attention.parseDelta(bad), throwsFormatException, reason: '"$bad" is off-notch');
+      }
+    });
+
     test('adjust saturates at both rails and reports the clamp', () {
       expect(Attention.parse('0.7').adjust(-3), (Attention.parse('0.4'), false));
       final (lo, loClamped) = Attention.parse('0.2').adjust(-5);

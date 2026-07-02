@@ -78,6 +78,27 @@ final class MemStore {
     return vantage;
   }
 
+  /// The place [topic] currently lives on the chain (nearest-wins), or null
+  /// when no place holds it. The write-side resolver for `refocus`/`forget`,
+  /// which act on an existing page where it lives and never create.
+  Place? homeOf(String topic) {
+    for (final place in _chain) {
+      if (_pageFile(place, topic).existsSync()) return place;
+    }
+    return null;
+  }
+
+  /// Move an already-resolved page's attention where it lives — the body bytes
+  /// and `modified` untouched. Returns the re-read landed page (origin-annotated).
+  MemPage refocusPage(MemPage page, Attention attention) {
+    final place = page.origin!;
+    writer.refocus(_pageFile(place, page.topic), attention);
+    return readAt(place, page.topic)!;
+  }
+
+  /// Delete an already-resolved page's file where it lives.
+  void deletePage(MemPage page) => _pageFile(page.origin!, page.topic).deleteSync();
+
   /// Write a body to [topic] at its resolved target, returning the landed page
   /// annotated with that place.
   MemPage write(

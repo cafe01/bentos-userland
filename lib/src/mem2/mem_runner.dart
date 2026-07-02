@@ -6,7 +6,10 @@ import 'package:file/file.dart';
 import 'package:file/local.dart';
 
 import '../place/place_resolver.dart';
+import 'commands/forget_command.dart';
 import 'commands/recall_command.dart';
+import 'commands/refocus_command.dart';
+import 'commands/remember_command.dart';
 import 'commands/survey_command.dart';
 import 'mem_store.dart';
 import 'model/mem_writer.dart';
@@ -36,7 +39,10 @@ final class MemRunner {
       "The agent's persistent memory — survey, recall, remember, refocus, forget.",
     )
       ..addCommand(SurveyCommand(this))
-      ..addCommand(RecallCommand(this));
+      ..addCommand(RecallCommand(this))
+      ..addCommand(RememberCommand(this))
+      ..addCommand(RefocusCommand(this))
+      ..addCommand(ForgetCommand(this));
 
     _runner.argParser
       ..addOption('agent',

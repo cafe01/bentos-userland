@@ -34,6 +34,23 @@ final class Attention implements Comparable<Attention> {
     return Attention._(s == '1.0' ? 10 : int.parse(s.substring(2)));
   }
 
+  static final _delta = RegExp(r'^([+-]?)([01])\.(\d)$');
+
+  /// Parse a signed `--by` delta into notch-tenths (`-0.3` → -3, `0.2` → 2).
+  /// Off-notch magnitude (`0.75`, `1.5`) is a [FormatException] — the delta
+  /// rides the same eleven-notch scale as the dial it moves.
+  static int parseDelta(String source) {
+    final m = _delta.firstMatch(source.trim());
+    if (m == null) {
+      throw FormatException('off-notch delta: "$source" (expected ±0.0–1.0 in 0.1 steps)');
+    }
+    final magnitude = int.parse(m.group(2)!) * 10 + int.parse(m.group(3)!);
+    if (magnitude > maxTenths) {
+      throw FormatException('off-notch delta: "$source" (magnitude exceeds 1.0)');
+    }
+    return m.group(1) == '-' ? -magnitude : magnitude;
+  }
+
   /// Render back to the exact decimal form.
   String render() => tenths == 10 ? '1.0' : '0.$tenths';
 
