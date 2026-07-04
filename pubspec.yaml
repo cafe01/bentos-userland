@@ -11,6 +11,7 @@ topics:
   - coreutils
   - bentos
 
+publish_to: none
 environment:
   sdk: ^3.8.0
 
