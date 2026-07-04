@@ -1,5 +1,8 @@
 # `tx` — state across time
 
+> [!IMPORTANT]
+> **Canon shifted under this doc — S459 (2026-07-01), not yet reconciled — and this README is now *source*, to be superseded.** The primitive is the **Entity** (the WHO), not `tx`; `tx` is only the Entity's coreutil face, its name inherited from the transaction-log lineage. A `thread` is always a thread *of* an entity. Git confers **multi-threading to the Entity** as it confers **multi-timelines to the Place**. State roots inside the place residence at **`.place/tx/<entity>/<scope>/`** (beside `.place/mem/`). The founder DNA now owns this ground: [hq/c-wing/founder/the-entity-primitive.md](../../../../../hq/c-wing/founder/the-entity-primitive.md). Discipline going forward: author `{cpo,cto}/coreutils/tx.md` (twin to `place.md`/`mem.md`) and retire this README as authority.
+
 ```sh
 tx scope new cafe            # open a being's repository (john/cafe)
 tx thread fork explore       # branch a what-if, parallel and live
