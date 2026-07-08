@@ -225,8 +225,10 @@ final class Place {
     return this;
   }
 
-  /// Metadata re-read on every access — a live handle never snapshots.
-  PlaceMeta get _meta => PlaceMeta.load(root);
+  /// Metadata re-read on every access — a live handle never snapshots. The
+  /// primitive owns where metadata lives; [PlaceMeta] only parses.
+  PlaceMeta get _meta =>
+      PlaceMeta.load(File(p.join(root.path, _markerName, 'place.yaml')));
 
   /// The anchor, absolute and normalized against the working directory.
   String get _absoluteAnchor {

@@ -1,4 +1,4 @@
-import 'package:file/file.dart';
+import 'dart:io';
 
 import 'attention.dart';
 import 'mem_page.dart';
@@ -8,9 +8,8 @@ import 'mem_page.dart';
 /// body bytes and `modified` untouched. The clock is injected so date
 /// behaviour is hermetically testable.
 final class MemWriter {
-  MemWriter(this.fs, this.now);
+  MemWriter(this.now);
 
-  final FileSystem fs;
   final DateTime Function() now;
 
   /// Create or replace [file] with a body write. `created` is stamped once (on
@@ -61,7 +60,7 @@ final class MemWriter {
 
   void _atomicWrite(File file, String content) {
     file.parent.createSync(recursive: true);
-    final tmp = fs.file('${file.path}.tmp');
+    final tmp = File('${file.path}.tmp');
     tmp.writeAsStringSync(content, flush: true);
     tmp.renameSync(file.path);
   }

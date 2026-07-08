@@ -4,21 +4,17 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 /// The seam guard, with teeth: the literal `.place` marker/layout string must
-/// appear in exactly the files that own it — `residence.dart` (the old
-/// model, still consumed by mem2), `place.dart` (the new primitive), and
-/// `model/place_meta.dart` (the metadata loader shared by both, dual-mode
-/// over `fs`). Transitional: collapses to `place.dart` alone once #11 retires
-/// the old model. Any other component that hard-codes `.place/…` has gone
+/// appear only in `place.dart` — the primitive that owns the marker and the
+/// layout beneath it. Any other component that hard-codes `.place/…` has gone
 /// behind the seam, breaking the swappability the API exists to protect.
 void main() {
-  test('the .place layout literal lives only in its owning files', () {
+  test('the .place layout literal lives only in place.dart', () {
     final srcDir = Directory(p.join(Directory.current.path, 'lib', 'src'));
     final offenders = <String>[];
-    const owners = {'residence.dart', 'place.dart', 'place_meta.dart'};
 
     for (final entity in srcDir.listSync(recursive: true)) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
-      if (owners.contains(p.basename(entity.path))) continue;
+      if (p.basename(entity.path) == 'place.dart') continue;
       // The tell is a hard-coded `.place` string literal in code — prose in
       // doc comments is not a seam breach.
       if (entity.readAsStringSync().contains("'.place'")) {
@@ -29,7 +25,7 @@ void main() {
     expect(
       offenders,
       isEmpty,
-      reason: 'these files construct .place paths outside Residence: $offenders',
+      reason: 'these files construct .place paths outside place.dart: $offenders',
     );
   });
 }

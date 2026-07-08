@@ -1,13 +1,12 @@
-import 'package:file/file.dart';
+import 'dart:io';
 
-/// Reads a page body from `--file` when given, else from stdin. The filesystem
-/// and the stdin text are injected so the read is hermetic. `remember` requires
-/// a body: an empty or absent one is an error here, never a silent
-/// metadata-only patch — the quiet-partial a memory organ must not have.
+/// Reads a page body from `--file` when given, else from stdin. The stdin text
+/// is injected so the read is hermetic; file reads ride `IOOverrides`.
+/// `remember` requires a body: an empty or absent one is an error here, never
+/// a silent metadata-only patch — the quiet-partial a memory organ must not
+/// have.
 final class BodySource {
-  const BodySource({required this.fs, this.stdinContent});
-
-  final FileSystem fs;
+  const BodySource({this.stdinContent});
 
   /// Pre-canned stdin for tests; null = no stdin available.
   final String? stdinContent;
@@ -22,7 +21,7 @@ final class BodySource {
   }
 
   String _fromFile(String path) {
-    final file = fs.file(path);
+    final file = File(path);
     if (!file.existsSync()) {
       throw FileSystemException('body file not found', path);
     }

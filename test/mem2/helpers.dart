@@ -1,9 +1,9 @@
+import 'dart:io';
+
 import 'package:bentos_userland/src/mem2/model/attention.dart';
 import 'package:bentos_userland/src/mem2/model/mem_page.dart';
-import 'package:bentos_userland/src/place/model/place.dart';
-import 'package:bentos_userland/src/place/place_resolver.dart';
-import 'package:file/file.dart';
-import 'package:file/memory.dart';
+import 'package:bentos_userland/src/place/place.dart';
+import 'package:path/path.dart' as p;
 
 /// Build a bare [MemPage] for pure-component tests — no filesystem.
 MemPage memPage(
@@ -29,18 +29,14 @@ MemPage memPage(
       origin: origin,
     );
 
-/// A hermetic memory habitat: a MemoryFileSystem with an injected home and a
-/// [PlaceResolver], plus helpers to mark places and seed page files.
+/// A memory habitat: helpers to mark places and seed page files through bare
+/// `dart:io`. Constructed *inside* `runInMemoryFs`, where every call lands on
+/// the hermetic in-memory filesystem — the successor of the old
+/// `MemoryFileSystem`-injected habitat.
 final class MemHabitat {
-  MemHabitat({this.home = '/home/john', this.entity = 'john'}) {
-    fs.directory(home).createSync(recursive: true);
-    resolver = PlaceResolver(fs: fs, home: home);
-  }
+  MemHabitat({this.entity = 'john'});
 
-  final FileSystem fs = MemoryFileSystem();
-  final String home;
   final String entity;
-  late final PlaceResolver resolver;
 
   /// A fixed clock — deterministic dates.
   static final clock = DateTime.utc(2026, 7, 2, 10);
@@ -48,15 +44,14 @@ final class MemHabitat {
 
   /// Mark [dirPath] as a place.
   void place(String dirPath) {
-    fs.directory(dirPath).createSync(recursive: true);
-    fs.directory(fs.path.join(dirPath, '.place')).createSync(recursive: true);
+    Directory(p.join(dirPath, '.place')).createSync(recursive: true);
   }
 
-  /// Seed a raw page file at [topic] under [placePath]'s store for [entity].
+  /// Seed a raw page file at [topic] under [placePath]'s store for [entity] —
+  /// the on-disk layout contract, spelled out on purpose.
   void seed(String placePath, String topic, String content) {
-    final file = fs.file(
-      fs.path.join(placePath, '.place', 'mem', entity, '$topic.md'),
-    );
+    final file =
+        File(p.join(placePath, '.place', 'mem', entity, '$topic.md'));
     file.parent.createSync(recursive: true);
     file.writeAsStringSync(content);
   }

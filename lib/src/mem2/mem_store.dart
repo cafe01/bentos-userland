@@ -1,35 +1,40 @@
-import 'package:file/file.dart';
+import 'dart:io';
 
-import '../place/model/place.dart';
+import 'package:path/path.dart' as p;
+
+import '../place/place.dart';
 import 'model/attention.dart';
 import 'model/mem_page.dart';
 import 'model/mem_writer.dart';
 
 /// The memory-tree gateway — the only mem component that touches the Place API
-/// or the filesystem tree. It resolves stores via `memoryRoot`, reads and
-/// writes page files at topic paths, runs the cascade over ancestors
-/// (nearest-wins shadowing, origin-annotated), and resolves the write target.
-/// No other component constructs a path string or climbs the tree.
+/// or the filesystem tree. It derives stores from the place's `mem` plot
+/// (the `<entity>/…` layout below it is mem's own law), reads and writes page
+/// files at topic paths, runs the cascade over ancestors (nearest-wins
+/// shadowing, origin-annotated), and resolves the write target. No other
+/// component constructs a path string or climbs the tree.
 final class MemStore {
   MemStore({
     required this.vantage,
     required this.entity,
-    required this.fs,
     required this.writer,
   });
 
   /// The vantage place — where the cascade starts and new topics land.
   final Place vantage;
   final String entity;
-  final FileSystem fs;
   final MemWriter writer;
 
   /// The vantage and its ancestors, nearest-first — the ordered climb the
   /// cascade walks.
   List<Place> get _chain => [vantage, ...vantage.ancestors];
 
+  /// The entity's store under [place]'s mem plot.
+  Directory _storeRoot(Place place) =>
+      Directory(p.join(place.plot('mem').path, entity));
+
   File _pageFile(Place place, String topic) =>
-      fs.file(fs.path.join(place.memoryRoot(entity).path, '$topic.md'));
+      File(p.join(_storeRoot(place).path, '$topic.md'));
 
   /// The page at [topic] in [place], or null if absent. Annotated with origin.
   MemPage? readAt(Place place, String topic) {
@@ -41,13 +46,13 @@ final class MemStore {
   /// Every page under [place]'s store, origin-annotated. A nested topic keeps
   /// its slash-path. Empty when the store does not exist.
   List<MemPage> listAt(Place place) {
-    final root = place.memoryRoot(entity);
+    final root = _storeRoot(place);
     if (!root.existsSync()) return const [];
     final pages = <MemPage>[];
     for (final e in root.listSync(recursive: true)) {
       if (e is! File || !e.path.endsWith('.md')) continue;
-      final topic = fs.path
-          .withoutExtension(fs.path.relative(e.path, from: root.path))
+      final topic = p
+          .withoutExtension(p.relative(e.path, from: root.path))
           .replaceAll(r'\', '/');
       pages.add(MemPage.parse(topic, e.readAsStringSync()).withOrigin(place));
     }

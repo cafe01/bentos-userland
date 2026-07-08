@@ -1,4 +1,4 @@
-import '../place/model/place.dart';
+import '../place/place.dart';
 import 'model/attention.dart';
 import 'model/mem_page.dart';
 

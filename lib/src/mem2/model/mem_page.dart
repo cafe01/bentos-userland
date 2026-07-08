@@ -1,6 +1,6 @@
 import 'package:yaml/yaml.dart';
 
-import '../../place/model/place.dart';
+import '../../place/place.dart';
 import 'attention.dart';
 
 /// The memory modes, in composition order — the order every merged view and
