@@ -1,46 +1,54 @@
-import 'package:bentos_userland/src/place/model/place_meta.dart';
+import 'package:bentos_userland/src/place/place.dart';
+import 'package:bentos_userland/src/testing/run_in_memory_fs.dart';
 import 'package:test/test.dart';
 
-import 'helpers.dart';
-
 void main() {
-  group('PlaceMeta.load', () {
+  group('Place metadata', () {
     test('parses name/description/owner from .place/place.yaml', () {
-      final hab = Habitat();
-      final root = hab.place(
-        '/hq/cto',
-        yaml: 'name: CTO Office\ndescription: engineering\nowner: john\n',
-      );
-      final meta = PlaceMeta.load(root, hab.fs);
-      expect(meta.name, 'CTO Office');
-      expect(meta.description, 'engineering');
-      expect(meta.owner, 'john');
-      expect(meta.warning, isNull);
+      runInMemoryFs((fs) {
+        // SETUP:
+        fs.directory('/hq/.place').createSync(recursive: true);
+        fs.file('/hq/.place/place.yaml')
+            .writeAsStringSync('name: CTO Office\ndescription: engineering\nowner: john\n');
+        // BEHAVIOR:
+        final place = Place('/hq');
+        // VERIFY:
+        expect(place.name, 'CTO Office', reason: 'name parsed from place.yaml');
+        expect(place.description, 'engineering', reason: 'description parsed from place.yaml');
+        expect(place.owner, 'john', reason: 'owner parsed from place.yaml');
+      });
     });
 
-    test('.place/ with no place.yaml yields empty defaults, no warning', () {
-      final hab = Habitat();
-      final root = hab.place('/hq/cto');
-      final meta = PlaceMeta.load(root, hab.fs);
-      expect(meta.name, isNull);
-      expect(meta.warning, isNull);
+    test('name defaults to the directory name when absent', () {
+      runInMemoryFs((fs) {
+        fs.directory('/hq/cto/.place').createSync(recursive: true);
+        expect(Place('/hq/cto').name, 'cto', reason: 'no name field falls back to basename');
+      });
     });
 
-    test('malformed yaml degrades to defaults with a surfaced warning', () {
-      final hab = Habitat();
-      final root = hab.place('/hq/cto', yaml: 'name: broken: here: bad\n');
-      final meta = PlaceMeta.load(root, hab.fs);
-      expect(meta.name, isNull);
-      expect(meta.warning, isNotNull);
-      expect(meta.warning, contains('/hq/cto/.place/place.yaml'));
+    test('name defaults to the path for /', () {
+      runInMemoryFs((fs) {
+        expect(Place('/').name, '/', reason: 'machine root has no basename, falls back to path');
+      });
     });
 
-    test('empty fields degrade to null', () {
-      final hab = Habitat();
-      final root = hab.place('/hq/cto', yaml: 'name:\ndescription: x\n');
-      final meta = PlaceMeta.load(root, hab.fs);
-      expect(meta.name, isNull);
-      expect(meta.description, 'x');
+    test('malformed yaml degrades to defaults, never a crash', () {
+      runInMemoryFs((fs) {
+        fs.directory('/hq/.place').createSync(recursive: true);
+        fs.file('/hq/.place/place.yaml').writeAsStringSync('name: broken: here: bad\n');
+        final place = Place('/hq');
+        expect(() => place.name, returnsNormally, reason: 'malformed yaml must not throw');
+        expect(place.name, 'hq', reason: 'malformed metadata degrades to the directory name');
+      });
+    });
+
+    test('a .place/ with no place.yaml is still a place', () {
+      runInMemoryFs((fs) {
+        fs.directory('/hq/.place').createSync(recursive: true);
+        final place = Place('/hq');
+        expect(place.isImplicit, isFalse, reason: 'the marker alone makes it a place');
+        expect(place.name, 'hq', reason: 'no metadata falls back to directory name');
+      });
     });
   });
 }

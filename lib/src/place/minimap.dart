@@ -1,4 +1,4 @@
-import 'model/place.dart';
+import 'place.dart';
 import 'habitat_index.dart';
 
 /// A node in the located minimap: either a place (expanded or collapsed) or a

@@ -1,10 +1,12 @@
 import 'package:args/command_runner.dart';
+import 'package:path/path.dart' as p;
 
-import '../place_init.dart';
+import '../place.dart';
 import '../place_runner.dart';
 
 /// `place init [path]` — promote a folder (default: current) to a place by
-/// creating `.place/` and writing `.place/place.yaml`.
+/// creating `.place/` and writing `.place/place.yaml`. A pre-existing place is
+/// reported cleanly, never clobbered.
 final class InitCommand extends Command<void> {
   InitCommand(this._runner) {
     argParser
@@ -24,13 +26,25 @@ final class InitCommand extends Command<void> {
   @override
   Future<void> run() async {
     final pathArg = argResults!.rest.isEmpty ? _runner.cwd : argResults!.rest.first;
-    final result = PlaceInit(_runner.fs).run(
-      pathArg,
+    final abs = p.isAbsolute(pathArg) ? pathArg : p.join(_runner.cwd, pathArg);
+    final anchor = p.normalize(abs);
+    final label = p.basename(anchor).isEmpty ? anchor : p.basename(anchor);
+
+    final probe = Place(anchor);
+    final alreadyAPlace = !probe.isImplicit && probe.root.path == anchor;
+    if (alreadyAPlace) {
+      _runner.out.writeln('place already initialized  $label  →  $anchor');
+      _runner.exitCode = 1;
+      return;
+    }
+
+    final owner = argResults!['owner'] as String?;
+    probe.create(
       name: argResults!['name'] as String?,
-      owner: argResults!['owner'] as String?,
-      desc: argResults!['desc'] as String?,
+      owner: owner,
+      description: argResults!['desc'] as String?,
     );
-    _runner.out.writeln(result.message);
-    if (!result.created) _runner.exitCode = 1;
+    final ownerNote = owner == null ? '' : '  (owner: $owner)';
+    _runner.out.writeln('initialized place  $label$ownerNote  →  $anchor');
   }
 }

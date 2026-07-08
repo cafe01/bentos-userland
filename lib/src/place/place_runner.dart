@@ -1,8 +1,7 @@
 import 'dart:io' as io;
 
 import 'package:args/command_runner.dart';
-import 'package:file/file.dart';
-import 'package:file/local.dart';
+import 'package:path/path.dart' as p;
 
 import 'commands/info_command.dart';
 import 'commands/init_command.dart';
@@ -10,27 +9,21 @@ import 'commands/tree_command.dart';
 import 'commands/where_command.dart';
 import 'commands/who_command.dart';
 import 'habitat_index.dart';
-import 'model/place.dart';
-import 'place_resolver.dart';
+import 'home_ambient.dart';
+import 'place.dart';
 
 /// The `place` coreutil's command runner: dispatch to the five spatial verbs
 /// (`where`, `tree`, `info`, `who`, `init`), all reading through the Place API.
-/// Every dependency — filesystem, home, cwd, streams — is injected here so the
-/// whole organ is hermetically testable.
+/// The current directory is injected for hermetic testing; the filesystem
+/// itself rides `Place`'s own `IOOverrides`/zone hermeticity.
 final class PlaceRunner {
   PlaceRunner({
     StringSink? out,
     StringSink? err,
-    FileSystem? fileSystem,
-    String? home,
     String? currentDirectory,
-    Map<String, String>? environment,
   })  : out = out ?? io.stdout,
         err = err ?? io.stderr,
-        fs = fileSystem ?? const LocalFileSystem(),
-        _homeOverride = home,
-        _cwdOverride = currentDirectory,
-        _environment = environment ?? io.Platform.environment {
+        _cwdOverride = currentDirectory {
     _runner = CommandRunner<void>(
       'place',
       'The WHERE organ — orient in space: where, tree, info, who, init.',
@@ -44,25 +37,17 @@ final class PlaceRunner {
 
   final StringSink out;
   final StringSink err;
-  final FileSystem fs;
-  final String? _homeOverride;
   final String? _cwdOverride;
-  final Map<String, String> _environment;
 
   late final CommandRunner<void> _runner;
   int exitCode = 0;
 
-  /// The current working directory — injected override, else the fs's cwd.
-  String get cwd => _cwdOverride ?? fs.currentDirectory.path;
-
-  String get home =>
-      _homeOverride ?? _environment['HOME'] ?? fs.currentDirectory.path;
-
-  PlaceResolver get resolver => PlaceResolver(fs: fs, home: home);
+  /// The current working directory — injected override, else the process cwd.
+  String get cwd => _cwdOverride ?? io.Directory.current.path;
 
   /// The habitat index, scanned once from the machine root, with the
   /// platform-native system roots pruned so the walk stays in user space.
-  HabitatIndex index() => HabitatIndex.scan(resolver, pruneRoots: systemRoots);
+  HabitatIndex index() => HabitatIndex.scan(pruneRoots: systemRoots);
 
   /// The OS-native system directories, which hold no places and otherwise
   /// dominate a whole-machine walk. Pruned by absolute path, so a non-system
@@ -75,14 +60,14 @@ final class PlaceRunner {
       return {
         '/System', '/Library', '/private', '/usr', '/bin', '/sbin',
         '/cores', '/dev', '/opt', '/Applications', '/Volumes',
-        fs.path.join(home, 'Library'), // the home's own native bulk
+        p.join(ambientHome, 'Library'), // the home's own native bulk
       };
     }
     if (io.Platform.isWindows) {
       return {
         r'C:\Windows', r'C:\Program Files', r'C:\Program Files (x86)',
         r'C:\ProgramData',
-        fs.path.join(home, 'AppData'),
+        p.join(ambientHome, 'AppData'),
       };
     }
     // Linux and other POSIX.
@@ -93,11 +78,11 @@ final class PlaceRunner {
   }
 
   /// The place enclosing [pathArg], defaulting to the current directory.
-  /// Relative paths resolve against the injected [cwd], not the fs's own.
+  /// Relative paths resolve against the injected [cwd], not the process's own.
   Place placeAt(String? pathArg) {
-    final p = pathArg ?? cwd;
-    final abs = fs.path.isAbsolute(p) ? p : fs.path.join(cwd, p);
-    return resolver.enclosing(fs.path.normalize(abs));
+    final target = pathArg ?? cwd;
+    final abs = p.isAbsolute(target) ? target : p.join(cwd, target);
+    return Place(p.normalize(abs));
   }
 
   Future<void> run(List<String> args) async {

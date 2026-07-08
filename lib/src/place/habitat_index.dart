@@ -1,8 +1,9 @@
-import 'package:file/file.dart';
+import 'dart:io';
 
-import 'model/place.dart';
-import 'place_resolver.dart';
-import 'residence.dart';
+import 'package:path/path.dart' as p;
+
+import 'home_ambient.dart';
+import 'place.dart';
 
 /// A node in the habitat tree: a place and its nested child places, sorted by
 /// name.
@@ -43,7 +44,7 @@ final class HabitatIndex {
     'build',
   };
 
-  /// Scan [resolver]'s filesystem from [from] (default `/`) and build the tree.
+  /// Scan from [from] (default `/`) and build the tree.
   ///
   /// [pruneRoots] is a set of absolute directory paths never descended into —
   /// the platform-native system roots (`/System`, `/usr`, `/proc`, …), which
@@ -52,49 +53,43 @@ final class HabitatIndex {
   /// still reached. [pruneNames] prunes by basename anywhere (default:
   /// [defaultPruneNames]). The caller (which reads the platform) supplies
   /// [pruneRoots]; the scan itself stays filesystem-only and hermetic.
-  static HabitatIndex scan(
-    PlaceResolver resolver, {
+  static HabitatIndex scan({
     String from = '/',
     Set<String> pruneRoots = const {},
     Set<String> pruneNames = defaultPruneNames,
   }) {
-    final fs = resolver.fs;
-    final rootPath = fs.path.normalize(fs.path.absolute(from));
+    final rootPath = p.normalize(p.absolute(from));
     final paths = <String>{};
 
     // The implicit terminals materialize even unmarked.
     paths.add(rootPath);
-    if (fs.directory(resolver.home).existsSync()) paths.add(resolver.home);
+    if (Directory(ambientHome).existsSync()) paths.add(ambientHome);
 
     // Walk the tree for every `.place/` marker, never descending into one.
-    // Paths are kept absolute throughout — a filesystem's listSync may hand
-    // back entries relative to the scan root, so we rejoin against the known
-    // absolute parent rather than trust the child's own path string.
     final stack = <String>[rootPath];
     while (stack.isNotEmpty) {
       final dirPath = stack.removeLast();
-      final dir = fs.directory(dirPath);
-      if (Residence.isMarked(dir, fs)) paths.add(dirPath);
+      if (_isMarkedDir(dirPath)) paths.add(dirPath);
       // A whole-machine scan meets unreadable dirs, special files, and broken
       // symlinks — a place is found by descent, not by force, so an unlistable
       // directory is skipped, never fatal. Symlinks are not followed (a
       // timeline is a sibling worktree, not a place reached through a link).
       final List<FileSystemEntity> entries;
       try {
-        entries = dir.listSync(followLinks: false);
+        entries = Directory(dirPath).listSync(followLinks: false);
       } on FileSystemException {
         continue;
       }
       for (final e in entries) {
         if (e is! Directory) continue;
-        final base = fs.path.basename(e.path);
+        final base = p.basename(e.path);
         // Hidden dirs are pruned wholesale — a `.place/` inside one is a place
         // its owner explicitly hid. (The scan root itself is never a child
         // here, so `place tree path/to/.hidden` still works: it starts from
         // within.) This subsumes `.place`, `.git`, `.pub-cache`, `.cache`, …
         if (base.startsWith('.')) continue;
         if (pruneNames.contains(base)) continue;
-        final childPath = fs.path.join(dirPath, base);
+        final childPath = p.join(dirPath, base);
         if (pruneRoots.contains(childPath)) continue;
         stack.add(childPath);
       }
@@ -102,7 +97,7 @@ final class HabitatIndex {
 
     // Materialize a Place per path, then wire each to its nearest place ancestor.
     final byPath = <String, PlaceNode>{
-      for (final p in paths) p: PlaceNode(resolver.enclosing(p)),
+      for (final path in paths) path: PlaceNode(Place(path)),
     };
     PlaceNode? rootNode;
     for (final node in byPath.values) {
@@ -120,5 +115,14 @@ final class HabitatIndex {
     }
 
     return HabitatIndex._(rootNode!, byPath);
+  }
+
+  /// True iff [dirPath] is itself a marked place — probed through [Place],
+  /// never by constructing the `.place/…` literal directly: a handle anchored
+  /// at [dirPath] resolves to itself, non-implicit, iff the marker sits right
+  /// there.
+  static bool _isMarkedDir(String dirPath) {
+    final place = Place(dirPath);
+    return !place.isImplicit && place.root.path == dirPath;
   }
 }

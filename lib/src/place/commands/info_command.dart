@@ -20,8 +20,8 @@ final class InfoCommand extends Command<void> {
   Future<void> run() async {
     final pathArg = argResults!.rest.isEmpty ? null : argResults!.rest.first;
     final place = _runner.placeAt(pathArg);
-    if (place.meta.warning != null) {
-      _runner.err.writeln('place info: ${place.meta.warning}');
+    if (place.metaWarning != null) {
+      _runner.err.writeln('place info: ${place.metaWarning}');
     }
     _runner.out.writeln(const InfoRender().render(place));
   }

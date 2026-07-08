@@ -1,7 +1,8 @@
-import 'package:file/file.dart';
-import 'package:yaml/yaml.dart';
+import 'dart:io';
 
-import '../residence.dart';
+import 'package:file/file.dart' as f;
+import 'package:path/path.dart' as p;
+import 'package:yaml/yaml.dart';
 
 /// Lazily-parsed metadata for a place, read from `.place/place.yaml`.
 ///
@@ -17,9 +18,14 @@ final class PlaceMeta {
   /// Surfaced when `place.yaml` is present but unparseable; null otherwise.
   final String? warning;
 
-  /// Load metadata for the place rooted at [placeRoot].
-  static PlaceMeta load(Directory placeRoot, FileSystem fs) {
-    final file = Residence.metaFile(placeRoot, fs);
+  /// Load metadata for the place rooted at [placeRoot]. Reads through [fs]
+  /// when given — the old model's injected `package:file` filesystem, whose
+  /// entities implement the `dart:io` interfaces this method type-checks
+  /// against. Bare `dart:io` otherwise (the new model, hermetic via
+  /// `IOOverrides`/zone).
+  static PlaceMeta load(Directory placeRoot, {f.FileSystem? fs}) {
+    final path = p.join(placeRoot.path, '.place', 'place.yaml');
+    final File file = fs == null ? File(path) : fs.file(path) as File;
     if (!file.existsSync()) return const PlaceMeta();
     try {
       final dynamic doc = loadYaml(file.readAsStringSync());

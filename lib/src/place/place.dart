@@ -1,5 +1,10 @@
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
+
+import 'home_ambient.dart';
+import 'model/place_meta.dart';
+
 /// A place — a marked region of the filesystem, the spatial primitive of the
 /// OS. A true peer of [File] and [Directory]: the class is the API.
 ///
@@ -80,43 +85,68 @@ final class Place {
   /// The query point — internal state, surfaced by no member. [create] and
   /// resolution consume it; a caller that needs it kept the string it
   /// constructed with.
-  // ignore: unused_field — surface draft; implementation consumes it.
   final String _anchor;
+
+  /// The marker directory name. A directory is a place iff it contains this.
+  static const _markerName = '.place';
 
   /// The place enclosing the working directory —
   /// `Place(Directory.current.path)`.
-  static Place get current => throw UnimplementedError();
+  static Place get current => Place(Directory.current.path);
 
   /// The referent: the nearest enclosing `.place/`-marked directory, walking
   /// up from the anchor. Never nowhere — an unmarked walk terminates at the
   /// implicit home (when the anchor sits under it) or the machine root.
-  Directory get root => throw UnimplementedError();
+  Directory get root => Directory(_resolve().root);
 
   /// True when the referent materialized without a marker (the machine root
   /// or the logged-in home as implicit places).
-  bool get isImplicit => throw UnimplementedError();
+  bool get isImplicit => _resolve().implicit;
 
   /// The nearest enclosing place above the referent; null only at the
   /// machine root.
-  Place? get parent => throw UnimplementedError();
+  Place? get parent {
+    final chain = ancestors;
+    return chain.isEmpty ? null : chain.first;
+  }
 
   /// The ordered ancestor chain, nearest parent → the machine root. Contains
   /// only places — unmarked intermediate directories are not in it — and
   /// excludes this place. Includes the implicit home when the place sits
   /// under home. Empty for the place at the machine root.
-  List<Place> get ancestors => throw UnimplementedError();
+  List<Place> get ancestors {
+    final chain = <Place>[];
+    var path = root.path;
+    while (true) {
+      final parentDir = p.dirname(path);
+      if (parentDir == path) break;
+      path = parentDir;
+      final atRoot = p.dirname(path) == path;
+      if (_isMarked(path) || _isHome(path) || atRoot) chain.add(Place(path));
+    }
+    return chain;
+  }
 
   /// The place's name: the metadata's, else the referent's directory name
   /// (else the path, for the machine root). Lazy from `.place/place.yaml`;
   /// malformed metadata degrades to defaults with a surfaced warning, never
   /// a crash.
-  String get name => throw UnimplementedError();
+  String get name {
+    final declared = _meta.name;
+    if (declared != null) return declared;
+    final base = p.basename(root.path);
+    return base.isEmpty ? root.path : base;
+  }
 
   /// Free-form description from the metadata, if declared.
-  String? get description => throw UnimplementedError();
+  String? get description => _meta.description;
 
   /// The declaring owner from the metadata, if declared.
-  String? get owner => throw UnimplementedError();
+  String? get owner => _meta.owner;
+
+  /// Surfaced when `place.yaml` is present but unparseable; null otherwise —
+  /// the warning [name] and friends swallow while degrading to defaults.
+  String? get metaWarning => _meta.warning;
 
   /// The land grant — the one generic gate through which every consumer
   /// derives its private storage at this place.
@@ -142,13 +172,38 @@ final class Place {
   /// Naming: `plot` is the spatial metaphor made literal — the ground the
   /// place grants a tenant. (`storage` was the considered alternative,
   /// rejected as administrative vocabulary that betrays the spatial frame.)
-  Directory plot(String namespace) => throw UnimplementedError();
+  Directory plot(String namespace) {
+    if (namespace.isEmpty ||
+        namespace == '.' ||
+        namespace == '..' ||
+        namespace.contains('/') ||
+        namespace.contains(r'\')) {
+      throw ArgumentError.value(
+        namespace,
+        'namespace',
+        'must be a single path segment',
+      );
+    }
+    return Directory(p.join(root.path, _markerName, namespace));
+  }
 
   /// The namespaces holding a plot at this place — structural enumeration,
   /// consumer-blind: the primitive lists which tenants have ground here and
   /// interprets nothing below. Empty for a place with no grants, never an
   /// error.
-  List<String> get plots => throw UnimplementedError();
+  List<String> get plots {
+    final marker = Directory(p.join(root.path, _markerName));
+    try {
+      return marker
+          .listSync()
+          .whereType<Directory>()
+          .map((d) => p.basename(d.path))
+          .toList()
+        ..sort();
+    } on FileSystemException {
+      return const [];
+    }
+  }
 
   /// Marks the **anchor** — not the referent — as a place root: creates
   /// `.place/` and writes `place.yaml` from the given fields, [name]
@@ -156,6 +211,51 @@ final class Place {
   /// anchor: `Place('/repo/new').create()` promotes `/repo/new` itself, and
   /// by the liveness law this same handle's [root] then resolves there. A
   /// pre-existing marker is reported, never clobbered.
-  Place create({String? name, String? description, String? owner}) =>
-      throw UnimplementedError();
+  Place create({String? name, String? description, String? owner}) {
+    final anchor = _absoluteAnchor;
+    final marker = Directory(p.join(anchor, _markerName));
+    if (marker.existsSync()) return this;
+    marker.createSync(recursive: true);
+    final base = p.basename(anchor);
+    final buf = StringBuffer()
+      ..writeln('name: ${name ?? (base.isEmpty ? anchor : base)}');
+    if (description != null) buf.writeln('description: $description');
+    if (owner != null) buf.writeln('owner: $owner');
+    File(p.join(marker.path, 'place.yaml')).writeAsStringSync(buf.toString());
+    return this;
+  }
+
+  /// Metadata re-read on every access — a live handle never snapshots.
+  PlaceMeta get _meta => PlaceMeta.load(root);
+
+  /// The anchor, absolute and normalized against the working directory.
+  String get _absoluteAnchor {
+    final a = p.normalize(_anchor);
+    return p.isAbsolute(a) ? a : p.normalize(p.join(Directory.current.path, a));
+  }
+
+  /// The resolution walk: anchor → referent. Never nowhere.
+  ({String root, bool implicit}) _resolve() {
+    var path = _absoluteAnchor;
+    while (true) {
+      if (_isMarked(path)) return (root: path, implicit: false);
+      final parentDir = p.dirname(path);
+      if (_isHome(path) || parentDir == path) {
+        return (root: path, implicit: true);
+      }
+      path = parentDir;
+    }
+  }
+
+  /// The marker probe. A whole-machine scan meets directories it cannot
+  /// read — an unreadable probe is "not a place", never fatal.
+  static bool _isMarked(String path) {
+    try {
+      return Directory(p.join(path, _markerName)).existsSync();
+    } on FileSystemException {
+      return false;
+    }
+  }
+
+  static bool _isHome(String path) => p.equals(path, ambientHome);
 }

@@ -1,4 +1,4 @@
-import '../model/place.dart';
+import '../place.dart';
 
 /// Renders the single-place card for `place info`: the name (with its
 /// description), then the owner. Missing optional fields simply drop their line
