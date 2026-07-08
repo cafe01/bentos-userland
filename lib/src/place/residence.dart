@@ -14,6 +14,19 @@ final class Residence {
   static Directory markerDir(Directory placeRoot, FileSystem fs) =>
       fs.directory(fs.path.join(placeRoot.path, dirName));
 
+  /// Whether [placeRoot] carries the residence marker. The probe is a
+  /// filesystem stat, and a whole-machine scan meets directories it cannot
+  /// read — a permission-denied (or otherwise unreadable) probe is simply
+  /// "not a place", never fatal. Every marker test in the organ flows through
+  /// here so the resilience lives in one place.
+  static bool isMarked(Directory placeRoot, FileSystem fs) {
+    try {
+      return markerDir(placeRoot, fs).existsSync();
+    } on FileSystemException {
+      return false;
+    }
+  }
+
   /// The `.place/place.yaml` metadata file.
   static File metaFile(Directory placeRoot, FileSystem fs) =>
       fs.file(fs.path.join(placeRoot.path, dirName, 'place.yaml'));

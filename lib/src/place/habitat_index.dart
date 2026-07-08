@@ -35,8 +35,29 @@ final class HabitatIndex {
   /// Every place in the index, unordered.
   Iterable<Place> get places => _byPath.values.map((n) => n.place);
 
+  /// Non-hidden directory basenames that never hold a place and are pruned
+  /// wherever they appear — dependency dumps, build outputs. (Hidden dirs are
+  /// pruned wholesale by the descent; these are the visible noise.)
+  static const defaultPruneNames = <String>{
+    'node_modules',
+    'build',
+  };
+
   /// Scan [resolver]'s filesystem from [from] (default `/`) and build the tree.
-  static HabitatIndex scan(PlaceResolver resolver, {String from = '/'}) {
+  ///
+  /// [pruneRoots] is a set of absolute directory paths never descended into —
+  /// the platform-native system roots (`/System`, `/usr`, `/proc`, …), which
+  /// hold no places and otherwise dominate a whole-machine walk. It prunes by
+  /// *absolute path*, not basename, so a place at a non-system child of `/` is
+  /// still reached. [pruneNames] prunes by basename anywhere (default:
+  /// [defaultPruneNames]). The caller (which reads the platform) supplies
+  /// [pruneRoots]; the scan itself stays filesystem-only and hermetic.
+  static HabitatIndex scan(
+    PlaceResolver resolver, {
+    String from = '/',
+    Set<String> pruneRoots = const {},
+    Set<String> pruneNames = defaultPruneNames,
+  }) {
     final fs = resolver.fs;
     final rootPath = fs.path.normalize(fs.path.absolute(from));
     final paths = <String>{};
@@ -53,7 +74,7 @@ final class HabitatIndex {
     while (stack.isNotEmpty) {
       final dirPath = stack.removeLast();
       final dir = fs.directory(dirPath);
-      if (Residence.markerDir(dir, fs).existsSync()) paths.add(dirPath);
+      if (Residence.isMarked(dir, fs)) paths.add(dirPath);
       // A whole-machine scan meets unreadable dirs, special files, and broken
       // symlinks — a place is found by descent, not by force, so an unlistable
       // directory is skipped, never fatal. Symlinks are not followed (a
@@ -67,8 +88,15 @@ final class HabitatIndex {
       for (final e in entries) {
         if (e is! Directory) continue;
         final base = fs.path.basename(e.path);
-        if (base == Residence.dirName) continue;
-        stack.add(fs.path.join(dirPath, base));
+        // Hidden dirs are pruned wholesale — a `.place/` inside one is a place
+        // its owner explicitly hid. (The scan root itself is never a child
+        // here, so `place tree path/to/.hidden` still works: it starts from
+        // within.) This subsumes `.place`, `.git`, `.pub-cache`, `.cache`, …
+        if (base.startsWith('.')) continue;
+        if (pruneNames.contains(base)) continue;
+        final childPath = fs.path.join(dirPath, base);
+        if (pruneRoots.contains(childPath)) continue;
+        stack.add(childPath);
       }
     }
 

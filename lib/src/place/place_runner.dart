@@ -60,8 +60,37 @@ final class PlaceRunner {
 
   PlaceResolver get resolver => PlaceResolver(fs: fs, home: home);
 
-  /// The habitat index, scanned once from the machine root.
-  HabitatIndex index() => HabitatIndex.scan(resolver);
+  /// The habitat index, scanned once from the machine root, with the
+  /// platform-native system roots pruned so the walk stays in user space.
+  HabitatIndex index() => HabitatIndex.scan(resolver, pruneRoots: systemRoots);
+
+  /// The OS-native system directories, which hold no places and otherwise
+  /// dominate a whole-machine walk. Pruned by absolute path, so a non-system
+  /// place at a direct child of `/` is still discovered. Platform-selected
+  /// here (the one spot that reads `dart:io`); `/` itself is never pruned.
+  Set<String> get systemRoots {
+    // Only NON-hidden system dirs need listing here — hidden ones (`.Trash`,
+    // `.cache`, `.pub-cache`, …) are already pruned wholesale by the descent.
+    if (io.Platform.isMacOS) {
+      return {
+        '/System', '/Library', '/private', '/usr', '/bin', '/sbin',
+        '/cores', '/dev', '/opt', '/Applications', '/Volumes',
+        fs.path.join(home, 'Library'), // the home's own native bulk
+      };
+    }
+    if (io.Platform.isWindows) {
+      return {
+        r'C:\Windows', r'C:\Program Files', r'C:\Program Files (x86)',
+        r'C:\ProgramData',
+        fs.path.join(home, 'AppData'),
+      };
+    }
+    // Linux and other POSIX.
+    return {
+      '/proc', '/sys', '/dev', '/run', '/usr', '/bin', '/sbin',
+      '/lib', '/lib32', '/lib64', '/libx32', '/boot', '/opt', '/snap',
+    };
+  }
 
   /// The place enclosing [pathArg], defaulting to the current directory.
   /// Relative paths resolve against the injected [cwd], not the fs's own.

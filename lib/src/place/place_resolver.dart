@@ -51,7 +51,7 @@ final class PlaceResolver {
     return chain;
   }
 
-  bool _isMarked(Directory dir) => Residence.markerDir(dir, fs).existsSync();
+  bool _isMarked(Directory dir) => Residence.isMarked(dir, fs);
   bool _isRoot(String path) => fs.path.dirname(path) == path;
   bool _isHome(String path) => fs.path.equals(path, home);
 }
