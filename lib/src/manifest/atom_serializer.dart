@@ -36,11 +36,14 @@ import 'package:xml/xml.dart';
 /// PURE. No IO; takes a parsed document, returns a string. The command owns
 /// read and write.
 String serializeAtom(XmlDocument doc) {
-  return doc.toXmlString(
+  final xml = doc.toXmlString(
     pretty: true,
     indent: '  ',
     preserveWhitespace: _isProseLeaf,
   );
+  // Canonical files are POSIX text — exactly one trailing newline. (The parser
+  // drops trailing whitespace outside the root, so the fixed point still holds.)
+  return '$xml\n';
 }
 
 /// A leaf element whose children are text — its whitespace is prose content.
