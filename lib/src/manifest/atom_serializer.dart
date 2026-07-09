@@ -10,66 +10,41 @@ import 'package:xml/xml.dart';
 ///     their namespace MUST survive untouched; a member-split atom still points at
 ///     its members after an edit. Strip nothing structural.
 ///
-/// WHY IT EXISTS — IDEMPOTENCY IS THE CONTRACT (ticket #45 §4). Because `manifest`
-/// is the SOLE author of atoms, there is no foreign formatting to preserve: the
-/// canonical format simply IS this serializer's output. The one law every edit
-/// stands on:
+/// SCHEMA-BLIND. The flat genome's canonical attrs are `id` + `v`, both on
+/// `<atom>`, both survive untouched — there is no legacy-canonicalization pass,
+/// because there is no schema to canonicalize to. Whatever attributes and tags
+/// the document carries, it keeps.
+///
+/// WHY IT EXISTS — IDEMPOTENCY IS THE CONTRACT. Because `manifest` is the SOLE
+/// author of atoms, there is no foreign formatting to preserve: the canonical
+/// format simply IS this serializer's output. The one law every edit stands on:
 ///
 ///     serialize(parse(x)) == x      for any x this serializer has ever emitted
 ///
-/// So a NO-OP edit produces a byte-identical file, and a real edit produces a diff
-/// touching ONLY the changed particle — never an incidental reflow of the rest.
-/// This is what makes `edit` safe for a bulk faculty pass: every cut is visible,
-/// nothing else moves. Hand-authored legacy atoms (today's tree — `id`/`origin`/
-/// `desc` on `<atom>`, `v`/`updated` on the realms) are CANONICALIZED on first
-/// touch: one desirable diff that brings them to the pure form (Standard Model
-/// §VI), stable forever after.
+/// So a NO-OP edit produces a byte-identical file, and a real edit produces a
+/// diff touching ONLY the changed element — never an incidental reflow of the
+/// rest. This is what makes `edit` safe for a bulk faculty pass: every cut is
+/// visible, nothing else moves.
 ///
-/// IMPLEMENTATION CONSTRAINTS the author must meet:
-///   - Pretty-print with the same 2-space indent the tree already uses, so the
-///     first canonicalizing diff is minimal and human-readable.
-///   - Preserve internal whitespace of the prose-bodied particles exactly as
-///     `serializeComposed` does (its `_preservedElements` set — essence, purpose,
-///     trait?, capacity, protocol, principle, knowledge, pattern, antipattern,
-///     genesis): their newlines and indentation are CONTENT, not formatting.
-///   - The fixed point must hold on REAL atoms, not just synthetic ones — the
-///     proving test reads an actual tree file (see edit_roundtrip_test). Units
-///     over MemoryFileSystem hide serialization drift (smoke-test-catches-what-
-///     fake-device-cannot): the idempotency test MUST round-trip a real file.
+/// WHITESPACE. Prose bodies' newlines and indentation are CONTENT, not
+/// formatting — and schema-blind means no hardcoded tag set decides which
+/// bodies count (a bare tag list is the same strong-typing disease as the dead
+/// vocabulary). The rule is structural: every LEAF element with text content
+/// keeps its inner whitespace verbatim; container elements pretty-print with
+/// the tree's 2-space indent.
 ///
-/// PURE. No IO; takes a parsed document, returns a string. The command owns read
-/// and write.
-const _preservedElements = {
-  'essence', 'purpose', 'trait',
-  'capacity', 'protocol',
-  'principle',
-  'knowledge', 'pattern', 'antipattern',
-  'genesis',
-};
-
-// Legacy attrs that live on <atom> in the old tree — stripped on first touch.
-const _legacyAtomAttrs = {'id', 'origin', 'desc', 'created'};
-
-// Legacy attrs that live on <living-abstract> / <living-concrete> — stripped on first touch.
-const _legacyRealmAttrs = {'v', 'updated'};
-
-const _realmElements = {'living-abstract', 'living-concrete'};
-
+/// PURE. No IO; takes a parsed document, returns a string. The command owns
+/// read and write.
 String serializeAtom(XmlDocument doc) {
-  _canonicalizeLegacy(doc.rootElement);
   return doc.toXmlString(
     pretty: true,
     indent: '  ',
-    preserveWhitespace: (node) =>
-        node is XmlElement && _preservedElements.contains(node.name.local),
+    preserveWhitespace: _isProseLeaf,
   );
 }
 
-void _canonicalizeLegacy(XmlElement root) {
-  root.attributes.removeWhere((a) => _legacyAtomAttrs.contains(a.name.local));
-  for (final child in root.childElements) {
-    if (_realmElements.contains(child.name.local)) {
-      child.attributes.removeWhere((a) => _legacyRealmAttrs.contains(a.name.local));
-    }
-  }
-}
+/// A leaf element whose children are text — its whitespace is prose content.
+bool _isProseLeaf(XmlNode node) =>
+    node is XmlElement &&
+    node.childElements.isEmpty &&
+    node.innerText.isNotEmpty;

@@ -8,73 +8,41 @@ import 'package:xml/xml.dart';
 import 'atom_editor.dart';
 import 'atom_serializer.dart';
 import 'edit_op.dart';
-import 'particle.dart';
 import 'path_resolver.dart';
 import 'tree_roots.dart';
 
 // Dense help shown by -h/--help. The audience is the agent mind, not a human
 // skimming prose — every token pays rent.
 const _editHelp = '''
-Mutate one particle of an atom — the write-half of the organ.
+Mutate one element or attribute of an atom — the write-half of the organ.
 
 USAGE
-  manifest edit <id> --<verb>-<particle> [name] [newName]  # body on stdin
-  manifest edit <id> --set-<attr> <value>                  # scalar on argv
+  manifest edit <id> <verb> <selector> [handles]
 
-VERBS  add · set · remove · rename  (apply uniformly to every particle)
-  add    — create particle         (named: handle argv + body stdin; singleton: stdin)
-  set    — replace body/value      (particle: stdin; attribute: argv)
-  remove — delete particle         (no stdin)
-  rename — --rename-<p> <old> <new>  (named particles only; no stdin)
+SELECTOR  schema-blind — the document is the schema
+  <tag>        an element under <atom>  (telos, capacity, principle, …)
+  @<attr>      an attribute on <atom>   (@v)
 
-PARTICLES                               realm     arity
-  Identity    essence · purpose         abstract  singleton
-              trait                     abstract  named
-  Capacity    capacity                  abstract  named
-              protocol                  concrete  named
-  Guidance    principle                 abstract  named
-  Learning    knowledge · pattern       concrete  named
-              antipattern               concrete  named
+VERBS
+  add    <tag> [name]           create element; errors if it exists  (body on stdin)
+  set    <tag> [name]           create-or-replace element body       (body on stdin)
+  set    @<attr> <value>        set atom attribute                   (value on argv)
+  remove <tag> [name]           delete element                       (no stdin)
+  rename <tag> <name> <new>     rewrite an element's name= handle    (no stdin)
 
-ATTRIBUTES  (--set-<attr> <value>, value on argv, no stdin)
-  v
+  [name] addresses one of several same-tag elements by its name= handle.
+  Omit it only for a bare (handle-less) element; if named instances exist,
+  a handle is required.
 
-  requires · attracts — relation particles, deferred to v2.
+EXAMPLES
+  manifest edit anamnesis.faculty set @v 0.3
+  echo "…" | manifest edit anamnesis.faculty set telos
+  echo "…" | manifest edit anamnesis.faculty add capacity recollection
+  manifest edit anamnesis.faculty rename capacity recollection remembrance
 
 OPTIONS
   --dry-run    Print a unified diff and write nothing.
   -h, --help   Print this usage information.''';
-
-ArgParser _buildEditParser() {
-  final p = ArgParser();
-
-  p.addFlag('dry-run', negatable: false, help: 'Print a unified diff and write nothing.');
-
-  // Prose particles — hidden: ArgParser validates the flag exists (rejects
-  // true typos); the dense _editHelp replaces the generated usage output.
-  for (final particle in editableParticles.keys) {
-    final isNamed = editableParticles[particle]!.arity == Arity.named;
-    p.addFlag('add-$particle', negatable: false, hide: true);
-    p.addFlag('set-$particle', negatable: false, hide: true);
-    p.addFlag('remove-$particle', negatable: false, hide: true);
-    if (isNamed) p.addFlag('rename-$particle', negatable: false, hide: true);
-  }
-
-  // Attributes — hidden for same reason.
-  for (final attr in editableAttrs) {
-    p.addFlag('set-$attr', negatable: false, hide: true);
-  }
-
-  // v2 relation particles — hidden but declared so the parser gives a precise
-  // "deferred to v2" error (via EditOpParser) instead of "unknown option".
-  for (final rel in v2RelationParticles) {
-    p.addFlag('add-$rel', negatable: false, hide: true);
-    p.addFlag('set-$rel', negatable: false, hide: true);
-    p.addFlag('remove-$rel', negatable: false, hide: true);
-  }
-
-  return p;
-}
 
 final class EditCommand extends Command<int> {
   @override
@@ -82,33 +50,29 @@ final class EditCommand extends Command<int> {
 
   @override
   String get description =>
-      'Mutate one particle of an atom — the write-half of the organ.';
+      'Mutate one element or attribute of an atom — the write-half of the organ.';
 
-  // Override usage so -h/--help shows the dense atlas, not ArgParser's
-  // auto-generated cross-product of hidden flags.
+  // Override usage so -h/--help shows the dense help, not ArgParser's output.
   @override
   String get usage => _editHelp;
 
   @override
-  final ArgParser argParser = _buildEditParser();
+  final ArgParser argParser = ArgParser()
+    ..addFlag('dry-run',
+        negatable: false, help: 'Print a unified diff and write nothing.');
 
   @override
   Future<int> run() async {
-    // Raw tokens — forwarded to EditOpParser which owns the semantic parsing.
-    // argResults.arguments returns the original argument list as passed to parse().
-    final rawArgs = argResults!.arguments;
     final dryRun = argResults!['dry-run'] as bool;
-    final rest = rawArgs.where((a) => a != '--dry-run').toList();
-
-    // First positional is the id; remaining tokens go to EditOpParser.
-    final positionals = rest.where((a) => !a.startsWith('--')).toList();
-    if (positionals.isEmpty) {
+    // Pure positional grammar: <id> <verb> <selector> [handles…].
+    final rest = argResults!.rest;
+    if (rest.isEmpty) {
       stderr.writeln('manifest edit: id required');
-      stderr.writeln('Usage: manifest edit <id> --<verb>-<particle> [name]');
+      stderr.writeln('Usage: manifest edit <id> <verb> <selector> [handles]');
       return 1;
     }
-    final id = positionals.first;
-    final opArgs = rest.where((a) => a != id).toList();
+    final id = rest.first;
+    final opArgs = rest.sublist(1);
 
     // Resolve id → file
     final localFs = const LocalFileSystem();
