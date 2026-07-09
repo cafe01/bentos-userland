@@ -66,9 +66,12 @@ final class HabitatIndex {
     if (Directory(ambientHome).existsSync()) paths.add(ambientHome);
 
     // Walk the tree for every `.place/` marker, never descending into one.
-    final stack = <String>[rootPath];
+    // Each stack frame carries the `.gitignore` rules accumulated from the
+    // root down to it, so a nested `.gitignore` layers onto its ancestors'
+    // exactly as git itself resolves ignores.
+    final stack = <(String, List<_GitignoreRule>)>[(rootPath, const [])];
     while (stack.isNotEmpty) {
-      final dirPath = stack.removeLast();
+      final (dirPath, inherited) = stack.removeLast();
       if (_isMarkedDir(dirPath)) paths.add(dirPath);
       // A whole-machine scan meets unreadable dirs, special files, and broken
       // symlinks — a place is found by descent, not by force, so an unlistable
@@ -80,6 +83,7 @@ final class HabitatIndex {
       } on FileSystemException {
         continue;
       }
+      final rules = [...inherited, ..._parseGitignore(dirPath)];
       for (final e in entries) {
         if (e is! Directory) continue;
         final base = p.basename(e.path);
@@ -91,7 +95,8 @@ final class HabitatIndex {
         if (pruneNames.contains(base)) continue;
         final childPath = p.join(dirPath, base);
         if (pruneRoots.contains(childPath)) continue;
-        stack.add(childPath);
+        if (_isGitignored(childPath, rules)) continue;
+        stack.add((childPath, rules));
       }
     }
 
@@ -125,4 +130,79 @@ final class HabitatIndex {
     final place = Place(dirPath);
     return !place.isImplicit && place.root.path == dirPath;
   }
+
+  /// The `.gitignore` rules declared directly in [dirPath], or none if it has
+  /// no `.gitignore` (or it isn't readable). Deliberately pragmatic: whole
+  /// blank/comment/negation lines are skipped, and matching is directory-level
+  /// (see [_GitignoreRule]) — the goal is prune-not-descend, not full
+  /// gitignore fidelity.
+  static List<_GitignoreRule> _parseGitignore(String dirPath) {
+    final file = File(p.join(dirPath, '.gitignore'));
+    final List<String> lines;
+    try {
+      if (!file.existsSync()) return const [];
+      lines = file.readAsLinesSync();
+    } on FileSystemException {
+      return const [];
+    }
+    final rules = <_GitignoreRule>[];
+    for (final raw in lines) {
+      var pattern = raw.trim();
+      if (pattern.isEmpty || pattern.startsWith('#') || pattern.startsWith('!')) {
+        continue;
+      }
+      if (pattern.endsWith('/')) pattern = pattern.substring(0, pattern.length - 1);
+      if (pattern.isEmpty) continue;
+      // A pattern with an interior `/` is anchored to the `.gitignore`'s own
+      // directory (git semantics); a bare name (`build`, `*.log`) matches
+      // that basename at any depth beneath it.
+      final anchored = pattern.contains('/');
+      if (pattern.startsWith('/')) pattern = pattern.substring(1);
+      rules.add(_GitignoreRule(dirPath, _globToRegExp(pattern), anchored));
+    }
+    return rules;
+  }
+
+  /// True iff [childPath] matches any of [rules] — checked against the full
+  /// path relative to the declaring `.gitignore`'s directory when [anchored],
+  /// or against the bare basename otherwise.
+  static bool _isGitignored(String childPath, List<_GitignoreRule> rules) {
+    for (final rule in rules) {
+      final target = rule.anchored
+          ? p.relative(childPath, from: rule.baseDir)
+          : p.basename(childPath);
+      if (rule.regex.hasMatch(target)) return true;
+    }
+    return false;
+  }
+
+  /// Translates a `.gitignore` glob (`*` and `?`, no path separator meaning)
+  /// into a whole-string [RegExp]. No `**` support — pragmatic, not exhaustive.
+  static RegExp _globToRegExp(String pattern) {
+    final buffer = StringBuffer('^');
+    for (final ch in pattern.split('')) {
+      switch (ch) {
+        case '*':
+          buffer.write('[^/]*');
+        case '?':
+          buffer.write('[^/]');
+        default:
+          buffer.write(RegExp.escape(ch));
+      }
+    }
+    buffer.write(r'$');
+    return RegExp(buffer.toString());
+  }
+}
+
+/// One `.gitignore` line, compiled: [baseDir] is the directory the declaring
+/// `.gitignore` lives in; [anchored] means the pattern is relative to
+/// [baseDir] (matched against the full relative path), otherwise it matches
+/// the bare basename at any depth beneath [baseDir].
+final class _GitignoreRule {
+  _GitignoreRule(this.baseDir, this.regex, this.anchored);
+
+  final String baseDir;
+  final RegExp regex;
+  final bool anchored;
 }
