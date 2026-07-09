@@ -26,8 +26,7 @@ final class LsCommand extends Command<int> {
   @override
   Future<int> run() {
     final pattern = argResults!.rest.firstOrNull ?? '*';
-    final localFs = const LocalFileSystem();
-    final roots = resolveTreeRoots(localFs, localFs.currentDirectory.path, Platform.environment);
+    final roots = resolveTreeRoots(Platform.environment);
     final fqdns = TreeLister(const LocalFileSystem(), roots).list(pattern);
     for (final fqdn in fqdns) {
       stdout.writeln(fqdn);

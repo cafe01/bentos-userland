@@ -35,8 +35,7 @@ final class BuildCommand extends Command<int> {
 
   @override
   Future<int> run() async {
-    final localFs = const LocalFileSystem();
-    final roots = resolveTreeRoots(localFs, localFs.currentDirectory.path, Platform.environment);
+    final roots = resolveTreeRoots(Platform.environment);
     final resolver = PathResolver(const LocalFileSystem(), roots);
     final engine = ComposeEngine(resolver);
 

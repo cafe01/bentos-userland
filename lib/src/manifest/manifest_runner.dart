@@ -12,7 +12,14 @@ import 'new_command.dart';
 final class ManifestRunner extends CommandRunner<int> {
   static const _knownSubcommands = {'build', 'check', 'edit', 'ls', 'new', 'help'};
 
-  ManifestRunner() : super('manifest', 'Conjure a being from its particles.') {
+  ManifestRunner()
+      : super(
+          'manifest',
+          'Conjure a being from its particles.\n\n'
+          'Tree roots are discovered at the places enclosing the working '
+          'directory (nearest wins): mark your project as a place (`place '
+          'init`) for its .bentos/tree to be found, or set BENTOS_TREE_PATH.',
+        ) {
     addCommand(BuildCommand());
     addCommand(NewCommand());
     addCommand(LsCommand());

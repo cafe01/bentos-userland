@@ -76,8 +76,7 @@ final class EditCommand extends Command<int> {
 
     // Resolve id → file
     final localFs = const LocalFileSystem();
-    final roots =
-        resolveTreeRoots(localFs, localFs.currentDirectory.path, Platform.environment);
+    final roots = resolveTreeRoots(Platform.environment);
     final resolver = PathResolver(localFs, roots);
     final resolved = resolver.resolve(id, Directory.current.path);
     if (resolved == null) {
