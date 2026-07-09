@@ -2,11 +2,11 @@ import 'package:file/file.dart';
 
 import 'path_resolver.dart';
 
-/// Lists particles in the tree by FQDN — the engine under `manifest ls <glob>`.
+/// Lists particles in the tree by FQDN — the engine under `manifest ls <pattern>`.
 ///
 /// THE JOB. Walk every tree root, find each particle file, map it back to its
-/// FQDN, and keep the ones the glob matches. Output is FQDNs, one per line,
-/// sorted — a plain stream the shell pipes (`manifest ls 'skill.**' | grep …`);
+/// FQDN, and keep the ones the pattern matches. Output is FQDNs, one per line,
+/// sorted — a plain stream the shell pipes (`manifest ls '*.skill' | grep …`);
 /// `ls` emits, you filter (no built-in `--grep`).
 ///
 /// FILE → FQDN. A particle file is `<dir>/<first-segment>.xml`. The reverse of
@@ -16,9 +16,10 @@ import 'path_resolver.dart';
 /// particle root — skip it, it is an `xi:include` member like `skill_abstract.xml`).
 /// The mapping authority is [PathResolver.relPathToFqdn] — never re-derived here.
 ///
-/// GLOB. Matching is the pure top-level [fqdnMatchesGlob] — `*` matches within one
-/// dot-segment, `**` matches across segments (attracts-match syntax). Kept pure
-/// and separate so it carries its own contract tests, blind to the filesystem.
+/// WILDCARD, NOT GLOB. Matching is the pure top-level [fqdnMatchesWildcard] —
+/// dot-notation wildcard filtering over atom IDs, not filepath-glob semantics.
+/// Kept pure and separate so it carries its own contract tests, blind to the
+/// filesystem.
 ///
 /// PURITY OF THE WALK. All IO flows through the injected [FileSystem]; inject a
 /// `MemoryFileSystem` and the lister is fully testable. Roots are searched and
@@ -29,9 +30,9 @@ final class TreeLister {
   final FileSystem _fs;
   final List<String> _treeRoots;
 
-  /// All particle FQDNs across the roots whose name matches [glob], sorted and
-  /// de-duplicated.
-  List<String> list(String glob) {
+  /// All particle FQDNs across the roots whose name matches [pattern], sorted
+  /// and de-duplicated.
+  List<String> list(String pattern) {
     final resolver = PathResolver(_fs, _treeRoots);
     final seen = <String>{};
     for (final root in _treeRoots) {
@@ -46,41 +47,67 @@ final class TreeLister {
         if (rel.startsWith('/')) rel = rel.substring(1);
         final fqdn = resolver.relPathToFqdn(rel);
         if (fqdn == null) continue;
-        if (fqdnMatchesGlob(fqdn, glob)) seen.add(fqdn);
+        if (fqdnMatchesWildcard(fqdn, pattern)) seen.add(fqdn);
       }
     }
     return seen.toList()..sort();
   }
 }
 
-/// Does [fqdn] match [glob]? `*` matches within a single dot-segment, `**` matches
-/// any number of segments. Pure — no IO, no tree knowledge.
+/// Does [fqdn] match [pattern]? Dot-notation wildcard filtering — NOT
+/// filepath-glob semantics:
 ///
-///   fqdnMatchesGlob('alfred.soul', 'soul')          → false (exact, no wildcard)
-///   fqdnMatchesGlob('alfred.soul', '*.soul')        → true
-///   fqdnMatchesGlob('a.b.c.skill', 'skill.**')      → (depends on segment order)
-bool fqdnMatchesGlob(String fqdn, String glob) {
+/// - `*` matches any run (zero or more) of *whole* dot-segments — never a
+///   partial segment (`alfred.s*` is not a wildcard; the `*` there is dead,
+///   only `alfred.s*` itself, literally, would match, which is never useful).
+/// - `{a,b,...}` brace-expands to the union of one pattern per alternative,
+///   and composes with `*` (`*.{agent,soul}`).
+/// - Bare `*` (or the default with no pattern) matches everything.
+///
+/// There is no second wildcard for "any run of segments" — `*` already means
+/// that; `**` from filepath-glob is dropped entirely, not recognized.
+///
+/// Pure — no IO, no tree knowledge.
+///
+///   fqdnMatchesWildcard('alfred.soul', 'soul')            → false (exact, no wildcard)
+///   fqdnMatchesWildcard('alfred.soul', '*.soul')           → true
+///   fqdnMatchesWildcard('a.b.c.skill', '*.skill')          → true
+///   fqdnMatchesWildcard('alfred.agent', '*.{agent,soul}')  → true
+bool fqdnMatchesWildcard(String fqdn, String pattern) {
   final fsegs = fqdn.split('.');
-  final gsegs = glob.split('.');
-  return _matchSegs(fsegs, 0, gsegs, 0);
+  return _expandBraces(pattern).any((p) => _matchSegs(fsegs, 0, p.split('.'), 0));
 }
 
-bool _matchSegs(List<String> fsegs, int fi, List<String> gsegs, int gi) {
-  if (gi == gsegs.length) return fi == fsegs.length;
+/// Expands one `{a,b,...}` group into its alternatives; a pattern with no
+/// braces returns unchanged as the sole alternative. Only one brace group is
+/// expected per pattern.
+List<String> _expandBraces(String pattern) {
+  final open = pattern.indexOf('{');
+  if (open == -1) return [pattern];
+  final close = pattern.indexOf('}', open);
+  if (close == -1) return [pattern];
+  final prefix = pattern.substring(0, open);
+  final suffix = pattern.substring(close + 1);
+  final alternatives = pattern.substring(open + 1, close).split(',');
+  return alternatives.map((a) => '$prefix$a$suffix').toList();
+}
+
+bool _matchSegs(List<String> fsegs, int fi, List<String> psegs, int pi) {
+  if (pi == psegs.length) return fi == fsegs.length;
   if (fi == fsegs.length) {
-    // only matches if remaining glob segs are all '**'
-    return gsegs.sublist(gi).every((s) => s == '**');
+    // only matches if every remaining pattern segment is the wildcard
+    return psegs.sublist(pi).every((s) => s == '*');
   }
-  final g = gsegs[gi];
-  if (g == '**') {
-    // try consuming 0 or more fqdn segments
+  final p = psegs[pi];
+  if (p == '*') {
+    // consume zero or more whole fqdn segments
     for (var skip = 0; skip <= fsegs.length - fi; skip++) {
-      if (_matchSegs(fsegs, fi + skip, gsegs, gi + 1)) return true;
+      if (_matchSegs(fsegs, fi + skip, psegs, pi + 1)) return true;
     }
     return false;
   }
-  if (g == '*' || g == fsegs[fi]) {
-    return _matchSegs(fsegs, fi + 1, gsegs, gi + 1);
+  if (p == fsegs[fi]) {
+    return _matchSegs(fsegs, fi + 1, psegs, pi + 1);
   }
   return false;
 }

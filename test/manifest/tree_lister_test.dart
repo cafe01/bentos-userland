@@ -8,25 +8,41 @@ void _seed(MemoryFileSystem fs, String path, String content) =>
       ..writeAsStringSync(content);
 
 void main() {
-  group('fqdnMatchesGlob — pure, dot-segment semantics', () {
+  group('fqdnMatchesWildcard — pure, dot-notation wildcard semantics', () {
     test('exact, no wildcard', () {
-      expect(fqdnMatchesGlob('alfred.soul', 'alfred.soul'), isTrue);
-      expect(fqdnMatchesGlob('alfred.soul', 'soul'), isFalse);
+      expect(fqdnMatchesWildcard('alfred.soul', 'alfred.soul'), isTrue);
+      expect(fqdnMatchesWildcard('alfred.soul', 'soul'), isFalse);
     });
 
-    test('* matches WITHIN a single segment, not across', () {
-      expect(fqdnMatchesGlob('alfred.soul', '*.soul'), isTrue);
-      // '*.soul' is two segments; a three-segment fqdn must not match.
-      expect(fqdnMatchesGlob('a.b.soul', '*.soul'), isFalse);
+    test('* matches a run of whole segments, never a partial segment', () {
+      expect(fqdnMatchesWildcard('alfred.soul', '*.soul'), isTrue);
+      expect(fqdnMatchesWildcard('a.b.soul', '*.soul'), isTrue);
+      expect(fqdnMatchesWildcard('agency.meta.skill', '*.skill'), isTrue);
+      // No partial-segment matching: 'alfred.s*' has no wildcard segment at
+      // all (the '*' is glued to 's'), so it only matches that literal segment.
+      expect(fqdnMatchesWildcard('alfred.soul', 'alfred.s*'), isFalse);
     });
 
-    test('** matches ACROSS any number of segments', () {
-      expect(fqdnMatchesGlob('swift.coding.craft.skill', '**.skill'), isTrue);
-      expect(fqdnMatchesGlob('x.skill', '**.skill'), isTrue);
+    test('** no longer exists — treated as a literal segment, never matches', () {
+      expect(fqdnMatchesWildcard('swift.coding.craft.skill', '**.skill'), isFalse);
+      expect(fqdnMatchesWildcard('x.skill', '**.skill'), isFalse);
     });
 
-    test('a family glob excludes other families', () {
-      expect(fqdnMatchesGlob('alfred.soul', '**.skill'), isFalse);
+    test('a family pattern excludes other families', () {
+      expect(fqdnMatchesWildcard('alfred.soul', '*.skill'), isFalse);
+    });
+
+    test('bare * matches everything', () {
+      expect(fqdnMatchesWildcard('alfred.soul', '*'), isTrue);
+      expect(fqdnMatchesWildcard('agency.meta.skill', '*'), isTrue);
+    });
+
+    test('brace expansion is a union, composes with *', () {
+      expect(fqdnMatchesWildcard('alfred.agent', '*.{agent,soul}'), isTrue);
+      expect(fqdnMatchesWildcard('alfred.soul', '*.{agent,soul}'), isTrue);
+      expect(fqdnMatchesWildcard('alfred.skill', '*.{agent,soul}'), isFalse);
+      expect(fqdnMatchesWildcard('alfred.agent', 'alfred.{agent,soul}'), isTrue);
+      expect(fqdnMatchesWildcard('quinn.agent', 'alfred.{agent,soul}'), isFalse);
     });
   });
 
@@ -48,7 +64,7 @@ void main() {
     });
 
     test('lists every particle FQDN, sorted, members excluded', () {
-      expect(lister.list('**'), [
+      expect(lister.list('*'), [
         'alfred.soul',
         'anamnesis.faculty',
         'dart.coding.craft.skill',
@@ -57,20 +73,20 @@ void main() {
     });
 
     test('a deep named particle appears; a sibling atom.xml is ignored', () {
-      expect(lister.list('**.skill'), contains('git.tools.skill'));
+      expect(lister.list('*.skill'), contains('git.tools.skill'));
     });
 
     test('a member file never appears as a particle', () {
       // skill_abstract.xml would map to a non-root → must be absent everywhere.
       expect(
-        lister.list('**').any((f) => f.contains('abstract')),
+        lister.list('*').any((f) => f.contains('abstract')),
         isFalse,
       );
     });
 
-    test('glob filters by family', () {
+    test('pattern filters by family', () {
       expect(lister.list('*.soul'), ['alfred.soul']);
-      expect(lister.list('**.skill'), [
+      expect(lister.list('*.skill'), [
         'dart.coding.craft.skill',
         'git.tools.skill',
       ]);
@@ -83,7 +99,7 @@ void main() {
       _seed(fs, '/a/soul/alfred/alfred.xml', '<atom/>');
       _seed(fs, '/b/soul/alfred/alfred.xml', '<atom/>');
       final lister = TreeLister(fs, const ['/a', '/b']);
-      expect(lister.list('**'), ['alfred.soul']);
+      expect(lister.list('*'), ['alfred.soul']);
     });
   });
 }
