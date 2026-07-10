@@ -53,17 +53,27 @@ final class HabitatIndex {
   /// still reached. [pruneNames] prunes by basename anywhere (default:
   /// [defaultPruneNames]). The caller (which reads the platform) supplies
   /// [pruneRoots]; the scan itself stays filesystem-only and hermetic.
+  ///
+  /// [includeImplicitHome] injects the logged-in home as an extra implicit
+  /// terminal — right for a whole-machine scan (so you are never nowhere),
+  /// wrong for a subtree scan ([from] below `/`), where the scan root is the
+  /// terminal and a stray home node above it would pollute the tree. A
+  /// subtree scan (`place tree <place>`) passes false: it wants only the
+  /// places nested under [from], not the machine's home.
   static HabitatIndex scan({
     String from = '/',
     Set<String> pruneRoots = const {},
     Set<String> pruneNames = defaultPruneNames,
+    bool includeImplicitHome = true,
   }) {
     final rootPath = p.normalize(p.absolute(from));
     final paths = <String>{};
 
     // The implicit terminals materialize even unmarked.
     paths.add(rootPath);
-    if (Directory(ambientHome).existsSync()) paths.add(ambientHome);
+    if (includeImplicitHome && Directory(ambientHome).existsSync()) {
+      paths.add(ambientHome);
+    }
 
     // Walk the tree for every `.place/` marker, never descending into one.
     // Each stack frame carries the `.gitignore` rules accumulated from the
@@ -122,14 +132,13 @@ final class HabitatIndex {
     return HabitatIndex._(rootNode!, byPath);
   }
 
-  /// True iff [dirPath] is itself a marked place — probed through [Place],
-  /// never by constructing the `.place/…` literal directly: a handle anchored
-  /// at [dirPath] resolves to itself, non-implicit, iff the marker sits right
-  /// there.
-  static bool _isMarkedDir(String dirPath) {
-    final place = Place(dirPath);
-    return !place.isImplicit && place.root.path == dirPath;
-  }
+  /// True iff [dirPath] is itself a marked place — a single-stat probe on the
+  /// directory, never a handle resolution: the scan calls this on every
+  /// directory on the machine, so it must not walk up to the nearest enclosing
+  /// place (which [Place.isImplicit]/[Place.root] would do on every unmarked
+  /// void, making the whole scan O(depth)). The `.place/…` literal stays
+  /// Place's secret behind [Place.isMarkedAt].
+  static bool _isMarkedDir(String dirPath) => Place.isMarkedAt(dirPath);
 
   /// The `.gitignore` rules declared directly in [dirPath], or none if it has
   /// no `.gitignore` (or it isn't readable). Deliberately pragmatic: whole

@@ -249,6 +249,14 @@ final class Place {
     }
   }
 
+  /// True iff [path] itself carries the marker — a single stat, no upward
+  /// walk. The whole-machine scan probes every directory this way, so it must
+  /// stay O(1): resolving through a handle ([isImplicit]/[root]) would walk to
+  /// the nearest enclosing place on every unmarked void, turning the scan
+  /// O(depth). Keeps the `.place/` literal Place's secret; the caller never
+  /// constructs it.
+  static bool isMarkedAt(String path) => _isMarked(path);
+
   /// The marker probe. A whole-machine scan meets directories it cannot
   /// read — an unreadable probe is "not a place", never fatal.
   static bool _isMarked(String path) {

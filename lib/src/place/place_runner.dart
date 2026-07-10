@@ -49,6 +49,18 @@ final class PlaceRunner {
   /// platform-native system roots pruned so the walk stays in user space.
   HabitatIndex index() => HabitatIndex.scan(pruneRoots: systemRoots);
 
+  /// The habitat index scoped to the subtree rooted at [place] — the places
+  /// nested under (and including) it, not the whole machine. `place tree`
+  /// wants exactly this subtree, so scanning from `/` and discarding
+  /// everything outside the node is pure waste: on a large home the
+  /// whole-machine walk dominates the command. The home is not injected as an
+  /// implicit terminal (it lives above the subtree, not within it).
+  HabitatIndex indexUnder(Place place) => HabitatIndex.scan(
+        from: place.root.path,
+        pruneRoots: systemRoots,
+        includeImplicitHome: false,
+      );
+
   /// The OS-native system directories, which hold no places and otherwise
   /// dominate a whole-machine walk. Pruned by absolute path, so a non-system
   /// place at a direct child of `/` is still discovered. Platform-selected

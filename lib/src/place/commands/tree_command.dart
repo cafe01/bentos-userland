@@ -27,7 +27,7 @@ final class TreeCommand extends Command<void> {
   Future<void> run() async {
     final pathArg = argResults!.rest.isEmpty ? null : argResults!.rest.first;
     final place = _runner.placeAt(pathArg);
-    final node = _runner.index().nodeFor(place);
+    final node = _runner.indexUnder(place).nodeFor(place);
     if (node == null) {
       _runner.err.writeln('place tree: ${place.root.path} is not in the habitat.');
       _runner.exitCode = 1;
