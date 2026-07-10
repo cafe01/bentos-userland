@@ -3,14 +3,13 @@ import 'dart:io';
 import 'package:args/command_runner.dart';
 
 import 'build_command.dart';
-import 'check_command.dart';
 import 'edit_command.dart';
 import 'ls_command.dart';
 import 'new_command.dart';
 
 /// The `manifest` coreutil — genesis engine of the periodic table.
 final class ManifestRunner extends CommandRunner<int> {
-  static const _knownSubcommands = {'build', 'check', 'edit', 'ls', 'new', 'help'};
+  static const _knownSubcommands = {'build', 'edit', 'ls', 'new', 'help'};
 
   ManifestRunner()
       : super(
@@ -23,7 +22,6 @@ final class ManifestRunner extends CommandRunner<int> {
     addCommand(BuildCommand());
     addCommand(NewCommand());
     addCommand(LsCommand());
-    addCommand(CheckCommand());
     addCommand(EditCommand());
   }
 

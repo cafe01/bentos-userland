@@ -85,15 +85,28 @@ final class EditCommand extends Command<int> {
       return 1;
     }
 
-    // Read stdin if present (piped — not a terminal)
-    final stdinPresent = !stdin.hasTerminal;
+    // Whether a body is read from stdin is decided by the GRAMMAR, not by
+    // whether stdin happens to be a pipe. Only `add`/`set` on an element carry a
+    // body; attribute set (`@x`), remove, and rename must never touch stdin —
+    // else, chained or run non-interactively, they block on an EOF that never
+    // comes (the value already rode in on argv).
+    final verbWord = opArgs.isNotEmpty ? opArgs.first : '';
+    final selector = opArgs.length > 1 ? opArgs[1] : '';
+    final needsBody = (verbWord == 'add' || verbWord == 'set') &&
+        selector.isNotEmpty &&
+        !selector.startsWith('@');
+
     String? stdinContent;
-    if (stdinPresent) {
+    if (needsBody) {
+      if (stdin.hasTerminal) {
+        stderr.writeln('manifest edit: $verbWord $selector: body required on stdin');
+        return 1;
+      }
       stdinContent = await stdin.transform(const SystemEncoding().decoder).join();
     }
 
     try {
-      final op = const EditOpParser().parse(opArgs, stdinPresent: stdinPresent);
+      final op = const EditOpParser().parse(opArgs, stdinPresent: needsBody);
       final opReady = stdinContent != null
           ? EditOp(
               verb: op.verb,

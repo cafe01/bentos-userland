@@ -17,7 +17,6 @@ void main() {
       // the runner's command lookup.
       final runner = ManifestRunner();
       expect(runner.commands.containsKey('build'), isTrue);
-      expect(runner.commands.containsKey('check'), isTrue);
       expect(runner.commands.containsKey('ls'), isTrue);
       expect(runner.commands.containsKey('new'), isTrue);
     });
@@ -48,13 +47,6 @@ void main() {
       expect(
         ManifestRunner.normalizeArgs(['build', 'alfred.agent']),
         ['build', 'alfred.agent'],
-      );
-    });
-
-    test('normalizeArgs: known subcommand "check" is preserved', () {
-      expect(
-        ManifestRunner.normalizeArgs(['check', 'alfred.agent']),
-        ['check', 'alfred.agent'],
       );
     });
 
