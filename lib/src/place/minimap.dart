@@ -51,12 +51,15 @@ final class MinimapNode {
 /// The tuning numbers are defaults, not magic constants — the `where` command
 /// exposes [radius] as a flag; the rest are constructor knobs.
 final class Minimap {
-  const Minimap({this.radius = 1, this.siblingLimit = 4});
+  const Minimap({this.radius = 1, this.siblingLimit = 8});
 
   /// Hops around the current place that stay fully expanded (default 1).
   final int radius;
 
-  /// Max sibling places shown before the list truncates to `+N more` (default 4).
+  /// Max sibling places shown before the list truncates to `+N more`
+  /// (default 8). Places are deliberately curated and sparse — every marked
+  /// place is meaningful — so the overview favors showing the whole floor over
+  /// folding it; the cap only guards against a genuinely wide branch.
   final int siblingLimit;
 
   /// Build the located map rooted at the habitat root, centered on [current].
