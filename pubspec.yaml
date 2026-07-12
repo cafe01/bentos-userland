@@ -35,6 +35,10 @@ dependencies:
     path: ../bentos-driver-sdk-dart
   chat_inference:
     path: ../chat-inference-dart
+  stt_inference:
+    path: ../stt-inference-dart
+  tts_inference:
+    path: ../tts-inference-dart
   fixnum: ^1.1.0
   stream_channel: ^2.1.0
   # coreutil libs — exposed via bin/ shells
@@ -48,6 +52,12 @@ dependencies:
     path: ../anthropic-chat-driver
   openai_chat_driver:
     path: ../openai-chat-driver
+  openai_stt_driver:
+    path: ../openai-stt-driver
+  openai_live_stt_driver:
+    path: ../openai-live-stt-driver
+  openai_tts_driver:
+    path: ../openai-tts-driver
 
 dev_dependencies:
   bentos_kernel:
