@@ -45,9 +45,14 @@ final class PlaceRunner {
   /// The current working directory — injected override, else the process cwd.
   String get cwd => _cwdOverride ?? io.Directory.current.path;
 
-  /// The habitat index, scanned once from the machine root, with the
-  /// platform-native system roots pruned so the walk stays in user space.
-  HabitatIndex index() => HabitatIndex.scan(pruneRoots: systemRoots);
+  /// The located habitat index for `where`, centered on [current]: bounded to
+  /// the habitat subtree, with the machine root and home grafted above as
+  /// resolved context. Never a whole-machine walk (see
+  /// [HabitatIndex.neighborhood]). The platform-native system roots are still
+  /// passed as prune roots, harmless within the habitat and load-bearing in the
+  /// implicit-root fallback.
+  HabitatIndex neighborhood(Place current) =>
+      HabitatIndex.neighborhood(current, pruneRoots: systemRoots);
 
   /// The habitat index scoped to the subtree rooted at [place] — the places
   /// nested under (and including) it, not the whole machine. `place tree`

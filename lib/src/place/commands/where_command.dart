@@ -32,7 +32,7 @@ final class WhereCommand extends Command<void> {
       return;
     }
     final current = _runner.placeAt(null);
-    final map = Minimap(radius: radius).build(_runner.index(), current);
+    final map = Minimap(radius: radius).build(_runner.neighborhood(current), current);
     _runner.out.writeln(const MinimapRender().render(map));
   }
 }

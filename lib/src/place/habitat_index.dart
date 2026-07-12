@@ -14,9 +14,13 @@ final class PlaceNode {
   final List<PlaceNode> children = [];
 }
 
-/// The whole-machine index of places: one scan from `/` for `.place/` markers,
-/// built into an in-memory tree. Every navigator verb (`where`, `tree`, `info`,
-/// `who`) reads this one structure — none re-derives the tree per query.
+/// An in-memory tree of places, built from a filesystem scan for `.place/`
+/// markers. Two entry points, two cost classes: [scan] walks a subtree
+/// wholesale (from `/` for the whole machine, or from any place for `place
+/// tree`); [neighborhood] bounds the walk to the habitat around a location for
+/// `place where`, so a `where` from deep in the habitat never walks the
+/// machine's unmarked voids (`/var`, the home's sibling SDK dumps) to find
+/// markers that only ever live in the habitat.
 ///
 /// Two invariants keep it honest: the implicit places (`/`, home) materialize
 /// even markerless, so you are never nowhere; and a sibling worktree (a
@@ -130,6 +134,55 @@ final class HabitatIndex {
     }
 
     return HabitatIndex._(rootNode!, byPath);
+  }
+
+  /// The located index for `where`: bounded to the habitat, never the whole
+  /// machine. Places are curated and sparse, and they cluster — the whole
+  /// habitat nests under one top-level place — yet a scan from `/` walked every
+  /// unmarked void on the machine (`/var`, the home's sibling trees, an SDK
+  /// dump of tens of thousands of directories) to find markers that only ever
+  /// live in the habitat. This scans only the subtree under the **habitat
+  /// root** — the topmost real (marked) place enclosing [current] — and grafts
+  /// the implicit ancestors (the home, the machine root) above it as
+  /// pass-through context: resolved so the map still shows where you sit on the
+  /// machine, but never descended into.
+  ///
+  /// When the spine carries no real place (a cwd sitting in a bare void under
+  /// the home or the machine root), it falls back to scanning [current]'s own
+  /// resolved place — strictly less work than a walk from `/`, never more.
+  static HabitatIndex neighborhood(
+    Place current, {
+    Set<String> pruneRoots = const {},
+    Set<String> pruneNames = defaultPruneNames,
+  }) {
+    // The habitat root: the highest marked place enclosing us. The ancestor
+    // chain runs nearest→root, so the last non-implicit entry is the topmost
+    // real place; absent any, [current]'s own resolved place is the root.
+    var habitatRoot = current;
+    for (final ancestor in current.ancestors) {
+      if (!ancestor.isImplicit) habitatRoot = ancestor;
+    }
+
+    // One bounded scan of the habitat subtree — the implicit home above it is
+    // context, grafted next, not a scan terminal here.
+    final sub = scan(
+      from: habitatRoot.root.path,
+      pruneRoots: pruneRoots,
+      pruneNames: pruneNames,
+      includeImplicitHome: false,
+    );
+
+    // Graft the implicit ancestors above the habitat root as pass-through
+    // nodes: …the machine → home → habitat, each resolved but never walked.
+    final byPath = {...sub._byPath};
+    var rootNode = sub.root;
+    for (final ancestor in habitatRoot.ancestors) {
+      final node = byPath.putIfAbsent(ancestor.root.path, () => PlaceNode(ancestor));
+      node.children.add(rootNode);
+      rootNode = node;
+    }
+
+    return HabitatIndex._(rootNode, byPath);
   }
 
   /// True iff [dirPath] is itself a marked place — a single-stat probe on the

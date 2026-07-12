@@ -125,4 +125,46 @@ void main() {
       });
     });
   });
+
+  group('HabitatIndex.neighborhood', () {
+    test('roots at the topmost real place and grafts the implicit ancestors above', () {
+      runInMemoryFs((fs) {
+        Place('/home/john/hq').create();
+        Place('/home/john/hq/cto').create();
+        final index = HabitatIndex.neighborhood(Place('/home/john/hq/cto'));
+        // The machine root heads the map; home and the habitat are present.
+        expect(index.root.place.root.path, '/');
+        final paths = index.places.map((p) => p.root.path).toSet();
+        expect(paths, containsAll(<String>[
+          '/', '/home/john', '/home/john/hq', '/home/john/hq/cto',
+        ]));
+      });
+    });
+
+    test('does not walk the home\'s sibling voids outside the habitat', () {
+      runInMemoryFs((fs) {
+        Place('/home/john/hq').create();
+        Place('/home/john/hq/cto').create();
+        // A sibling top-level place and a bulky unmarked void, both under home:
+        // neither is under the habitat root, so neither is scanned in.
+        Place('/home/john/university/rust').create();
+        fs.directory('/home/john/sdk-dump/a/b/c').createSync(recursive: true);
+        final index = HabitatIndex.neighborhood(Place('/home/john/hq/cto'));
+        final paths = index.places.map((p) => p.root.path).toSet();
+        expect(paths, isNot(contains('/home/john/university/rust')),
+            reason: 'a sibling habitat is a different neighborhood, not scanned');
+        expect(paths, isNot(contains('/home/john/university')));
+      });
+    });
+
+    test('falls back to the resolved place when the spine carries no real place', () {
+      runInMemoryFs((fs) {
+        fs.directory('/home/john/projects/x').createSync(recursive: true);
+        final index = HabitatIndex.neighborhood(Place('/home/john/projects/x'));
+        // Never nowhere: the implicit home locates us, headed by the machine.
+        expect(index.root.place.root.path, '/');
+        expect(index.nodeFor(Place('/home/john/projects/x')), isNotNull);
+      });
+    });
+  });
 }
