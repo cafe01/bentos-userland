@@ -9,8 +9,15 @@
 # `dart compile exe` produces a clean standalone binary with zero resolve noise.
 #
 # Target dir: $PREFIX (default: $HOME/.local/bin). Override by setting PREFIX.
-# Usage:  cd lib/bentos-userland && bash script/install.sh
-#         PREFIX=/usr/local/bin bash script/install.sh
+#
+# Usage:  cd lib/bentos-userland && bash script/install.sh [name ...]
+#   no args   — compile and install every registered coreutil
+#   name ...  — install only the named coreutils (compiling the rest is skipped)
+#
+# Examples:
+#   bash script/install.sh                 # install all
+#   bash script/install.sh stt tts         # install only stt and tts
+#   PREFIX=/usr/local/bin bash script/install.sh llm
 
 set -euo pipefail
 
@@ -28,9 +35,46 @@ EXECUTABLES=(
   "manifest:manifest"
   "mem:mem"
   "place:place"
+  "stt:stt"
+  "tts:tts"
   "tx:tx"
   "websearch:websearch"
 )
+
+# Selective install: any args are the exec names to install. With no args the
+# whole registry builds. Unknown names abort before any compile, so a typo
+# never silently installs nothing.
+if [[ $# -gt 0 ]]; then
+  known_names=()
+  for entry in "${EXECUTABLES[@]}"; do
+    known_names+=("${entry%%:*}")
+  done
+
+  selected=()
+  unknown=()
+  for name in "$@"; do
+    match=""
+    for entry in "${EXECUTABLES[@]}"; do
+      if [[ "${entry%%:*}" == "$name" ]]; then
+        match="$entry"
+        break
+      fi
+    done
+    if [[ -n "$match" ]]; then
+      selected+=("$match")
+    else
+      unknown+=("$name")
+    fi
+  done
+
+  if [[ ${#unknown[@]} -gt 0 ]]; then
+    echo "error: unknown coreutil(s): ${unknown[*]}" >&2
+    echo "known: ${known_names[*]}" >&2
+    exit 2
+  fi
+
+  EXECUTABLES=("${selected[@]}")
+fi
 
 # Known-broken binaries and the reason each is blocked. Empty: the whole
 # busybox builds clean (chat rewired onto the new tx surface, #19 Phase 3).
