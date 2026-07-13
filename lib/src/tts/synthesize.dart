@@ -15,6 +15,8 @@ import 'dart:io';
 import 'package:bentos_driver_sdk/bentos_driver_sdk.dart' show DriverError;
 import 'package:tts_inference/tts_inference.dart';
 
+import 'feedback.dart';
+
 /// A `--voice`/`--speed`/`--format` proposal the device rejected at the config
 /// ioctl (§3.1: `EINVAL` at the ioctl, before any text flows) — a
 /// user-correctable format/config error, distinct from an infrastructure
@@ -37,10 +39,11 @@ class TtsFormatError implements Exception {
 ///
 /// Bytes are UTF-8 decoded across chunk boundaries by the streaming decoder —
 /// a multibyte char split by a stdin chunk is buffered, never corrupted. Under
-/// [verbose], run metadata (model · format · voice · timing) is printed to
-/// [err] — the face measures its own timing and reads the model from
-/// `TTS_GET_INFO`; there is no `complete` record to carry it (§4.4/§5.3). A
-/// [DriverError] (EACCES with no credential, provider failure) propagates.
+/// [feedbackEnabled] (§5.4-6), the resolved beat (model · format · voice, read
+/// from `TTS_GET_INFO` — no new device surface, §4.4/§5.3) and the completion
+/// beat (bytes · wall-clock) print to [err]; the intent beat is the command's
+/// job, before the device opens. A [DriverError] (EACCES with no credential,
+/// provider failure) propagates.
 Future<void> runSynthesize(
   SpeechSynthesisDriver driver, {
   required Stream<List<int>> textIn,
@@ -49,11 +52,12 @@ Future<void> runSynthesize(
   String? voice,
   double? speed,
   TtsOutputFormat? format,
-  bool verbose = false,
+  bool feedbackEnabled = false,
 }) async {
   err ??= stderr;
   final session = await driver.open();
-  final watch = verbose ? (Stopwatch()..start()) : null;
+  final watch = feedbackEnabled ? (Stopwatch()..start()) : null;
+  var bytesOut = 0;
   try {
     // Config in IDLE (§2.5-1): a rejection here is a user-correctable proposal,
     // surfaced as TtsFormatError — never conflated with an infra DriverError.
@@ -63,6 +67,15 @@ Future<void> runSynthesize(
       if (format != null) await session.ioctl('TTS_SET_OUTPUT_FORMAT', format);
     } on DriverError catch (e) {
       throw TtsFormatError('tts: $e');
+    }
+
+    if (feedbackEnabled) {
+      final info = await session.ioctl('TTS_GET_INFO') as SpeechSynthesisInfo;
+      err.writeln(ttsResolvedLine(
+        model: info.model,
+        format: ttsFormatLabel(format),
+        voice: voice,
+      ));
     }
 
     // Feed: decode text bytes to string records; the decoder buffers partial
@@ -79,17 +92,11 @@ Future<void> runSynthesize(
       final chunk = await session.read();
       if (chunk == null) break;
       out.add(chunk);
+      bytesOut += chunk.length;
     }
 
     if (watch != null) {
-      final info = await session.ioctl('TTS_GET_INFO') as SpeechSynthesisInfo;
-      final fmt = switch (format) {
-        PcmOutput(:final triple) => 'pcm ${triple.rate}Hz',
-        _ => 'wav',
-      };
-      err.writeln('[${info.model} · $fmt'
-          '${voice != null ? ' · $voice' : ''}'
-          ' · ${watch.elapsedMilliseconds}ms]');
+      err.writeln(ttsCompletionLine(bytes: bytesOut, elapsed: watch.elapsed));
     }
   } finally {
     await session.close();

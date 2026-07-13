@@ -97,7 +97,7 @@ void main() {
         audioIn: Stream.value(wavBytes()),
         out: out,
         err: err,
-        verbose: true,
+        feedbackEnabled: true,
       );
 
       expect(out.text, 'hello\n');

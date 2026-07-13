@@ -19,6 +19,8 @@ import 'dart:typed_data';
 
 import 'package:stt_inference/stt_inference.dart';
 
+import 'feedback.dart';
+
 /// The canonical rate (§3.3) — the ASR lingua franca, kept flag-free.
 const _canonicalRate = 16000;
 
@@ -83,8 +85,11 @@ int _defaultRate(LiveTranscriptionInfo info) {
 /// commits pending partials to finals and ends the stream. A session with no
 /// audio is legitimate — it drains immediately to EOF with no output. [language]
 /// issues `STT_SET_LANGUAGE` before the first write (valid only in `IDLE`).
-/// Under [verbose], the `complete` run metadata is printed to [err] — off the
-/// text seam. A [DriverError] or [SttFormatError] propagates to the caller.
+/// Under [feedbackEnabled] (§5.4-6), the resolved beat (model · language,
+/// read from `STT_GET_INFO`) prints to [err] right after negotiation, and the
+/// completion beat (words · wall-clock, counting only the finals that cross
+/// the casual seam) prints at drain. A [DriverError] or [SttFormatError]
+/// propagates to the caller.
 Future<void> runLive(
   LiveTranscriptionDriver<Object?> driver, {
   required Stream<List<int>> audioIn,
@@ -92,10 +97,12 @@ Future<void> runLive(
   IOSink? err,
   String? language,
   int? rate,
-  bool verbose = false,
+  bool feedbackEnabled = false,
 }) async {
   err ??= stderr;
   final session = await driver.open();
+  final watch = feedbackEnabled ? (Stopwatch()..start()) : null;
+  var wordCount = 0;
   try {
     final info = await session.ioctl('STT_GET_INFO') as LiveTranscriptionInfo;
     final triple = negotiateLiveTriple(info, rate: rate);
@@ -112,6 +119,10 @@ Future<void> runLive(
     }
     if (language != null && language.isNotEmpty) {
       await session.ioctl('STT_SET_LANGUAGE', language);
+    }
+
+    if (feedbackEnabled) {
+      err.writeln(sttResolvedLine(model: info.model, language: language));
     }
 
     // Feed side: relay audio verbatim, then assert input-end on EOF (§5.4
@@ -133,16 +144,9 @@ Future<void> runLive(
         switch (event) {
           case LiveFinal(:final segment):
             out.writeln(segment.text); // one committed utterance, one line
-          case LiveComplete(:final metadata):
-            if (verbose) {
-              final lang = metadata.detectedLanguage;
-              err!.writeln(
-                '[${metadata.model}'
-                '${lang != null ? ' · $lang' : ''}'
-                ' · ${metadata.audioDurationMs}ms audio'
-                ' · ${metadata.timingMs}ms]',
-              );
-            }
+            wordCount += _wordCount(segment.text);
+          case LiveComplete():
+            break; // run metadata now lives in the resolved/completion beats
           case Partial():
           case Correction():
             break; // volatile / rewrite — never crosses the casual text seam
@@ -151,7 +155,14 @@ Future<void> runLive(
     }
 
     await Future.wait([feed(), drain()]);
+
+    if (watch != null) {
+      err.writeln(sttCompletionLine(words: wordCount, elapsed: watch.elapsed));
+    }
   } finally {
     await session.close();
   }
 }
+
+int _wordCount(String text) =>
+    text.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;

@@ -2,6 +2,7 @@
 /// stdin to an audio stream on stdout.
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:args/command_runner.dart';
@@ -10,7 +11,11 @@ import 'package:tts_inference/tts_inference.dart';
 
 import '../../../boot_tts.dart';
 import '../device.dart';
+import '../feedback.dart';
+import '../sink.dart';
 import '../synthesize.dart';
+import '../text_source.dart';
+import '../wav_length_patch.dart';
 
 class SynthesizeCommand extends Command<int> {
   SynthesizeCommand() {
@@ -47,12 +52,26 @@ class SynthesizeCommand extends Command<int> {
             '--format pcm, rejected otherwise.',
         valueHelp: 'hz',
       )
+      ..addOption(
+        'output',
+        abbr: 'o',
+        help: 'Write the audio to a file instead of stdout. '
+            '-o - forces stdout even at a terminal (§1.1).',
+        valueHelp: 'file',
+      )
       ..addFlag(
         'verbose',
         abbr: 'v',
         negatable: false,
-        help: 'Print run metadata (model · format · voice · timing) to '
-            'stderr.',
+        help: 'Force the stderr feedback channel on even under a pipe '
+            '(§5.4-6).',
+      )
+      ..addFlag(
+        'quiet',
+        abbr: 'q',
+        negatable: false,
+        help: 'Silence the stderr feedback channel except for errors, even '
+            'at a terminal.',
       );
   }
 
@@ -66,7 +85,7 @@ class SynthesizeCommand extends Command<int> {
       'stream is self-describing WAV by default.';
 
   @override
-  String get invocation => 'echo "hello" | tts [synthesize] [-d <device>] [-v]';
+  String get invocation => 'tts ["hello world"] [-d <device>] [-v]';
 
   @override
   Future<int> run() async {
@@ -115,6 +134,71 @@ class SynthesizeCommand extends Command<int> {
       }
     }
 
+    // §5.4-4: resolve the sink and refuse a binary payload to a terminal
+    // BEFORE the device opens — no wasted synthesis.
+    final sinkResolution = resolveTtsSink(
+      argResults!['output'] as String?,
+      stdoutIsTerminal: stdout.hasTerminal,
+    );
+    final IOSink out;
+    final bool outIsFile;
+    File? outputFile;
+    switch (sinkResolution) {
+      case TtsSinkRefused(:final message):
+        stderr.writeln(message);
+        return 64; // EX_USAGE
+      case TtsSinkResolved(file: null):
+        out = stdout;
+        outIsFile = false;
+      case TtsSinkResolved(file: final file):
+        out = file!.openWrite();
+        outIsFile = true;
+        outputFile = file;
+    }
+
+    // §5.4-3: resolve the text source — positional beats piped stdin; with
+    // neither, an interactive keyboard read (BEFORE the device opens, so an
+    // empty Ctrl-D never wastes a boot).
+    final positional =
+        argResults!.rest.isEmpty ? null : argResults!.rest.join(' ');
+    final textSourceResolution = resolveTtsTextSource(
+      positional,
+      stdinIsTerminal: stdin.hasTerminal,
+    );
+    final Stream<List<int>> textIn;
+    switch (textSourceResolution) {
+      case TtsTextSourcePositional(:final text):
+        textIn = Stream.value(utf8.encode(text));
+      case TtsTextSourceStdin():
+        textIn = stdin;
+      case TtsTextSourceInteractive():
+        stderr.writeln('tts: reading text from the terminal — type your '
+            'text, then Ctrl-D to end');
+        final text = await readInteractiveText(stdin);
+        if (text.isEmpty) {
+          stderr.writeln('tts: no text — pass an argument, pipe text, or '
+              'type some (empty input)');
+          return 64; // EX_USAGE
+        }
+        textIn = Stream.value(utf8.encode(text));
+    }
+
+    // §5.4-6: the feedback channel's gate, and the intent beat — before the
+    // device opens, what was requested.
+    final feedbackOn = ttsFeedbackEnabled(
+      stderrIsTerminal: stderr.hasTerminal,
+      verbose: argResults!['verbose'] as bool,
+      quiet: argResults!['quiet'] as bool,
+    );
+    final voiceArg = argResults!['voice'] as String?;
+    if (feedbackOn) {
+      stderr.writeln(ttsIntentLine(
+        target: outIsFile ? outputFile!.path : 'stdout',
+        format: ttsFormatLabel(format),
+        voice: voiceArg,
+      ));
+    }
+
     final SpeechSynthesisDriver driver;
     try {
       driver = bootTtsDevice(path);
@@ -126,12 +210,12 @@ class SynthesizeCommand extends Command<int> {
     try {
       await runSynthesize(
         driver,
-        textIn: stdin,
-        out: stdout,
-        voice: argResults!['voice'] as String?,
+        textIn: textIn,
+        out: out,
+        voice: voiceArg,
         speed: speed,
         format: format,
-        verbose: argResults!['verbose'] as bool,
+        feedbackEnabled: feedbackOn,
       );
     } on TtsFormatError catch (e) {
       stderr.writeln(e);
@@ -139,6 +223,15 @@ class SynthesizeCommand extends Command<int> {
     } on DriverError catch (e) {
       stderr.writeln('tts: $e');
       return 1;
+    } finally {
+      if (outIsFile) await out.close();
+    }
+
+    // §5.4-5: a seekable -o file honoring the wav default earns the true
+    // lengths — the device's streaming sentinel stands everywhere else
+    // (pcm, stdout, -o -).
+    if (outIsFile && format == null && outputFile != null) {
+      await patchWavFileLengths(outputFile);
     }
     return 0;
   }

@@ -125,7 +125,7 @@ void main() {
         audioIn: Stream.value(pcmChunk(0)),
         out: out,
         err: err,
-        verbose: true,
+        feedbackEnabled: true,
       );
 
       expect(out.text, 'hyp-1\n');

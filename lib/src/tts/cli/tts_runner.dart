@@ -1,7 +1,8 @@
 /// `TtsRunner` — the coreutil's command runner.
 ///
-/// Registers the verbs, owns `--version`, and routes a bare `tts` (with piped
-/// text) to the default `synthesize` verb. Mirrors `SttRunner`; the
+/// Registers the verbs, owns `--version`, and routes a bare `tts` (piped
+/// text, a positional argument, or an interactive terminal, §5.4-3/product-
+/// spec fork #10) to the default `synthesize` verb. Mirrors `SttRunner`; the
 /// introspection verbs (`voices`, `config`) land here in a later slice.
 library;
 
@@ -28,18 +29,10 @@ class TtsRunner extends CommandRunner<int> {
     addCommand(SynthesizeCommand());
   }
 
-  /// [stdinHasText] is true when stdin is piped (not a TTY), so a bare
-  /// `echo hi | tts` routes to `synthesize` instead of showing usage.
   @override
-  Future<int> run(Iterable<String> args, {bool stdinHasText = false}) async {
+  Future<int> run(Iterable<String> args) async {
     try {
-      final results = parse(
-        _withDefaultVerb(
-          args.toList(),
-          commands.keys.toSet(),
-          stdinHasText: stdinHasText,
-        ),
-      );
+      final results = parse(withDefaultVerb(args.toList(), commands.keys.toSet()));
       if (results['version'] == true) {
         stdout.writeln('tts $ttsVersion');
         return 0;
@@ -61,21 +54,20 @@ class TtsRunner extends CommandRunner<int> {
   }
 }
 
-/// Prepends `synthesize` when the invocation names no known verb — a bare
-/// `tts` with piped text. An explicit verb or a flags-only invocation without
-/// piped text is left untouched (so `--version` / `--help` still work).
-List<String> _withDefaultVerb(
-  List<String> args,
-  Set<String> knownVerbs, {
-  bool stdinHasText = false,
-}) {
+/// Prepends `synthesize` when the invocation names no known verb — every
+/// bare `tts` invocation resolves to the default verb (§4.2: "a bare `tts`
+/// at a terminal thus resolves to the default verb reading the keyboard,
+/// never a usage dump"). `--version`/`--help` are the sole exceptions, so
+/// they still short-circuit before a command ever runs.
+List<String> withDefaultVerb(List<String> args, Set<String> knownVerbs) {
+  if (args.contains('--version') || args.contains('-h') || args.contains('--help')) {
+    return args;
+  }
   final firstNonFlag = args.firstWhere(
     (a) => !a.startsWith('-'),
     orElse: () => '',
   );
-  if (firstNonFlag.isEmpty) {
-    return stdinHasText ? ['synthesize', ...args] : args;
-  }
+  if (firstNonFlag.isEmpty) return ['synthesize', ...args];
   if (knownVerbs.contains(firstNonFlag)) return args;
   return ['synthesize', ...args];
 }

@@ -8,5 +8,5 @@ import '_tts_drivers.dart';
 
 void main(List<String> args) async {
   registerBundledTtsDrivers();
-  exit(await TtsRunner().run(args, stdinHasText: !stdin.hasTerminal));
+  exit(await TtsRunner().run(args));
 }

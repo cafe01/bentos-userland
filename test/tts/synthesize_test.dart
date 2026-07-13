@@ -93,7 +93,7 @@ void main() {
         textIn: Stream.value(dc.utf8.encode('hello')),
         out: out,
         err: err,
-        verbose: true,
+        feedbackEnabled: true,
       );
 
       expect(out.bytes.length, greaterThan(44)); // audio still flows
