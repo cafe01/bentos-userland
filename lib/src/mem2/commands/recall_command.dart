@@ -4,6 +4,7 @@ import '../mem_runner.dart';
 import '../model/mem_page.dart';
 import '../relative_age.dart';
 import '../render/recall_render.dart';
+import '../word_count.dart';
 import 'reach.dart';
 
 /// `mem recall` — deliberate retrieval, full bodies. Pick by topic (the
@@ -48,5 +49,18 @@ final class RecallCommand extends Command<void> {
 
     _runner.announceBank(store.bank);
     _runner.out.write(RecallRender(RelativeAge(_runner.clock)).render(pages));
+
+    // A band pull reports its own weight — on stderr, so the total never enters
+    // the stdout that becomes a mind. This is the one place that counts: callers
+    // staging a band (claude-spawn) echo this line instead of measuring the
+    // string themselves, which is how a character count once masqueraded as `k`.
+    // The bank rides along because `announceBank` speaks on stdout: a total that
+    // reaches the caller alone must carry what it is a total *of*.
+    if (pages.length > 1) {
+      const counter = WordCount();
+      final total = pages.fold(0, (n, p) => n + counter.count(p.body));
+      _runner.err
+          .writeln('mem: ${store.bank} · ${pages.length} pages · $total words');
+    }
   }
 }

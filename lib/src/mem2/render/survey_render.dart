@@ -7,12 +7,19 @@ import '../word_count.dart';
 /// one flowing line each: `attention  topic — gist`, then the trailing signal
 /// cluster `#tags  ·age  [Nw]  @place`. `[Nw]` shows only above the size
 /// threshold; `@place` only when the page is inherited from an ancestor. The
-/// affordance footer trails the map. Logic-light; no template store.
+/// legend heads the map and the affordance footer trails it. Logic-light; no
+/// template store.
 final class SurveyRender {
   const SurveyRender({required this.age, this.wordCount = const WordCount()});
 
   final RelativeAge age;
   final WordCount wordCount;
+
+  /// The column legend. `[words]` is spelled out on purpose: the compact `[Nw]`
+  /// hint repeats down the map, so the unit is declared once at the point of
+  /// reading rather than left to a convention the reader must already hold.
+  static const legend =
+      'attention  topic — gist   #tags  ·modified  [words]  @place';
 
   static const footer = 'read full → mem recall <topic>';
 
@@ -25,7 +32,9 @@ final class SurveyRender {
   /// [vantage] distinguishes an inherited page (its origin differs) so `@place`
   /// only marks what is not local.
   String render(List<MemPage> pages, {required Place vantage}) {
-    final buf = StringBuffer();
+    final buf = StringBuffer()
+      ..writeln(legend)
+      ..writeln();
     MemType? lastMode;
     for (final page in pages) {
       final mode = page.fields.type;

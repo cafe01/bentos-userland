@@ -10,7 +10,7 @@ void main() {
     final clock = DateTime.utc(2026, 7, 2, 12);
     final render = RecallRender(RelativeAge(() => clock));
 
-    test('a single page: rule + title (topic · mode · attention · age) + body', () {
+    test('a single page: rule + title (topic · mode · attention · words · age) + body', () {
       final out = render.render([
         memPage('agency/fetch-reflex',
             type: MemType.procedural,
@@ -18,9 +18,15 @@ void main() {
             body: 'The underdeveloped keystone.',
             modified: clock.subtract(const Duration(days: 5))),
       ]);
-      expect(out, contains('agency/fetch-reflex  ·  procedural  ·  a:0.7  ·  modified 5d ago'));
+      expect(out, contains('agency/fetch-reflex  ·  procedural  ·  a:0.7  ·  3 words  ·  modified 5d ago'));
       expect(out, contains('The underdeveloped keystone.'));
       expect('─'.allMatches(out).isNotEmpty, isTrue);
+    });
+
+    test('the weight names its unit — a bare magnitude is not a measurement', () {
+      final out = render.render([memPage('a', body: 'one two three four')]);
+      expect(out, contains('4 words'));
+      expect(out, isNot(contains('4w')));
     });
 
     test('N pages render N separator rules, unambiguous at the seams', () {

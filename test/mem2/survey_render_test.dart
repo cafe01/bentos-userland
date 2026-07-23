@@ -26,8 +26,9 @@ void main() {
           memPage('s2', type: MemType.semantic, attention: '0.7', origin: vantage),
         ], vantage: vantage);
         final lines = out.split('\n');
-        expect(lines[0], 'autobiographical');
-        expect(lines[2], 'semantic');
+        expect(lines[0], SurveyRender.legend);
+        expect(lines[2], 'autobiographical');
+        expect(lines[4], 'semantic');
         expect('semantic'.allMatches(out), hasLength(1));
         expect(lines.indexOf('autobiographical'),
             lessThan(lines.indexOf('semantic')));
@@ -72,7 +73,19 @@ void main() {
         final out = render.render([
           memPage('short', attention: '0.5', body: 'a b', origin: vantage),
         ], vantage: vantage);
-        expect(out, isNot(contains('[')));
+        expect(out, contains('  0.5  short\n'));
+        expect(out, isNot(contains('[2w]')));
+      });
+    });
+
+    test('the legend heads the map and spells the unit out', () {
+      runInMemoryFs((fs) {
+        MemHabitat()..place('/hq')..place('/hq/cto');
+        final vantage = Place('/hq/cto');
+        final out = render.render(
+            [memPage('x', attention: '0.5', origin: vantage)], vantage: vantage);
+        expect(out, startsWith(SurveyRender.legend));
+        expect(SurveyRender.legend, contains('[words]'));
       });
     });
 
