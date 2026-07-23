@@ -30,7 +30,7 @@ void main() {
         out: out,
         err: err,
         clock: hab.now,
-        environment: {'BENTOS_AGENT': hab.entity},
+        environment: {'BENTOS_AGENT': hab.bank},
         stdinContent: stdin,
         gistLlm: gistLlm ?? (body) async => 'stub gist',
       );
@@ -39,7 +39,7 @@ void main() {
     }
 
     String? read(MemHabitat hab, String placePath, String topic) {
-      final f = File(p.join(placePath, '.place', 'mem', hab.entity, '$topic.md'));
+      final f = File(p.join(placePath, '${hab.bank}.mem', '$topic.md'));
       return f.existsSync() ? f.readAsStringSync() : null;
     }
 

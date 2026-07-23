@@ -20,7 +20,7 @@ void main() {
         out: out,
         err: err,
         clock: hab.now,
-        environment: {'BENTOS_AGENT': hab.entity},
+        environment: {'BENTOS_AGENT': hab.bank},
       );
       await runner.run(args);
       return (out.toString(), err.toString(), runner.exitCode);

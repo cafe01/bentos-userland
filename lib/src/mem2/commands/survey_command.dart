@@ -42,6 +42,7 @@ final class SurveyCommand extends Command<void> {
       age: RelativeAge(_runner.clock),
       wordCount: WordCount(threshold: int.parse(argResults!['size-threshold'] as String)),
     );
+    _runner.announceBank(store.bank);
     _runner.out.writeln(render.render(selected, vantage: store.vantage));
   }
 }

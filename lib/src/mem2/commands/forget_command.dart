@@ -44,6 +44,7 @@ final class ForgetCommand extends Command<void> {
     for (final page in pages) {
       store.deletePage(page);
     }
+    _runner.announceBank(store.bank);
     _runner.out.writeln(WriteEcho(store.vantage).forgot(pages));
   }
 }

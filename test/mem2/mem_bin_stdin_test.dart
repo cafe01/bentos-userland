@@ -23,7 +23,7 @@ void main() {
       [
         'run', p.join(packageRoot, 'bin', 'mem.dart'),
         'remember',
-        '-a', 'testagent',
+        '-b', 'testbank',
         '-p', place.path,
         '-t', 'semantic',
         '-A', '0.5',
@@ -39,7 +39,7 @@ void main() {
 
     expect(code, 0, reason: 'stderr: $stderrText');
 
-    final landed = File(p.join(place.path, '.place', 'mem', 'testagent', 'domain', 'topic.md'));
+    final landed = File(p.join(place.path, 'testbank.mem', 'domain', 'topic.md'));
     expect(landed.existsSync(), isTrue);
     expect(landed.readAsStringSync(), contains('the body from a real pipe'));
   }, timeout: const Timeout(Duration(seconds: 30)));

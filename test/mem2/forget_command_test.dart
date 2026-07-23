@@ -23,14 +23,14 @@ void main() {
         out: out,
         err: err,
         clock: hab.now,
-        environment: {'BENTOS_AGENT': hab.entity},
+        environment: {'BENTOS_AGENT': hab.bank},
       );
       await runner.run(args);
       return (out.toString(), err.toString(), runner.exitCode);
     }
 
     bool exists(MemHabitat hab, String placePath, String topic) =>
-        File(p.join(placePath, '.place', 'mem', hab.entity, '$topic.md')).existsSync();
+        File(p.join(placePath, '${hab.bank}.mem', '$topic.md')).existsSync();
 
     test('forget <topic> removes the page and deletes its content', () async {
       await runInMemoryFs((fs) async {

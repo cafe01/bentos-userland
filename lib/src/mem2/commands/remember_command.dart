@@ -81,6 +81,7 @@ final class RememberCommand extends Command<void> {
       body: body,
     );
 
+    _runner.announceBank(store.bank);
     _runner.out.writeln(WriteEcho(store.vantage).remembered(page, created: creating));
   }
 

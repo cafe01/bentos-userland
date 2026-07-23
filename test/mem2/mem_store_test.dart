@@ -12,7 +12,7 @@ void main() {
   group('MemStore — layout, cascade, shadow, write-target', () {
     MemStore storeAt(MemHabitat hab, String cwd) => MemStore(
           vantage: Place(cwd),
-          entity: hab.entity,
+          bank: hab.bank,
           writer: MemWriter(hab.now),
         );
 

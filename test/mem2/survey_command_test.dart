@@ -18,7 +18,7 @@ void main() {
         out: out,
         err: err,
         clock: hab.now,
-        environment: environment ?? {'BENTOS_AGENT': hab.entity},
+        environment: environment ?? {'BENTOS_AGENT': hab.bank},
       );
       await runner.run(args);
       return (out.toString(), err.toString(), runner.exitCode);
@@ -87,12 +87,12 @@ void main() {
       });
     });
 
-    test('absent agent with no \$BENTOS_AGENT errors with guidance', () async {
+    test('absent bank with no \$BENTOS_AGENT errors with guidance', () async {
       await runInMemoryFs((fs) async {
         final hab = habitat();
         final (_, err, code) =
             await run(hab, ['survey', '-p', '/hq/cto'], environment: const {});
-        expect(err, contains('no agent'));
+        expect(err, contains('no bank'));
         expect(code, 1);
       });
     });

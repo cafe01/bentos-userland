@@ -46,6 +46,7 @@ final class RecallCommand extends Command<void> {
       pages = Reach.from(argResults!).apply(cascade);
     }
 
+    _runner.announceBank(store.bank);
     _runner.out.write(RecallRender(RelativeAge(_runner.clock)).render(pages));
   }
 }

@@ -41,6 +41,7 @@ final class RefocusCommand extends Command<void> {
 
     final selection = _select(store);
     if (selection.isEmpty) {
+      _runner.announceBank(store.bank);
       _runner.out.writeln('refocus: no pages matched — nothing to move.');
       return;
     }
@@ -56,6 +57,7 @@ final class RefocusCommand extends Command<void> {
     for (final c in changes) {
       store.refocusPage(c.page, c.to);
     }
+    _runner.announceBank(store.bank);
     _runner.out.writeln(
       WriteEcho(store.vantage).refocused(changes, selector: _selectorLabel(), by: by),
     );

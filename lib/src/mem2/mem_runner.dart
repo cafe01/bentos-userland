@@ -13,9 +13,9 @@ import 'gist_deriver.dart';
 import 'mem_store.dart';
 import 'model/mem_writer.dart';
 
-/// The mem coreutil's command runner: global options (`-a/--agent`,
+/// The mem coreutil's command runner: global options (`-b/--bank`,
 /// `-p/--place`), dispatch to the verb commands, and the seam that builds a
-/// [MemStore] from the resolved agent and vantage place. Filesystem
+/// [MemStore] from the resolved bank and vantage place. Filesystem
 /// hermeticity rides `IOOverrides` (see `runInMemoryFs`); the remaining
 /// dependencies the verbs touch — clock, stdin, environment, llm — are
 /// injected here.
@@ -43,8 +43,8 @@ final class MemRunner {
       ..addCommand(ForgetCommand(this));
 
     _runner.argParser
-      ..addOption('agent',
-          abbr: 'a', help: r"Operate on NAME's memory (default: $BENTOS_AGENT).")
+      ..addOption('bank',
+          abbr: 'b', help: r"Operate on NAME's bank (default: $BENTOS_AGENT).")
       ..addOption('place',
           abbr: 'p',
           help: 'Vantage point in the place tree — memory cascades up from here '
@@ -67,13 +67,13 @@ final class MemRunner {
   late final CommandRunner<void> _runner;
   int exitCode = 0;
 
-  /// Resolve the agent and vantage place from the global flags and build the
-  /// store. Returns null (and sets exit 1) when the agent cannot be resolved.
+  /// Resolve the bank and vantage place from the global flags and build the
+  /// store. Returns null (and sets exit 1) when the bank cannot be resolved.
   MemStore? buildStore(ArgResults globalResults) {
-    final agent =
-        (globalResults['agent'] as String?) ?? _environment['BENTOS_AGENT'];
-    if (agent == null || agent.isEmpty) {
-      err.writeln('mem: no agent — pass -a/--agent or set \$BENTOS_AGENT.');
+    final bank =
+        (globalResults['bank'] as String?) ?? _environment['BENTOS_AGENT'];
+    if (bank == null || bank.isEmpty) {
+      err.writeln('mem: no bank — pass -b/--bank or set \$BENTOS_AGENT.');
       exitCode = 1;
       return null;
     }
@@ -81,9 +81,18 @@ final class MemRunner {
         (globalResults['place'] as String?) ?? io.Directory.current.path;
     return MemStore(
       vantage: Place(placePath),
-      entity: agent,
+      bank: bank,
       writer: MemWriter(clock),
     );
+  }
+
+  /// Announces the bank once, at the head of a response — the boundary that
+  /// would otherwise vanish when several banks' hot bands are concatenated
+  /// into one mind at wake. Called immediately before a verb's stdout output;
+  /// stderr-only failures (no bank resolved, or nothing to show) skip it.
+  void announceBank(String bank) {
+    out.writeln('bank: $bank');
+    out.writeln();
   }
 
   Future<void> run(List<String> args) async {

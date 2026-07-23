@@ -34,9 +34,9 @@ MemPage memPage(
 /// the hermetic in-memory filesystem — the successor of the old
 /// `MemoryFileSystem`-injected habitat.
 final class MemHabitat {
-  MemHabitat({this.entity = 'john'});
+  MemHabitat({this.bank = 'john'});
 
-  final String entity;
+  final String bank;
 
   /// A fixed clock — deterministic dates.
   static final clock = DateTime.utc(2026, 7, 2, 10);
@@ -47,11 +47,10 @@ final class MemHabitat {
     Directory(p.join(dirPath, '.place')).createSync(recursive: true);
   }
 
-  /// Seed a raw page file at [topic] under [placePath]'s store for [entity] —
+  /// Seed a raw page file at [topic] under [placePath]'s store for [bank] —
   /// the on-disk layout contract, spelled out on purpose.
   void seed(String placePath, String topic, String content) {
-    final file =
-        File(p.join(placePath, '.place', 'mem', entity, '$topic.md'));
+    final file = File(p.join(placePath, '$bank.mem', '$topic.md'));
     file.parent.createSync(recursive: true);
     file.writeAsStringSync(content);
   }

@@ -24,7 +24,7 @@ void main() {
         out: out,
         err: err,
         clock: hab.now,
-        environment: {'BENTOS_AGENT': hab.entity},
+        environment: {'BENTOS_AGENT': hab.bank},
       );
       await runner.run(args);
       return (out.toString(), err.toString(), runner.exitCode);
@@ -32,7 +32,7 @@ void main() {
 
     MemPage page(MemHabitat hab, String placePath, String topic) => MemPage.parse(
         topic,
-        File(p.join(placePath, '.place', 'mem', hab.entity, '$topic.md')).readAsStringSync());
+        File(p.join(placePath, '${hab.bank}.mem', '$topic.md')).readAsStringSync());
 
     test('refocus <topic> --to sets one page, body and modified untouched', () async {
       await runInMemoryFs((fs) async {
@@ -56,7 +56,7 @@ void main() {
         final (_, _, code) = await run(hab, ['refocus', '-p', '/hq/cto', 'founders', '--to', '0.4']);
         expect(code, 0);
         expect(page(hab, '/hq', 'founders').fields.attention.render(), '0.4');
-        final shadow = File('/hq/cto/.place/mem/${hab.entity}/founders.md');
+        final shadow = File('/hq/cto/${hab.bank}.mem/founders.md');
         expect(shadow.existsSync(), isFalse, reason: 'no local shadow');
       });
     });

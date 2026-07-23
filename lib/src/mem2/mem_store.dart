@@ -8,30 +8,32 @@ import 'model/mem_page.dart';
 import 'model/mem_writer.dart';
 
 /// The memory-tree gateway — the only mem component that touches the Place API
-/// or the filesystem tree. It derives stores from the place's `mem` plot
-/// (the `<entity>/…` layout below it is mem's own law), reads and writes page
+/// or the filesystem tree. It derives stores from the bank's entity form at
+/// each place (the layout below it is mem's own law), reads and writes page
 /// files at topic paths, runs the cascade over ancestors (nearest-wins
 /// shadowing, origin-annotated), and resolves the write target. No other
 /// component constructs a path string or climbs the tree.
 final class MemStore {
   MemStore({
     required this.vantage,
-    required this.entity,
+    required this.bank,
     required this.writer,
   });
 
   /// The vantage place — where the cascade starts and new topics land.
   final Place vantage;
-  final String entity;
+  final String bank;
   final MemWriter writer;
 
   /// The vantage and its ancestors, nearest-first — the ordered climb the
   /// cascade walks.
   List<Place> get _chain => [vantage, ...vantage.ancestors];
 
-  /// The entity's store under [place]'s mem plot.
+  /// The bank's store at [place]: the entity form `<place>/<bank>.mem/`,
+  /// installed beside `.place/` rather than under its control plane — a
+  /// bank is an entity of the memory application, not a place tenant plot.
   Directory _storeRoot(Place place) =>
-      Directory(p.join(place.plot('mem').path, entity));
+      Directory(p.join(place.root.path, '$bank.mem'));
 
   File _pageFile(Place place, String topic) =>
       File(p.join(_storeRoot(place).path, '$topic.md'));
