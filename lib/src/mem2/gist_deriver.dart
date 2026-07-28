@@ -46,9 +46,19 @@ final class GistDerivationFailed implements Exception {
   String toString() => 'gist derivation failed: $detail';
 }
 
-const _gistSystem =
-    'You write a single navigation line for a memory page: what a reader will '
-    'find if they open it. One line only — no summary, no preamble, no quotes.';
+const _gistSystem = r'''
+You write the gist of a memory page: the one line that stands in place of the page for a reader who does not open it.
+
+That reader is the person whose memory this is, scanning an index of their own knowledge to decide what to recall now. The line must carry the page's substance — never a description of the page.
+
+- State the page's own claims, in the page's own vocabulary and language. Never write ABOUT the page: no "this page", no "an exploration of", "a discussion of", "covers", "explores", "details", "outlines", "delves into".
+- Open with what the subject IS in a few words, then its load-bearing claims — the laws, distinctions, consequences, pathologies and exceptions a reader would be wrong not to know. If the page leaves a question open, say so: that is often why someone returns to it.
+- One line does not mean short. It is one line because the index prints one line per page — length is set by how much the page actually claims, and 40–80 words is ordinary. Spend every word on a claim: join them with semicolons and dashes rather than connectives, and cut adjectives that carry no fact. Leaving out a load-bearing claim to stay brief is the worst failure of all.
+- Never invent. Every claim in the line must be on the page, in the page's own terms.
+- Prefer the page's concrete nouns to abstract paraphrase. "the client reaches the firm only through a chief" beats "a structured boundary is maintained with external parties". A line that would fit fifty other pages has failed.
+- Output the line and nothing else: no preamble, no quotes, no markdown, no trailing commentary.
+
+Shape: <what it is> — <the claims that matter>; <the distinction, consequence or open question someone who skipped the page would get wrong>.''';
 
 /// The production [GistLlm]: pipe [body] to the `llm` coreutil under the gist
 /// system prompt and read back its single line. A non-zero exit surfaces as
