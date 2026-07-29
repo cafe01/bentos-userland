@@ -80,28 +80,61 @@ Future<String> llmGist(String body, {Duration timeout = gistTimeout}) async {
   // The pipes are read through cancellable subscriptions rather than joined:
   // on timeout the child's output stream may be held open by something it
   // spawned, and a pending join would keep this process alive forever — the
-  // hang moved one level down instead of being cured.
-  final out = StringBuffer();
-  final err = StringBuffer();
-  final outSub = proc.stdout.transform(utf8.decoder).listen(out.write);
-  final errSub = proc.stderr.transform(utf8.decoder).listen(err.write);
+  // hang moved one level down instead of being cured. Completion is tracked
+  // with a Completer and never with `asFuture`, though: the pipe
+  // is usually done before the exit code is awaited, and `asFuture` on a
+  // subscription whose `done` already fired never completes — which drains the
+  // event loop and lets the VM exit 0 with the write unmade.
+  final out = _Pipe(proc.stdout);
+  final err = _Pipe(proc.stderr);
 
   final int code;
   try {
     code = await proc.exitCode.timeout(timeout);
   } on TimeoutException {
     proc.kill(io.ProcessSignal.sigkill);
-    await outSub.cancel();
-    await errSub.cancel();
+    await out.abandon();
+    await err.abandon();
     throw GistDerivationFailed(
       'llm did not answer within ${timeout.inSeconds}s — '
       'retry, or write the line yourself with --gist "..."',
     );
   }
-  await outSub.asFuture<void>();
-  await errSub.asFuture<void>();
+  await out.done;
+  await err.done;
   if (code != 0) {
-    throw GistDerivationFailed('llm exited $code: ${err.toString().trim()}');
+    throw GistDerivationFailed('llm exited $code: ${err.text.trim()}');
   }
-  return out.toString();
+  return out.text;
+}
+
+/// One of the child's output pipes, accumulated through a cancellable
+/// subscription. [done] completes when the stream ends or errors; [abandon]
+/// drops the pipe when the child is killed, so nothing pending can keep this
+/// process alive past the kill.
+final class _Pipe {
+  _Pipe(Stream<List<int>> stream) {
+    _sub = stream.transform(utf8.decoder).listen(
+      _buffer.write,
+      onDone: _finish,
+      onError: (Object _) => _finish(),
+      cancelOnError: true,
+    );
+  }
+
+  final StringBuffer _buffer = StringBuffer();
+  final Completer<void> _done = Completer<void>();
+  late final StreamSubscription<String> _sub;
+
+  Future<void> get done => _done.future;
+  String get text => _buffer.toString();
+
+  Future<void> abandon() async {
+    await _sub.cancel();
+    _finish();
+  }
+
+  void _finish() {
+    if (!_done.isCompleted) _done.complete();
+  }
 }
