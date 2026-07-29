@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' as io;
 
@@ -24,6 +25,8 @@ final class GistDeriver {
     final String raw;
     try {
       raw = await _llm(body);
+    } on GistDerivationFailed {
+      rethrow; // already the caller-facing message; never wrap it twice
     } on Exception catch (e) {
       throw GistDerivationFailed('$e');
     }
@@ -60,18 +63,45 @@ That reader is the person whose memory this is, scanning an index of their own k
 
 Shape: <what it is> — <the claims that matter>; <the distinction, consequence or open question someone who skipped the page would get wrong>.''';
 
+/// How long the seam waits on `llm` before giving up. The derivation is a live
+/// model call over the network with nothing else bounding it, so a stalled
+/// request would otherwise hang the write forever.
+const gistTimeout = Duration(seconds: 60);
+
 /// The production [GistLlm]: pipe [body] to the `llm` coreutil under the gist
 /// system prompt and read back its single line. A non-zero exit surfaces as
-/// [GistDerivationFailed].
-Future<String> llmGist(String body) async {
+/// [GistDerivationFailed]; so does a call that outruns [gistTimeout], with the
+/// child killed rather than left running. The write is refused either way —
+/// nothing is lost, since the body still sits in `--file` or the caller's hand.
+Future<String> llmGist(String body, {Duration timeout = gistTimeout}) async {
   final proc = await io.Process.start('llm', const ['-s', _gistSystem]);
   proc.stdin.write(body);
   await proc.stdin.close();
-  final out = await proc.stdout.transform(utf8.decoder).join();
-  final code = await proc.exitCode;
-  if (code != 0) {
-    final err = await proc.stderr.transform(utf8.decoder).join();
-    throw GistDerivationFailed('llm exited $code: ${err.trim()}');
+  // The pipes are read through cancellable subscriptions rather than joined:
+  // on timeout the child's output stream may be held open by something it
+  // spawned, and a pending join would keep this process alive forever — the
+  // hang moved one level down instead of being cured.
+  final out = StringBuffer();
+  final err = StringBuffer();
+  final outSub = proc.stdout.transform(utf8.decoder).listen(out.write);
+  final errSub = proc.stderr.transform(utf8.decoder).listen(err.write);
+
+  final int code;
+  try {
+    code = await proc.exitCode.timeout(timeout);
+  } on TimeoutException {
+    proc.kill(io.ProcessSignal.sigkill);
+    await outSub.cancel();
+    await errSub.cancel();
+    throw GistDerivationFailed(
+      'llm did not answer within ${timeout.inSeconds}s — '
+      'retry, or write the line yourself with --gist "..."',
+    );
   }
-  return out;
+  await outSub.asFuture<void>();
+  await errSub.asFuture<void>();
+  if (code != 0) {
+    throw GistDerivationFailed('llm exited $code: ${err.toString().trim()}');
+  }
+  return out.toString();
 }

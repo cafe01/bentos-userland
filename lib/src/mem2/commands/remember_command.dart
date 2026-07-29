@@ -53,7 +53,7 @@ final class RememberCommand extends Command<void> {
 
     final String body;
     try {
-      body = BodySource(stdinContent: _runner.stdinContent)
+      body = await BodySource(stdinReader: _runner.stdinReader)
           .read(filePath: argResults!['file'] as String?);
     } on Exception catch (e) {
       _runner.err.writeln('mem: $e');

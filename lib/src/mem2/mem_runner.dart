@@ -26,7 +26,7 @@ final class MemRunner {
     DateTime Function()? clock,
     Map<String, String>? environment,
     GistLlm? gistLlm,
-    this.stdinContent,
+    this.stdinReader,
   })  : out = out ?? io.stdout,
         err = err ?? io.stderr,
         clock = clock ?? DateTime.now,
@@ -61,8 +61,11 @@ final class MemRunner {
 
   final Map<String, String> _environment;
 
-  /// Pre-canned stdin for hermetic tests; null = real stdin.
-  final String? stdinContent;
+  /// Drains stdin when called — supplied by `bin/mem.dart` and stubbed in
+  /// tests. It is a reader and not text because only `remember` without
+  /// `--file` may consume stdin: draining up front would hang every verb,
+  /// reads included, on an inherited pipe that never sees EOF.
+  final Future<String> Function()? stdinReader;
 
   late final CommandRunner<void> _runner;
   int exitCode = 0;

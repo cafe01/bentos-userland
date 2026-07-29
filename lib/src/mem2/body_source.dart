@@ -1,21 +1,25 @@
 import 'dart:io';
 
-/// Reads a page body from `--file` when given, else from stdin. The stdin text
-/// is injected so the read is hermetic; file reads ride `IOOverrides`.
+/// Reads a page body from `--file` when given, else from stdin. Stdin arrives
+/// as a *reader* rather than as text, so it is consumed only when the body is
+/// actually wanted — a verb that needs no body never touches the stream, and
+/// an inherited pipe that never closes can therefore never hang a read verb.
 /// `remember` requires a body: an empty or absent one is an error here, never
 /// a silent metadata-only patch — the quiet-partial a memory organ must not
 /// have.
 final class BodySource {
-  const BodySource({this.stdinContent});
+  const BodySource({this.stdinReader});
 
-  /// Pre-canned stdin for tests; null = no stdin available.
-  final String? stdinContent;
+  /// Drains stdin when called; null = no stdin available.
+  final Future<String> Function()? stdinReader;
 
-  /// The body for a write. [filePath] wins over stdin. Throws [BodyMissing]
-  /// when the resolved body is empty or absent, [FileSystemException] when
-  /// [filePath] points nowhere.
-  String read({String? filePath}) {
-    final raw = filePath != null ? _fromFile(filePath) : (stdinContent ?? '');
+  /// The body for a write. [filePath] wins over stdin and short-circuits the
+  /// reader entirely. Throws [BodyMissing] when the resolved body is empty or
+  /// absent, [FileSystemException] when [filePath] points nowhere.
+  Future<String> read({String? filePath}) async {
+    final raw = filePath != null
+        ? _fromFile(filePath)
+        : (stdinReader == null ? '' : await stdinReader!());
     if (raw.trim().isEmpty) throw const BodyMissing();
     return raw.trim();
   }

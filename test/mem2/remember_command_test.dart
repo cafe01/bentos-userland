@@ -31,7 +31,7 @@ void main() {
         err: err,
         clock: hab.now,
         environment: {'BENTOS_AGENT': hab.bank},
-        stdinContent: stdin,
+        stdinReader: stdin == null ? null : () async => stdin,
         gistLlm: gistLlm ?? (body) async => 'stub gist',
       );
       await runner.run(args);
