@@ -52,6 +52,7 @@ final class Transaction {
     required this.treeId,
     required this.parent,
     required this.author,
+    required this.at,
     required this.message,
   });
 
@@ -63,6 +64,11 @@ final class Transaction {
 
   final String? parent;
   final String author;
+
+  /// When the actor acted — git's own author date. A story without a when is
+  /// an impoverished one, and no view should have to stat the worktree for it.
+  final DateTime at;
+
   final String message;
 
   /// The leading word of the message — the transaction's kind. A woken actor
@@ -152,7 +158,7 @@ final class GitEntity {
   Future<List<Transaction>> log(String ref) async {
     final String out;
     try {
-      out = await _run(['log', '--format=%H$_fs%T$_fs%P$_fs%an$_fs%B$_rs', ref]);
+      out = await _run(['log', '--format=%H$_fs%T$_fs%P$_fs%an$_fs%at$_fs%B$_rs', ref]);
     } on EntityGitError {
       return const [];
     }
@@ -169,7 +175,8 @@ final class GitEntity {
           treeId: f[1],
           parent: parents.isEmpty ? null : parents.split(' ').first,
           author: f[3],
-          message: f[4].trim(),
+          at: DateTime.fromMillisecondsSinceEpoch(int.parse(f[4].trim()) * 1000),
+          message: f[5].trim(),
         ),
       );
     }
@@ -234,6 +241,7 @@ final class GitEntity {
       treeId: treeSha,
       parent: expectedParent,
       author: author,
+      at: DateTime.now(),
       message: message,
     );
   }
