@@ -26,6 +26,17 @@ const String hookScript = r'''#!/bin/sh
 # every subscriber is spawned detached, its output going to the wake log.
 [ "$1" = "committed" ] || exit 0
 
+# Where the userland's own coreutils are installed. A subscriber is a command
+# line naming a body by its bare name — which is what keeps the table portable,
+# since an absolute path would pin the session to the machine it was opened on.
+# The cost of that portability is paid here: a transaction written by a process
+# the desktop launched inherits launchd's minimal PATH, so `llm` is simply not
+# found and the runner never wakes, silently, because the hook detaches. These
+# are appended rather than substituted — whatever PATH the caller has is still
+# the first word.
+PATH="$PATH:$HOME/.local/bin:/usr/local/bin:/opt/homebrew/bin"
+export PATH
+
 entity=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 arming="$entity/.git/bentos"
 table="$arming/subscribers"

@@ -210,6 +210,37 @@ void main() {
     expect(woken.last, endsWith((await e.head(ref))!));
   });
 
+  test('the hook finds a coreutil the caller had no PATH for', () async {
+    // A desktop-launched process inherits launchd's minimal PATH, so a table
+    // entry naming `llm` by its bare name was found by every shell and by
+    // nothing the person double-clicked. The hook is driven here with exactly
+    // that PATH, and the body it must reach lives only in the install prefix.
+    final e = await newEntity();
+    final home = Directory(p.join(tmp.path, 'home'))..createSync();
+    final bin = Directory(p.join(home.path, '.local', 'bin'))..createSync(recursive: true);
+    final witness = p.join(tmp.path, 'woken');
+    final body = File(p.join(bin.path, 'a-coreutil'))
+      ..writeAsStringSync('#!/bin/sh\necho "\$@" >> $witness\n');
+    Process.runSync('chmod', ['+x', body.path]);
+
+    Arming(e).subscribe('a-coreutil "\$BENTOS_REF"');
+    final hook = p.join(e.gitDir.path, 'hooks', 'reference-transaction');
+
+    final run = await Process.start(
+      '/bin/sh',
+      [hook, 'committed'],
+      workingDirectory: e.path,
+      environment: {'HOME': home.path, 'PATH': '/usr/bin:/bin'},
+      includeParentEnvironment: false,
+    );
+    run.stdin.writeln('0000000 1111111 $ref');
+    await run.stdin.close();
+    await run.exitCode;
+
+    await until(() async => File(witness).existsSync(), reason: 'the coreutil to be found');
+    expect(File(witness).readAsStringSync().trim(), ref);
+  });
+
   test('a materialization is not an occurrence', () async {
     final e = await newEntity();
     final witness = p.join(tmp.path, 'woken');
