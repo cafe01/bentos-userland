@@ -6,6 +6,7 @@ export 'src/llm/cli/default_command.dart';
 export 'src/llm/cli/llm_runner.dart';
 export 'src/llm/config.dart';
 export 'src/llm/device.dart';
+export 'src/llm/device_catalog.dart';
 export 'src/llm/fixture_device.dart';
 export 'src/llm/function_file.dart';
 export 'src/llm/inert_consumer.dart';

@@ -9,10 +9,11 @@
 ///
 /// The lib knows the *contract* — a `<vendor>` string maps to an
 /// [LlmDriverFactory] — but never the vendors themselves. Concrete vendor wiring
-/// (anthropic, openai) lives OUTSIDE the published lib, in `example/`. A
-/// distribution registers the drivers it ships before booting a device; the lib
-/// stays free of any concrete-driver dependency. This is what keeps the
-/// dependency graph acyclic and the package publishable.
+/// (fixture, anthropic, openai) lives in one entrypoint of its own,
+/// `lib/bundled_drivers.dart`, which nothing in the core imports: a
+/// distribution registers the drivers it ships before booting a device, and the
+/// library it is assembled from stays free of any concrete-driver dependency.
+/// This is what keeps the dependency graph acyclic and the package publishable.
 ///
 /// A coreutil calls [bootLlmDevice] and from then on only ever speaks
 /// `open`/`write`/`read` against the returned [Bentos]; it never learns which
@@ -29,7 +30,7 @@ import 'bentos_userland.dart';
 
 /// Constructs a vendor driver for [model] and serves it over the kernel-side
 /// [channel] end. The lib holds the SHAPE; the vendor is supplied from outside
-/// via [registerLlmDriver] (see `example/boot_with_drivers.dart`).
+/// via [registerLlmDriver] (see `lib/bundled_drivers.dart`).
 typedef LlmDriverFactory = void Function(
   String model,
   StreamChannel<Uint8List> channel,
@@ -84,7 +85,7 @@ Bentos bootLlmDevice(String devicePath) {
   if (factory == null) {
     throw LlmBootException(
       'unknown vendor "$vendor" (no driver registered — '
-      'wire it via registerLlmDriver, see example/boot_with_drivers.dart)',
+      'wire it via registerLlmDriver, see lib/bundled_drivers.dart)',
     );
   }
 

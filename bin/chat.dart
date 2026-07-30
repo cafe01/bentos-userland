@@ -1,9 +1,9 @@
 import 'dart:io';
 
-import '_drivers.dart';
 import 'package:args/args.dart';
 import 'package:bentos_userland/bentos_userland.dart';
 import 'package:bentos_userland/boot.dart';
+import 'package:bentos_userland/bundled_drivers.dart';
 import 'package:bentos_userland/chat.dart';
 import 'package:bentos_userland/tx.dart';
 import 'package:chat/chat.dart';

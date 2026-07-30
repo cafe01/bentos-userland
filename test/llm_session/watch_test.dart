@@ -2,7 +2,6 @@
 
 import 'dart:io';
 
-import 'package:bentos_userland/entity.dart';
 import 'package:bentos_userland/llm_session.dart';
 import 'package:chat_inference/chat_inference.dart';
 import 'package:path/path.dart' as p;

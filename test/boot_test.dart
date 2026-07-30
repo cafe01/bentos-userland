@@ -9,7 +9,7 @@ library;
 import 'package:bentos_userland/boot.dart';
 import 'package:test/test.dart';
 
-import '../example/boot_with_drivers.dart';
+import 'package:bentos_userland/bundled_drivers.dart';
 
 void main() {
   // The bundled vendors are wired from example/ (a dev/distribution concern),

@@ -46,8 +46,10 @@ dependencies:
     path: coreutils/chat
   websearch:
     path: coreutils/websearch
-  # Vendor drivers — needed by bin/_drivers.dart at AOT compile time.
-  # lib/ does NOT import these (cycle stays broken); only bin/ does.
+  # Vendor drivers — bound into the boot table by lib/bundled_drivers.dart, the
+  # distribution entrypoint. The core (lib/src, lib/bentos_userland.dart) does
+  # NOT import these, which is what keeps the cycle broken: whoever assembles a
+  # distribution imports the one file that knows the vendors.
   anthropic_chat_driver:
     path: ../anthropic-chat-driver
   openai_chat_driver:
