@@ -55,7 +55,19 @@ final class SessionState {
 
   /// The projection at the inference boundary: pure ontology, the envelope left
   /// behind. The device never sees a record.
-  List<ChatMessage> get messages => [for (final r in records) r.message];
+  ///
+  /// A leading system message with nothing in it is a session that has no
+  /// system prompt — the record is laid at `open` so it can be revised later,
+  /// and projecting it empty would tell the device something the person never
+  /// said.
+  List<ChatMessage> get messages => [
+        for (final r in records)
+          if (!_isEmptySystem(r)) r.message,
+      ];
+
+  static bool _isEmptySystem(TurnRecord record) =>
+      record.message.role == ChatRole.system &&
+      record.message.content.whereType<TextContent>().every((t) => t.text.isEmpty);
 
   TurnRecord? get last => records.isEmpty ? null : records.last;
 

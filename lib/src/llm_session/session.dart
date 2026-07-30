@@ -40,6 +40,13 @@ final class Session {
   /// chosen, and the system prompt laid as the leading message — it rides the
   /// data path, the subsystem having no ioctl for it.
   ///
+  /// The leading message is laid *always*, empty when none was given, and
+  /// before anything else in the tree. The leader is a position and not a
+  /// presence: a session whose first record is the system message can have it
+  /// revised at any point in its life, while one that opened without the record
+  /// would need a transaction for laying it — a second way to say one thing.
+  /// Write order is what makes the position, ids being minted in sequence.
+  ///
   /// Arming is installed with the session, and is the whole of its machinery.
   /// An empty [runnerCommand] arms nothing — a session on a site that only
   /// renders it, whose transactions travel to wherever the assistant runs.
@@ -55,23 +62,20 @@ final class Session {
     if (runnerCommand.isNotEmpty) Arming(entity).subscribe(runnerCommand);
     final session = Session(entity);
 
+    final leader = Ulid.next();
     final tree = <String, String>{
+      messagePath(leader):
+          TurnRecord(id: leader, message: ChatMessage.systemText(systemPrompt ?? '')).encode(),
       channelFile: channel.encode(),
       titleFile: '$title\n',
     };
-    if (systemPrompt != null) {
-      final id = Ulid.next();
-      tree[messagePath(id)] =
-          TurnRecord(id: id, message: ChatMessage.systemText(systemPrompt)).encode();
-    }
     // The one transaction whose expected parent is *no* parent: opening twice
     // over the same ref is refused by the same compare-and-swap as any race.
     await entity.commit(
       ref: session.ref,
       expectedParent: null,
       author: author,
-      message: 'open · channel ${channel.deviceId}'
-          '${systemPrompt == null ? '' : ' · system laid'}',
+      message: 'open · channel ${channel.deviceId} · system laid',
       tree: tree,
     );
     return session;
