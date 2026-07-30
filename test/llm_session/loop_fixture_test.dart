@@ -8,7 +8,9 @@
 //
 // Real means real: the entity is a git repository, the wake is git's own hook
 // firing a process that folds and exits, and the device is `/dev/llm/*` reached
-// through the portal. Nothing in the loop is emulated except the model's mind.
+// through the portal. Nothing in the loop is emulated except the model's mind —
+// and the body the hook wakes is the shipped `llm` itself, the fixture vendor
+// being one of the devices it carries.
 
 import 'dart:io';
 
@@ -76,13 +78,12 @@ Future<void> settle(Session session) async {
 void main() {
   setUpAll(() async {
     tmp = Directory.systemTemp.createTempSync('bentos-llm-gate-');
-    // The body the hook wakes, compiled once: `llm` with the fixture vendor in
-    // its boot table.
-    fixtureLlm = p.join(tmp.path, 'fixture_llm.dill');
+    // The body the hook wakes, compiled once: the shipped coreutil.
+    fixtureLlm = p.join(tmp.path, 'llm.dill');
     final compiled = await Process.run('dart', [
       'compile',
       'kernel',
-      p.join(Directory.current.path, 'test', 'llm_session', 'fixture_llm.dart'),
+      p.join(Directory.current.path, 'bin', 'llm.dart'),
       '-o',
       fixtureLlm,
     ]);

@@ -8,12 +8,11 @@
 import 'dart:io';
 
 import 'package:bentos_userland/boot.dart';
+import 'package:bentos_userland/llm.dart';
 import 'package:bentos_userland/llm_session.dart';
 import 'package:chat_inference/chat_inference.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
-
-import 'fixture_driver.dart';
 
 const String person = 'cafe';
 

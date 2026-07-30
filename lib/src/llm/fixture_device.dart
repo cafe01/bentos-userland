@@ -1,10 +1,14 @@
-// A real device with a scripted mind: the one thing in the walk that has to be
-// faked. Everything else the fixture crosses — the portal, the ioctls, the
-// protobuf on the wire, the subsystem base — is the shipped floor.
-//
-// It answers what it is shown, never a recorded sequence, so it is
-// order-independent and survives the same session being run twice. Credentials
-// are never consulted, which is what makes the walk reproducible anywhere.
+/// `/dev/llm/fixture/<scenario>` — a real device with a scripted mind.
+///
+/// It is the inference subsystem's loopback: everything around it is the shipped
+/// floor — the portal, the ioctls, the protobuf on the wire, the subsystem base
+/// — and the only thing faked is the model. Credentials are never consulted,
+/// which is what makes it the device a walk of the whole loop can be driven on,
+/// anywhere, by anyone, for free.
+///
+/// It answers what it is shown rather than a recorded sequence, so it is
+/// order-independent and a session may be run against it twice.
+library;
 
 import 'package:chat_inference/chat_inference.dart';
 
@@ -15,6 +19,13 @@ final class FixtureSession {
 
 const String fixtureVendor = 'fixture';
 
+/// The scenarios the fixture answers to, `<model>` being the scenario's name:
+///
+/// - `weather` — asked a question it thinks and calls `get_weather`; given the
+///   result, it answers. The loop's own fixture.
+/// - `two-cities` — two calls in one turn, which is what makes the executor's
+///   debt a matter of coverage rather than of message count.
+/// - anything else — `echo`: it answers with the text it was last told.
 ChatInferenceDriver<FixtureSession> fixtureChatDriver({required String model}) {
   return ChatInferenceDriver<FixtureSession>(
     ChatProviderOps<FixtureSession>(
@@ -46,15 +57,11 @@ ChatInferenceDriver<FixtureSession> fixtureChatDriver({required String model}) {
   );
 }
 
-/// The model name is the scenario. `weather` is the loop's own fixture: asked a
-/// question it thinks and calls, given a result it answers. `two-cities` calls
-/// twice in one turn, which is what makes the executor's debt a matter of
-/// coverage. Anything else just answers.
 Stream<ChatEvent> _script(String model, List<ChatMessage> messages) {
   return switch (model) {
-    'weather' => _lastIsPlainUser(messages) ? _thinkingThenCall() : _finalText(),
-    'two-cities' => _lastIsPlainUser(messages) ? _twoCalls() : _finalText(),
-    _ => _finalText(),
+    'weather' => _lastIsPlainUser(messages) ? _thinkingThenCall() : _weatherAnswer(),
+    'two-cities' => _lastIsPlainUser(messages) ? _twoCalls() : _weatherAnswer(),
+    _ => _echo(messages),
   };
 }
 
@@ -93,7 +100,7 @@ Stream<ChatEvent> _twoCalls() async* {
   ));
 }
 
-Stream<ChatEvent> _finalText() async* {
+Stream<ChatEvent> _weatherAnswer() async* {
   yield const TextStart(0);
   yield const TextDelta(index: 0, text: '29°C e ');
   yield const TextDelta(index: 0, text: 'céu limpo.');
@@ -102,5 +109,23 @@ Stream<ChatEvent> _finalText() async* {
     model: 'fixture/weather',
     stopReason: EndTurn(),
     usage: TokenUsage(inputTokens: 528, outputTokens: 12),
+  ));
+}
+
+/// The neutral scenario: the last thing said back, so a face can be exercised
+/// without a script to remember.
+Stream<ChatEvent> _echo(List<ChatMessage> messages) async* {
+  final said = messages.reversed
+      .where((m) => m.role == ChatRole.user)
+      .expand((m) => m.content.whereType<TextContent>())
+      .map((t) => t.text)
+      .firstOrNull;
+  yield const TextStart(0);
+  yield TextDelta(index: 0, text: said == null ? '(nothing was said)' : 'echo: $said');
+  yield const TextStop(0);
+  yield const Complete(ChatMetadata(
+    model: 'fixture/echo',
+    stopReason: EndTurn(),
+    usage: TokenUsage(inputTokens: 1, outputTokens: 1),
   ));
 }
