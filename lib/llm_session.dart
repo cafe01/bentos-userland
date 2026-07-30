@@ -10,3 +10,4 @@ export 'src/llm_session/live.dart';
 export 'src/llm_session/runner.dart';
 export 'src/llm_session/schema.dart';
 export 'src/llm_session/session.dart';
+export 'src/llm_session/watch.dart';
