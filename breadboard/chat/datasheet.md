@@ -160,7 +160,7 @@ Where the breadboard is meant to be re-wired, each behind a single logical seam:
 | jumper | first pass | production | seam |
 |---|---|---|---|
 | **infer** | fake deterministic event generator | `llm …` fed the transcript | the `infer()` function body in `chat-turn.sh` — one block |
-| **dispatch_delta** | render (live) + fold (persist) | + `tx commit` (journal each step) | the `dispatch_delta()` function in `chat.sh` — one more leg |
+| **dispatch_delta** | render (live) + fold (persist) | + a commit into the entity (journal each step) | the `dispatch_delta()` function in `chat.sh` — one more leg |
 | **input** | `chat-fixture.sh` (synthetic) | `chat-prompt.sh` (live) / a GUI `emit` | same `stdout` contract, swap the emitter |
 | **persistence** | a temp/flat `transcript.jsonl` | `tx` worktree at `<place>/.tx/bentos.chat.app/<scope>/<thread>` | the transcript path; addressing per the engineering doc §1 |
 

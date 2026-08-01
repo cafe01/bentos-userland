@@ -10,7 +10,7 @@ TRANSCRIPT="${TRANSCRIPT:-$(mktemp -t chat-transcript.XXXXXX).jsonl}"
 
 # The delta's fate is ONE logical operation: render it live AND fold it into the
 # transcript — the event stream flows once, the shell tees it. (Tomorrow the same
-# seam also `tx commit`s — the same logical block, one more leg.)
+# seam also commits into the entity — the same logical block, one more leg.)
 dispatch_delta() { tee >(chat-render.sh --no-ansi >&2) | chat-codec fold >> "$TRANSCRIPT"; }
 
 # INPUT — a human utterance (argv) or the synthetic signal generator (no argv).

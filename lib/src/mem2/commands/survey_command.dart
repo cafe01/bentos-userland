@@ -31,10 +31,26 @@ final class SurveyCommand extends Command<void> {
     final store = _runner.buildStore(globalResults!);
     if (store == null) return;
 
-    final selected = Reach.from(argResults!).apply(store.cascade());
+    final cascade = store.cascade();
+    final reach = Reach.from(argResults!);
+    final selected = reach.apply(cascade);
+
+    _runner.announceBank(store.bank);
+
+    for (final d in store.damage) {
+      _runner.err.writeln(d.describe());
+    }
+
+    // Nothing selected is an answer, not a failure: a reach that matches no page
+    // has told the caller what it asked. Only the two cases differ in what is
+    // worth saying — an untouched bank gets the begin-one nudge, a reach that
+    // found nothing gets the reach echoed back.
     if (selected.isEmpty) {
-      _runner.err.writeln(SurveyRender.emptyGuidance);
-      _runner.exitCode = 1;
+      _runner.err.writeln(
+        cascade.isEmpty
+            ? SurveyRender.emptyGuidance
+            : SurveyRender.noMatch(reach.describe()),
+      );
       return;
     }
 
@@ -42,7 +58,23 @@ final class SurveyCommand extends Command<void> {
       age: RelativeAge(_runner.clock),
       wordCount: WordCount(threshold: int.parse(argResults!['size-threshold'] as String)),
     );
-    _runner.announceBank(store.bank);
     _runner.out.writeln(render.render(selected, vantage: store.vantage));
+
+    // The map reports its own weight, on stderr so the total never enters the
+    // stdout that becomes a mind — the same contract the band pull keeps, and
+    // for the same reason: a caller staging an index (claude-spawn) must be able
+    // to see what it staged without measuring the string itself. The verb rides
+    // along because the two registers weigh different things at the same bank:
+    // recall counts bodies, survey counts the gists that stand in for them.
+    const counter = WordCount();
+    // Gists only — the body is precisely what a survey does not print, so
+    // falling back to it for a gistless page would count words nobody was given.
+    final total = selected.fold(
+      0,
+      (n, p) => n + counter.count(p.fields.gist ?? ''),
+    );
+    _runner.err.writeln(
+      'mem: ${store.bank} · survey · ${selected.length} pages · $total words',
+    );
   }
 }

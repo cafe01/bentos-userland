@@ -461,8 +461,8 @@ void main() {
   // ---------------------------------------------------------------------------
 
   group('encoding ioctl dispatch', () {
-    const _chatSetInputEncoding  = 0x0D;
-    const _chatSetOutputEncoding = 0x0E;
+    const chatSetInputEncoding  = 0x0D;
+    const chatSetOutputEncoding = 0x0E;
 
     test('outputEncoding=json + outputFormat=typed emits CHAT_SET_OUTPUT_ENCODING (0x0E)',
         () async {
@@ -485,12 +485,12 @@ void main() {
       final cmds = ioctls.map((c) => c.cmd).toList();
       expect(
         cmds,
-        contains(_chatSetOutputEncoding),
+        contains(chatSetOutputEncoding),
         reason: 'CHAT_SET_OUTPUT_ENCODING (0x0E) must be dispatched when '
             'outputEncoding=json; got ioctls: ${cmds.map((c) => '0x${c.toRadixString(16)}').toList()}',
       );
       // Input encoding is default (protobuf) — its ioctl must NOT fire.
-      expect(cmds, isNot(contains(_chatSetInputEncoding)));
+      expect(cmds, isNot(contains(chatSetInputEncoding)));
     });
 
     test('inputEncoding=json + inputFormat=typed emits CHAT_SET_INPUT_ENCODING (0x0D)',
@@ -521,11 +521,11 @@ void main() {
       final cmds = ioctls.map((c) => c.cmd).toList();
       expect(
         cmds,
-        contains(_chatSetInputEncoding),
+        contains(chatSetInputEncoding),
         reason: 'CHAT_SET_INPUT_ENCODING (0x0D) must be dispatched when '
             'inputEncoding=json; got: ${cmds.map((c) => '0x${c.toRadixString(16)}').toList()}',
       );
-      expect(cmds, isNot(contains(_chatSetOutputEncoding)));
+      expect(cmds, isNot(contains(chatSetOutputEncoding)));
     });
 
     test('both encodings=json emits both 0x0D and 0x0E', () async {
@@ -556,8 +556,8 @@ void main() {
       );
 
       final cmds = ioctls.map((c) => c.cmd).toList();
-      expect(cmds, contains(_chatSetInputEncoding));
-      expect(cmds, contains(_chatSetOutputEncoding));
+      expect(cmds, contains(chatSetInputEncoding));
+      expect(cmds, contains(chatSetOutputEncoding));
     });
 
     test('default encodings (protobuf) emit neither 0x0D nor 0x0E', () async {
@@ -577,8 +577,8 @@ void main() {
       );
 
       final cmds = ioctls.map((c) => c.cmd).toList();
-      expect(cmds, isNot(contains(_chatSetInputEncoding)));
-      expect(cmds, isNot(contains(_chatSetOutputEncoding)));
+      expect(cmds, isNot(contains(chatSetInputEncoding)));
+      expect(cmds, isNot(contains(chatSetOutputEncoding)));
     });
   });
 

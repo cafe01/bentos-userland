@@ -7,6 +7,21 @@ import 'model/attention.dart';
 import 'model/mem_page.dart';
 import 'model/mem_writer.dart';
 
+/// A page the store found on disk and could not read — named on stderr so the
+/// hole in the map is visible to whoever can repair it.
+final class MemDamage {
+  const MemDamage(this.topic, this.path, this.error);
+
+  final String topic;
+  final String path;
+  final Object error;
+
+  /// One line, the cause reduced to its first line — a YAML error carries a
+  /// stack of context nobody reading a survey needs.
+  String describe() => 'mem: unreadable page $topic ($path): '
+      '${error.toString().split('\n').first}';
+}
+
 /// The memory-tree gateway — the only mem component that touches the Place API
 /// or the filesystem tree. It derives stores from the bank's entity form at
 /// each place (the layout below it is mem's own law), reads and writes page
@@ -45,6 +60,12 @@ final class MemStore {
     return MemPage.parse(topic, file.readAsStringSync()).withOrigin(place);
   }
 
+  /// Pages a listing could not parse, in encounter order. A malformed file is
+  /// skipped and named rather than thrown, because a listing is read blind at
+  /// every waking: one corrupt page must cost its own gist, never the bank.
+  /// [readAt] keeps throwing — a page asked for by name owes an error.
+  final List<MemDamage> damage = [];
+
   /// Every page under [place]'s store, origin-annotated. A nested topic keeps
   /// its slash-path. Empty when the store does not exist.
   List<MemPage> listAt(Place place) {
@@ -56,7 +77,11 @@ final class MemStore {
       final topic = p
           .withoutExtension(p.relative(e.path, from: root.path))
           .replaceAll(r'\', '/');
-      pages.add(MemPage.parse(topic, e.readAsStringSync()).withOrigin(place));
+      try {
+        pages.add(MemPage.parse(topic, e.readAsStringSync()).withOrigin(place));
+      } on Object catch (error) {
+        damage.add(MemDamage(topic, e.path, error));
+      }
     }
     return pages;
   }

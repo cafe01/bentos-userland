@@ -33,6 +33,13 @@ final class RecallCommand extends Command<void> {
     final topics = argResults!.rest;
     final cascade = store.cascade();
 
+    // Said before anything else: a topic that failed to parse is absent from the
+    // cascade, so without this line the next branch would call it unknown — the
+    // one wrong answer, since the page is right there and merely unreadable.
+    for (final d in store.damage) {
+      _runner.err.writeln(d.describe());
+    }
+
     final List<MemPage> pages;
     if (topics.isNotEmpty) {
       final byTopic = {for (final p in cascade) p.topic: p};
@@ -59,8 +66,9 @@ final class RecallCommand extends Command<void> {
     if (pages.length > 1) {
       const counter = WordCount();
       final total = pages.fold(0, (n, p) => n + counter.count(p.body));
-      _runner.err
-          .writeln('mem: ${store.bank} · ${pages.length} pages · $total words');
+      _runner.err.writeln(
+        'mem: ${store.bank} · recall · ${pages.length} pages · $total words',
+      );
     }
   }
 }

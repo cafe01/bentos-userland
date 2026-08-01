@@ -23,10 +23,14 @@ final class SurveyRender {
 
   static const footer = 'read full → mem recall <topic>';
 
-  /// The guidance shown when the map is empty — the caller routes it to stderr
-  /// and exits 1.
+  /// The guidance shown when the bank itself holds nothing — the caller routes
+  /// it to stderr.
   static const emptyGuidance =
       'mem: no pages yet — begin one with `mem remember <topic>`.';
+
+  /// The note shown when a populated bank held nothing under the asked reach.
+  /// The reach is echoed so the caller can see what it actually asked for.
+  static String noMatch(String reach) => 'mem: no pages under $reach.';
 
   /// Render [pages] (already selected, in composition order) as the map. The
   /// [vantage] distinguishes an inherited page (its origin differs) so `@place`

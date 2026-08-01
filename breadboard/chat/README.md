@@ -18,7 +18,7 @@ The skeleton is invariant — `input → [turn] → output` — and every logica
 | `chat-fixture.sh` | input  | fixture name → canned message(s) — the signal generator |
 | `chat-turn.sh`    | turn   | transcript (context) → assistant `ChatEvent` delta |
 | `chat-render.sh`  | output | event stream → styled human text |
-| `chat.sh`         | —      | the schematic: wires the three; `dispatch_delta` is the one logical "fate of the delta" (render + fold; tomorrow + `tx commit`) |
+| `chat.sh`         | —      | the schematic: wires the three; `dispatch_delta` is the one logical "fate of the delta" (render + fold; tomorrow + the entity's own commit) |
 
 The **turn** is the generic agent-loop, chat-configured: its internal `next_state` is the state machine (`infer | tools | done`); chat-without-tools is the degenerate `infer`-only branch. Its `infer` is a fake event generator now — swap that one function body for `llm …` to plug the real device in at the edge, last.
 

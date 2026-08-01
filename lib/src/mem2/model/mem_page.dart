@@ -107,8 +107,29 @@ final class FrontmatterFields {
 
   static DateTime? _toDate(Object? v) => v == null ? null : DateTime.parse(v.toString());
 
-  static String _scalar(String v) =>
-      v.contains(': ') || v.contains(' #') || v.startsWith('"') ? '"${v.replaceAll('"', '\\"')}"' : v;
+  /// A gist is prose the writer never sees, so the rule is bare *only* when the
+  /// value cannot be read as YAML structure — a leading indicator (`*`, `&`,
+  /// `-`, …) or a bare `true`/`3` would otherwise come back as an alias, a list
+  /// or a number, and one such page takes down the whole bank's cascade.
+  static String _scalar(String v) => _isBare(v)
+      ? v
+      : '"${v.replaceAll(r'\', r'\\').replaceAll('"', r'\"').replaceAll('\n', r'\n')}"';
+
+  static const _indicators = {'-', '?', ':', ',', '[', ']', '{', '}', '#', '&', '*', '!', '|', '>', "'", '"', '%', '@', '`'};
+  static final _scalarish = RegExp(
+    r'^(true|false|null|yes|no|on|off|~|[-+]?\d+(\.\d+)?([eE][-+]?\d+)?)$',
+    caseSensitive: false,
+  );
+
+  static bool _isBare(String v) =>
+      v.isNotEmpty &&
+      v.trim() == v &&
+      !_indicators.contains(v[0]) &&
+      !v.contains(': ') &&
+      !v.contains(' #') &&
+      !v.contains('\n') &&
+      !v.endsWith(':') &&
+      !_scalarish.hasMatch(v);
 }
 
 /// One memory page: a single markdown file — frontmatter plus body — addressed

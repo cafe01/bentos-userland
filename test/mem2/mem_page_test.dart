@@ -48,6 +48,15 @@ void main() {
       expect(() => MemPage.parse('x', 'just a body'), throwsFormatException);
     });
 
+    test('a gist opening on a YAML indicator survives the round trip', () {
+      const gist = '**diary** — the archive organ, with a "quote" and a \\ slash';
+      final page = MemPage.parse('x', '---\ntype: procedural\nattention: 0.5\n---\nbody\n')
+          .fields
+          .copyWith(gist: gist);
+      final reparsed = MemPage.parse('x', '${page.serialize()}\n\nbody\n');
+      expect(reparsed.fields.gist, gist);
+    });
+
     test('unknown keys are preserved (OKF augmentation)', () {
       const augmented = '---\ntype: episodic\nattention: 0.3\nsource: cafe\n---\nbody\n';
       final page = MemPage.parse('x', augmented);

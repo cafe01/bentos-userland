@@ -28,16 +28,13 @@ mkdir -p "$PREFIX"
 # executables: section is gone — install is AOT via this script, not pub global).
 # Format: "exec-name:bin_file"  (file has no .dart suffix here)
 EXECUTABLES=(
-  "chat:chat"
   "chat-codec:chat_codec"
   "chat-render:chat_render"
   "llm:llm"
-  "manifest:manifest"
   "mem:mem"
   "place:place"
   "stt:stt"
   "tts:tts"
-  "tx:tx"
   "websearch:websearch"
 )
 

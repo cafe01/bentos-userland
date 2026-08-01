@@ -19,7 +19,6 @@ environment:
 # coreutils, resolved as one pub workspace.
 workspace:
   - coreutils/websearch
-  - coreutils/chat
 
 dependencies:
   args: ^2.4.0
@@ -42,8 +41,6 @@ dependencies:
   fixnum: ^1.1.0
   stream_channel: ^2.1.0
   # coreutil libs — exposed via bin/ shells
-  chat:
-    path: coreutils/chat
   websearch:
     path: coreutils/websearch
   # Vendor drivers — bound into the boot table by lib/bundled_drivers.dart, the

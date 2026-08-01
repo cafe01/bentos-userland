@@ -43,6 +43,19 @@ void main() {
       });
     });
 
+    test('one unreadable page costs its own line, never the bank', () async {
+      await runInMemoryFs((fs) async {
+        final hab = habitat();
+        hab.seed('/hq/cto', 'founders', MemHabitat.page('semantic', '1.0', 'a'));
+        hab.seed('/hq/cto', 'broken',
+            '---\ntype: semantic\nattention: 1.0\ngist: **diary** — an alias\n---\n\nb\n');
+        final (out, err, code) = await run(hab, ['survey', '-p', '/hq/cto']);
+        expect(code, 0);
+        expect(out, contains('founders'), reason: 'the rest of the map survives');
+        expect(err, contains('unreadable page broken'));
+      });
+    });
+
     test('--warm selects the band, boundary inclusive', () async {
       await runInMemoryFs((fs) async {
         final hab = habitat();
@@ -77,13 +90,40 @@ void main() {
       });
     });
 
-    test('an empty map is begin-one guidance on stderr, exit 1', () async {
+    test('an untouched bank is begin-one guidance on stderr, exit 0', () async {
       await runInMemoryFs((fs) async {
         final hab = habitat();
         final (out, err, code) = await run(hab, ['survey', '-p', '/hq/cto']);
-        expect(out, isEmpty);
+        expect(out, contains('bank:'), reason: 'the bank is named either way');
         expect(err, contains('no pages yet'));
-        expect(code, 1);
+        expect(code, 0, reason: 'an empty brain is a fact, not a failure');
+      });
+    });
+
+    test('a reach that matches nothing is a normal answer, exit 0', () async {
+      await runInMemoryFs((fs) async {
+        final hab = habitat();
+        hab.seed('/hq/cto', 'sem', MemHabitat.page('semantic', '0.5', 'a'));
+        final (_, err, code) =
+            await run(hab, ['survey', '-p', '/hq/cto', '--hot']);
+        expect(code, 0);
+        expect(err, isNot(contains('no pages yet')),
+            reason: 'the bank is populated — this is a filter miss, not a newborn');
+        expect(err, contains('no pages under'));
+        expect(err, contains('1.0'), reason: 'the reach is echoed back');
+      });
+    });
+
+    test('the map reports its own weight, named by register, on stderr',
+        () async {
+      await runInMemoryFs((fs) async {
+        final hab = habitat();
+        hab.seed('/hq/cto', 'sem', MemHabitat.page('semantic', '0.5', 'a'));
+        final (out, err, _) = await run(hab, ['survey', '-p', '/hq/cto']);
+        expect(out, isNot(contains('· survey ·')),
+            reason: 'the total never enters the stdout that becomes a mind');
+        expect(err, contains('· survey · 1 pages'),
+            reason: 'the verb names which register the words are counted in');
       });
     });
 

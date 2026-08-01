@@ -52,6 +52,18 @@ final class Reach {
     );
   }
 
+  /// The reach in the terms it was asked in — for a caller that must say what
+  /// it looked for before reporting that nothing answered.
+  String describe() {
+    final parts = <String>[
+      if (minAttention != null) 'attention ≥ ${minAttention!.render()}',
+      if (maxAttention != null) 'attention ≤ ${maxAttention!.render()}',
+      if (type != null) 'type ${type!.name}',
+      if (tag != null) 'tag #$tag',
+    ];
+    return parts.isEmpty ? 'this vantage' : parts.join(', ');
+  }
+
   List<MemPage> apply(List<MemPage> pages) => const PageSelector().select(
         pages,
         minAttention: minAttention,

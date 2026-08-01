@@ -1,6 +1,7 @@
 import 'package:path/path.dart' as p;
 
 import '../minimap.dart';
+import '../place.dart';
 
 /// Renders a [MinimapNode] tree to the RPG-minimap ASCII of `place where`: the
 /// habitat root as a header, its subtree drawn with `├──`/`└──` connectors, the
@@ -66,13 +67,12 @@ final class MinimapRender {
   /// The place's metadata annotation: its declared name (only when it differs
   /// from the folder — else the folder already IS the name) followed by its
   /// description. Null when the place declares neither beyond its folder name.
-  String? _meta(place) {
+  String? _meta(Place place) {
     final base = p.basename(place.root.path);
     final name = place.name;
-    final desc = place.description;
     final parts = <String>[
       if (name != base) name,
-      if (desc != null) desc,
+      ?place.description,
     ];
     return parts.isEmpty ? null : parts.join(' — ');
   }
