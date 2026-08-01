@@ -1,7 +1,5 @@
 import 'dart:io';
 
-import '../action.dart';
-import '../entity_runner.dart';
 import '../model/actor.dart';
 import 'entity_command.dart';
 
@@ -130,20 +128,3 @@ final class MaterializeCommand extends EntityCommand {
 /// verbatim, because the coreutil has no better word for what it means.
 int? bodyFailureCode(Object error) =>
     error is _BodyFailed ? error.code : null;
-
-/// The runner's translation of an act's outcome into a line and a number.
-extension ActReporting on EntityRunner {
-  void report(ActionResult result) {
-    switch (result) {
-      case Landed(:final action):
-        out.writeln(action.commit.sha);
-      case Refused(:final reason, :final expected, :final found):
-        err.writeln([
-          'entity act: refused — $reason',
-          if (expected != null) 'expected ${expected.short}',
-          if (found != null) 'found ${found.short}',
-        ].join(', '));
-        exitCode = EntityRunner.refusedCode;
-    }
-  }
-}

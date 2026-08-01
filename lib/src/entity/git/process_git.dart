@@ -365,6 +365,21 @@ final class ProcessGit implements Git {
     _run(['--git-dir=$gitDir', 'worktree', 'prune']);
   }
 
+  @override
+  String? worktreeRepository(String path) {
+    if (!Directory(path).existsSync()) return null;
+    // `--git-common-dir` and not `--absolute-git-dir`: asked from inside a
+    // worktree the latter answers with that worktree's *private* directory,
+    // where no table and no history live, and the mistake fails silently.
+    final result = _run(
+      ['rev-parse', '--path-format=absolute', '--git-common-dir'],
+      workingDirectory: path,
+    );
+    if (result.exitCode != 0) return null;
+    final answer = _text(result.stdout).trim();
+    return answer.isEmpty ? null : answer;
+  }
+
   // ------------------------------------------------------------------ remotes
 
   @override

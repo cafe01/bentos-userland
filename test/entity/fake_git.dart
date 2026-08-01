@@ -217,6 +217,14 @@ final class FakeGit implements Git {
   }
 
   @override
+  String? worktreeRepository(String path) {
+    for (final entry in repos.entries) {
+      if (entry.value.worktrees.containsKey(path)) return entry.key;
+    }
+    return null;
+  }
+
+  @override
   List<Remote> remotes(String gitDir) => _repo(gitDir).remotes.toList();
 
   @override

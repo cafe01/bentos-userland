@@ -4,11 +4,12 @@ import 'package:args/command_runner.dart';
 import 'package:path/path.dart' as p;
 
 import '../place/place.dart';
+import 'action.dart';
 import 'commands/acting_commands.dart';
 import 'commands/entity_commands.dart';
 import 'commands/instance_commands.dart';
-import 'commands/plumbing_commands.dart';
 import 'commands/coordinate.dart';
+import 'commands/plumbing_commands.dart';
 import 'commands/reacting_commands.dart';
 import 'entity.dart';
 import 'instance.dart';
@@ -153,6 +154,27 @@ final class EntityRunner {
       if (at.lookup(name) != null) return at.root;
     }
     throw EntityNotInstalled(name, anchor);
+  }
+
+  /// An act's outcome, as a line and a number.
+  ///
+  /// A method of the runner and not an extension on it: `dart:io` exports a
+  /// top-level `exitCode` setter, which an unqualified assignment inside an
+  /// extension binds to in preference to the runner's own field — the number
+  /// then lands on the process while the caller reads zero, and nothing says
+  /// so. Here the field is the only `exitCode` in scope.
+  void report(ActionResult result) {
+    switch (result) {
+      case Landed(:final action):
+        out.writeln(action.commit.sha);
+      case Refused(:final reason, :final expected, :final found):
+        err.writeln([
+          'entity: refused — $reason',
+          if (expected != null) 'expected ${expected.short}',
+          if (found != null) 'found ${found.short}',
+        ].join(', '));
+        exitCode = refusedCode;
+    }
   }
 
   /// A source as this process must read it: a local path against [cwd], a URL

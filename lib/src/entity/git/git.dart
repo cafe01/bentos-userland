@@ -146,6 +146,19 @@ abstract interface class Git {
   /// is the leak the API exists to prevent.
   void worktreeRemove(String gitDir, {required String path});
 
+  /// The repository a standing worktree belongs to — its **common** directory,
+  /// never the private one a worktree also has.
+  ///
+  /// The one resolution that runs the other way round: everywhere else the
+  /// primitive holds the repository and names a path, and here a path is all a
+  /// caller has. `entity release <path>` is why it exists — a workspace and a
+  /// materialization are handed to the shell as directories, and three separate
+  /// processes cannot pass a handle between them.
+  ///
+  /// Null when [path] is no worktree of anything, which is the ordinary answer
+  /// for a caller that released twice.
+  String? worktreeRepository(String path);
+
   /// The declared remotes.
   List<Remote> remotes(String gitDir);
 
