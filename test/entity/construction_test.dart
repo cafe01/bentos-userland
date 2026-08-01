@@ -5,6 +5,7 @@ import 'package:bentos_userland/entity.dart';
 // The concrete port is not part of the public surface — a caller never names it,
 // because the ambient already is it. Tier C is the one reader that must.
 import 'package:bentos_userland/src/entity/git/process_git.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'helpers.dart';
@@ -17,7 +18,7 @@ import 'helpers.dart';
 /// answerable ones drifts into proving the double.
 ///
 /// A green fake proves the model. Only these prove the machine.
-const _owed = 'construction: real git, real repositories';
+
 
 /// A worktree directory holding [files], for the verbs that take one.
 String _stage(Directory scratch, Map<String, String> files) {
@@ -500,7 +501,62 @@ void main() {
     // that the primitive absorbed the PoC without losing a property.
     //
     // Source: `lab/entity/test/gates.sh` · promotion list: `lab/entity/PROMOTION.md`
-    test('the lab gates pass driven through the entity coreutil', () {},
-        skip: 'construction: promote lab/entity/test/gates.sh');
+    //
+    // It is the one gate that changes axis. Everything above varies the state
+    // inside the primitive; this varies the *caller* — a whole application,
+    // written before the coreutil existed, driven through it by the natural
+    // verbs at a shell.
+    test('the lab gates pass driven through the entity coreutil', () async {
+      final lab = Directory(p.join(_campus, 'lab', 'entity'));
+      if (!lab.existsSync()) {
+        markTestSkipped('the lab is not present at ${lab.path}');
+        return;
+      }
+      if (_which('jq') == null) {
+        // Named rather than hidden: the gates fold JSON, and a gate that
+        // quietly passed without them would be the worst outcome available.
+        markTestSkipped('the gates need `jq` on the PATH');
+        return;
+      }
+
+      // The binaries under test are built from *this* worktree. An installed
+      // copy would be answering for a different program than the one the suite
+      // just proved.
+      final bin = Directory.systemTemp.createTempSync('entity-gates-bin');
+      addTearDown(() => bin.deleteSync(recursive: true));
+      for (final utility in ['entity', 'llm', 'chat_codec']) {
+        final built = Process.runSync('dart', [
+          'compile', 'exe', 'bin/$utility.dart',
+          '-o', p.join(bin.path, utility.replaceAll('_', '-')),
+        ], workingDirectory: Directory.current.path);
+        expect(built.exitCode, 0, reason: 'building $utility: ${built.stderr}');
+      }
+
+      final ran = Process.runSync(
+        'bash',
+        [p.join(lab.path, 'test', 'gates.sh')],
+        environment: {'PATH': '${bin.path}:${Platform.environment['PATH']}'},
+      );
+      expect(
+        ran.exitCode,
+        0,
+        reason: 'the gates did not pass:\n${ran.stdout}\n${ran.stderr}',
+      );
+      expect('${ran.stdout}', contains('All 23 gates green.'));
+    }, timeout: const Timeout(Duration(minutes: 10)));
   });
+}
+
+/// The campus this package stands in — two levels up from `lib/bentos-userland`.
+String get _campus => p.dirname(p.dirname(Directory.current.path));
+
+/// Where an executable stands, or null. `Platform.environment` and not a shell,
+/// because a lookup that spawned a shell would inherit its own answer.
+String? _which(String name) {
+  for (final dir in (Platform.environment['PATH'] ?? '').split(':')) {
+    if (dir.isEmpty) continue;
+    final candidate = File(p.join(dir, name));
+    if (candidate.existsSync()) return candidate.path;
+  }
+  return null;
 }
