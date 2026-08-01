@@ -1,0 +1,134 @@
+import 'package:bentos_userland/entity.dart';
+import 'package:test/test.dart';
+
+import 'cli_harness.dart';
+import 'helpers.dart';
+
+/// The reacting family of the coreutil: what is armed at this installation,
+/// and how a stranger extends an entity it did not write.
+void main() {
+  late Site site;
+  late Cli cli;
+
+  setUp(() async {
+    site = Site('cli');
+    cli = Cli(site);
+    await cli.run(['create', 't.chat']);
+    await cli.run(['new', 't.chat', 'c1']);
+  });
+  tearDown(() => site.dispose());
+
+  group('entity on', () {
+    test('arms a command and hands back the id off takes', () async {
+      final r = await cli.run(
+        ['on', 't.chat:*', 'prompt.landed', '--', 'notify.sh', '--loud'],
+      );
+
+      expect(r.code, 0);
+      final id = r.out.trim();
+      expect(id, isNotEmpty);
+
+      final armed = await cli.run(['listeners', 't.chat:*']);
+      expect(armed.out, contains('$id\t*\tprompt.landed\tnotify.sh --loud'));
+    });
+
+    test('several events, an id per line — none of them unreachable',
+        () async {
+      final r = await cli.run(
+        ['on', 't.chat:c1', 'prompt.attempted,prompt.landed', '--', 'gate.sh'],
+      );
+
+      expect(r.code, 0);
+      final ids = r.out.trim().split('\n');
+      expect(ids, hasLength(2));
+      expect(ids.toSet(), hasLength(2));
+
+      for (final id in ids) {
+        await cli.run(['off', 't.chat:c1', id]);
+      }
+      expect((await cli.run(['listeners', 't.chat:*'])).out, isEmpty);
+    });
+
+    test('the phase is what the pattern says, and both tables are read',
+        () async {
+      await cli.run(['on', 't.chat:*', 'prompt.attempted', '--', 'gate.sh']);
+      await cli.run(['on', 't.chat:*', '*.landed', '--', 'notify.sh']);
+
+      final r = await cli.run(['listeners', 't.chat:*']);
+      expect(r.out, contains('prompt.attempted\tgate.sh'));
+      expect(r.out, contains('*.landed\tnotify.sh'));
+    });
+
+    test('an unreadable pattern is never silently armed on nothing', () async {
+      final r = await cli.run(['on', 't.chat:*', 'prompt.happened', '--', 'x.sh']);
+
+      expect(r.code, EntityRunner.usageCode);
+      expect(r.err, contains('unknown phase'));
+      expect((await cli.run(['listeners', 't.chat:*'])).out, isEmpty);
+    });
+
+    test('without a command, it is a usage fault', () async {
+      final r = await cli.run(['on', 't.chat:*', 'prompt.landed']);
+
+      expect(r.code, EntityRunner.usageCode);
+      expect(r.err, contains('-- <command>'));
+    });
+  });
+
+  group('entity listeners', () {
+    test('an instance sees what is armed for it and what is armed for all',
+        () async {
+      await cli.run(['on', 't.chat:c1', 'prompt.landed', '--', 'mine.sh']);
+      await cli.run(['on', 't.chat:c2', 'prompt.landed', '--', 'theirs.sh']);
+      await cli.run(['on', 't.chat:*', 'prompt.landed', '--', 'everyones.sh']);
+
+      final r = await cli.run(['listeners', 't.chat:c1']);
+      expect(r.out, contains('mine.sh'));
+      expect(r.out, contains('everyones.sh'));
+      expect(r.out, isNot(contains('theirs.sh')));
+    });
+
+    test('nothing armed is silence, not a failure', () async {
+      final r = await cli.run(['listeners', 't.chat:*']);
+
+      expect(r.code, 0);
+      expect(r.out, isEmpty);
+    });
+
+    test('arming is per installation — a second copy is a participant',
+        () async {
+      // Two installations of one entity are two participants, not two views,
+      // and treating them as views is what quietly destroys differentiated
+      // arming.
+      final elsewhere = Site('elsewhere');
+      addTearDown(elsewhere.dispose);
+      final there = Cli(elsewhere, git: site.git);
+      await there.run(['install', repositoryOf(site.root.path, 't.chat')]);
+
+      await cli.run(['on', 't.chat:*', 'prompt.landed', '--', 'here.sh']);
+
+      expect((await there.run(['listeners', 't.chat:*'])).out, isEmpty);
+      expect((await cli.run(['listeners', 't.chat:*'])).out, contains('here.sh'));
+    });
+  });
+
+  group('entity off', () {
+    test('is idempotent — a caller that crashed may honestly run it twice',
+        () async {
+      final id = (await cli.run(
+        ['on', 't.chat:*', 'prompt.landed', '--', 'notify.sh'],
+      )).out.trim();
+
+      expect((await cli.run(['off', 't.chat:*', id])).code, 0);
+      expect((await cli.run(['off', 't.chat:*', id])).code, 0);
+      expect((await cli.run(['listeners', 't.chat:*'])).out, isEmpty);
+    });
+
+    test('without an id, it is a usage fault', () async {
+      final r = await cli.run(['off', 't.chat:*']);
+
+      expect(r.code, EntityRunner.usageCode);
+      expect(r.err, contains('<id>'));
+    });
+  });
+}

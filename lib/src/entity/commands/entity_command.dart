@@ -24,6 +24,19 @@ abstract base class EntityCommand extends Command<void> {
     return rest.first;
   }
 
+  /// The words after `--`: a program, and the second half of the two verbs
+  /// that take one.
+  ///
+  /// Taken from the raw argument list rather than from `rest`, because the
+  /// parser folds both sides of the separator into one list while the two
+  /// halves mean different things — before it stand this verb's own
+  /// positionals, after it stands somebody else's command line.
+  List<String> body() {
+    final raw = argResults!.arguments;
+    final at = raw.indexOf('--');
+    return at < 0 ? const [] : raw.sublist(at + 1);
+  }
+
   /// The first positional read as a coordinate.
   Coordinate coordinate() {
     try {

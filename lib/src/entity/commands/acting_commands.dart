@@ -31,8 +31,10 @@ final class ActCommand extends EntityCommand {
   Future<void> run() async {
     final rest = argResults!.rest;
     if (rest.length < 2) usageException('act: <coord> <action> are required');
-    final body = bodyAfterSeparator();
-    if (body.isEmpty) usageException('act: the body is required — `-- <command>`');
+    final written = body();
+    if (written.isEmpty) {
+      usageException('act: the body is required — `-- <command>`');
+    }
 
     final actor = argResults!['actor'] as String?;
     final result = await cli.instanceAt(coordinate(), place: placeOption).act(
@@ -42,8 +44,8 @@ final class ActCommand extends EntityCommand {
         // the directory as its own, which is what keeps two acting bodies from
         // corrupting each other one floor below the swap.
         final ran = await Process.start(
-          body.first,
-          body.skip(1).toList(),
+          written.first,
+          written.skip(1).toList(),
           workingDirectory: workspace.directory.path,
         );
         // Both of the body's streams are the operator's to read, and neither
@@ -60,16 +62,6 @@ final class ActCommand extends EntityCommand {
       actor: actor == null ? null : Actor(actor),
     );
     cli.report(result);
-  }
-
-  /// The words after `--`. The body is taken from the raw argument list rather
-  /// than from `rest`, because the parser folds both sides of the separator
-  /// into one list and the two halves mean different things: before it stand
-  /// the coordinate and the noun, after it stands a program.
-  List<String> bodyAfterSeparator() {
-    final raw = argResults!.arguments;
-    final at = raw.indexOf('--');
-    return at < 0 ? const [] : raw.sublist(at + 1);
   }
 }
 
