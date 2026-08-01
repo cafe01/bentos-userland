@@ -75,7 +75,7 @@ final class MaterializeCommand extends Command<void> {
 
     final Commit at;
     try {
-      at = _commitFor(entity, record.sha);
+      at = _commitFor(entity, record.name, record.sha);
     } on Object catch (error) {
       // Not installed here, or an entity with no genesis at all: a record the
       // place declares and cannot bring down. One line per failure and the run
@@ -96,7 +96,16 @@ final class MaterializeCommand extends Command<void> {
   /// pin at face value there would present one instance as the class. Absent
   /// manifest — the ordinary condition of a freshly authored entity, whose
   /// genesis is empty — reads as plural, which is the conservative half.
-  Commit _commitFor(Entity entity, String pinned) {
+  ///
+  /// **A plural pin that says something else is ignored out loud.** `place pin`
+  /// cannot catch it and must not try: knowing an entity is plural means reading
+  /// its manifest, and reading inside an entity is precisely what the landlord
+  /// does not do — a check there would break the blindness the whole gate rests
+  /// on. This verb already holds the knowledge, and **whoever holds the
+  /// knowledge carries the duty to say**; whoever does not, keeps quiet and does
+  /// not guess. It stays exit 0: nothing failed, and a person who pinned a
+  /// plural entity at an instance is owed the sentence rather than an error.
+  Commit _commitFor(Entity entity, String name, String pinned) {
     final genesis = entity.genesis;
     Cardinality cardinality;
     try {
@@ -104,7 +113,15 @@ final class MaterializeCommand extends Command<void> {
     } on Object {
       cardinality = Cardinality.plural;
     }
-    if (cardinality == Cardinality.plural || pinned.isEmpty) return genesis;
-    return Commit(pinned);
+    if (cardinality != Cardinality.plural && pinned.isNotEmpty) {
+      return Commit(pinned);
+    }
+    if (pinned.isNotEmpty && pinned != genesis.sha) {
+      _runner.err.writeln(
+        'place: $name is plural — the pin $pinned is not its state, so genesis '
+        'comes down instead',
+      );
+    }
+    return genesis;
   }
 }

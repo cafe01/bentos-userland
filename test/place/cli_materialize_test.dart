@@ -114,6 +114,28 @@ void main() {
       );
     });
 
+    test('an ignored plural pin is said out loud, and is not an error', () async {
+      final shas = author(campus, 'bentos.chat', manifest: 'cardinality: plural\n');
+
+      final r = await runPlace(['materialize'], cwd: campus);
+      expect(r.code, 0, reason: 'the thing working as designed is not a failure');
+      expect(r.err, contains('bentos.chat is plural'));
+      expect(r.err, contains(shas.state),
+          reason: 'the pin being disregarded is named — whoever wrote it may '
+              'have meant something the model cannot honour');
+    });
+
+    test('a plural entity pinned at its own genesis has nothing to report', () async {
+      final shas = author(campus, 'bentos.chat', manifest: 'cardinality: plural\n');
+      Place(campus).pin('bentos.chat', shas.genesis);
+
+      final r = await runPlace(['materialize'], cwd: campus);
+      expect(r.code, 0);
+      expect(r.err, isEmpty,
+          reason: 'nothing was disregarded, so there is nothing to say — a '
+              'warning on the ordinary case is noise');
+    });
+
     test('an undeclared cardinality reads as plural — genesis, conservatively', () async {
       final shas = author(campus, 'bentos.thing', manifest: 'type: thing\n');
 
