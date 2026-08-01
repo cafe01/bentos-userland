@@ -8,8 +8,10 @@ import 'commands/acting_commands.dart';
 import 'commands/entity_commands.dart';
 import 'commands/instance_commands.dart';
 import 'commands/plumbing_commands.dart';
+import 'commands/coordinate.dart';
 import 'commands/reacting_commands.dart';
 import 'entity.dart';
+import 'instance.dart';
 
 /// The `entity` coreutil's command runner — the API on the PATH, and the
 /// **generic client of the platform**: knowing only the interaction model, it
@@ -118,6 +120,11 @@ final class EntityRunner {
   Entity entityNamed(String name, {String? place}) =>
       Entity(name, from: vantage(place));
 
+  /// A handle to the instance a coordinate selects. Cheap and creates nothing,
+  /// like every handle here — the instance need not exist.
+  Instance instanceAt(Coordinate coord, {String? place}) =>
+      entityNamed(coord.entity, place: place).instance(coord.instance);
+
   /// The place whose registration answers to [name], walking **up** from the
   /// vantage — nearest wins, the same law `Entity` resolves its repository by.
   ///
@@ -144,6 +151,12 @@ final class EntityRunner {
       exitCode = usageCode;
     } on EntityNotInstalled catch (e) {
       err.writeln('$e');
+      exitCode = notFoundCode;
+    } on StateError catch (e) {
+      // The two the API raises are *no genesis* and *not born* — both the
+      // absence of a thing the caller named, which is the not-found answer and
+      // not a fault in the machine.
+      err.writeln('entity: ${e.message}');
       exitCode = notFoundCode;
     }
   }
