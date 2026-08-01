@@ -3,6 +3,7 @@ import 'dart:io' as io;
 import 'package:args/command_runner.dart';
 import 'package:path/path.dart' as p;
 
+import '../place/place.dart';
 import 'commands/acting_commands.dart';
 import 'commands/entity_commands.dart';
 import 'commands/instance_commands.dart';
@@ -81,15 +82,24 @@ final class EntityRunner {
 
   late final CommandRunner<void> _runner;
 
-  /// The process's answer. **0 ok · 64 usage · 3 refused** — usage is
-  /// `EX_USAGE`, spoken the same way `place` and `mem` speak it, and refusal
-  /// earns a code of its own because it is an ordinary outcome of concurrent
-  /// agency that a caller must be able to retry on without parsing prose.
+  /// The process's answer. **0 ok · 1 not found · 3 refused · 64 usage.**
+  ///
+  /// Usage is `EX_USAGE`, and refusal earns a code of its own because it is an
+  /// ordinary outcome of concurrent agency that a caller must be able to retry
+  /// on without parsing prose.
+  ///
+  /// **Absence is not usage.** `which` is precisely the presence test — a
+  /// script asks *is this installed here?* and branches on the answer — so
+  /// collapsing a legitimately absent entity into the usage code would make it
+  /// indistinguishable from a mistyped flag, and destroy the only question the
+  /// verb was called to answer. The generic failure is `which(1)`'s own, and
+  /// ours was merely left vacant when usage moved to 64.
   int exitCode = 0;
 
   static const int okCode = 0;
-  static const int usageCode = 64;
+  static const int notFoundCode = 1;
   static const int refusedCode = 3;
+  static const int usageCode = 64;
 
   /// The working directory — injected override, else the process's own.
   String get cwd => _cwdOverride ?? io.Directory.current.path;
@@ -108,12 +118,33 @@ final class EntityRunner {
   Entity entityNamed(String name, {String? place}) =>
       Entity(name, from: vantage(place));
 
+  /// The place whose registration answers to [name], walking **up** from the
+  /// vantage — nearest wins, the same law `Entity` resolves its repository by.
+  ///
+  /// The coreutil performs the walk itself here because what `which` reports is
+  /// the *place*, and the API deliberately surfaces no location at all: a
+  /// caller holding one runs Git in it.
+  io.Directory installedAt(String name, {String? place}) {
+    final anchor = vantage(place);
+    for (Place? at = Place(anchor); at != null; at = at.parent) {
+      if (at.lookup(name) != null) return at.root;
+    }
+    throw EntityNotInstalled(name, anchor);
+  }
+
+  /// A source as this process must read it: a local path against [cwd], a URL
+  /// or an ssh shorthand exactly as written.
+  String locate(String source) => locateSource(source, from: cwd);
+
   Future<void> run(List<String> args) async {
     try {
       await _runner.run(args);
     } on UsageException catch (e) {
       err.writeln(e.message);
       exitCode = usageCode;
+    } on EntityNotInstalled catch (e) {
+      err.writeln('$e');
+      exitCode = notFoundCode;
     }
   }
 }

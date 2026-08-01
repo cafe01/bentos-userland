@@ -1,3 +1,8 @@
+import 'package:path/path.dart' as p;
+
+import '../entity.dart';
+import '../event.dart';
+import '../manifest.dart';
 import 'entity_command.dart';
 
 /// `entity create <name>` — author one here. It has no origin and nothing to
@@ -12,7 +17,11 @@ final class CreateCommand extends EntityCommand {
   String get description => 'Author an entity here — no origin.';
 
   @override
-  Future<void> run() => throw UnimplementedError('entity create');
+  Future<void> run() async {
+    final named = positional('name');
+    final entity = cli.entityNamed(named, place: placeOption).create();
+    cli.out.writeln(entity.genesis.sha);
+  }
 }
 
 /// `entity install <source> [--as <name>]` — the common act: a platform's
@@ -37,7 +46,15 @@ final class InstallCommand extends EntityCommand {
   String get description => 'Clone an entity into this place, register it, arm it.';
 
   @override
-  Future<void> run() => throw UnimplementedError('entity install');
+  Future<void> run() async {
+    final source = positional('source');
+    final entity = await Entity.install(
+      cli.locate(source),
+      at: cli.vantage(placeOption),
+      as: argResults!['as'] as String?,
+    );
+    cli.out.writeln(entity.name);
+  }
 }
 
 /// `entity which <name>` — which installation the name resolves to, from here.
@@ -53,7 +70,10 @@ final class WhichCommand extends EntityCommand {
   String get description => 'Which installation this name resolves to.';
 
   @override
-  Future<void> run() => throw UnimplementedError('entity which');
+  Future<void> run() async {
+    final named = positional('name');
+    cli.out.writeln(cli.installedAt(named, place: placeOption).path);
+  }
 }
 
 /// `entity info <name>` — the manifest: type, parts, actions, events.
@@ -61,6 +81,11 @@ final class WhichCommand extends EntityCommand {
 /// **Reflection, never invocation.** It prints the vocabulary a type declares;
 /// the events are that vocabulary crossed with the three phases, which is why
 /// nothing declares events anywhere.
+///
+/// An entity that declares nothing is not a fault. `create` leaves a genesis
+/// with no manifest in it, and the honest report of that is the name, the
+/// genesis, and a word on stderr — never a non-zero exit, because the thing
+/// exists and is answering.
 final class InfoCommand extends EntityCommand {
   InfoCommand(super.cli);
 
@@ -71,7 +96,36 @@ final class InfoCommand extends EntityCommand {
   String get description => 'The manifest: type, parts, actions, events.';
 
   @override
-  Future<void> run() => throw UnimplementedError('entity info');
+  Future<void> run() async {
+    final named = positional('name');
+    final entity = cli.entityNamed(named, place: placeOption);
+    cli.out.writeln('name\t${entity.name}');
+    cli.out.writeln('genesis\t${entity.genesis.sha}');
+
+    final Manifest declared;
+    try {
+      declared = entity.manifest;
+    } on Object {
+      cli.err.writeln('entity info: ${entity.name} declares no manifest');
+      return;
+    }
+
+    cli.out.writeln('type\t${declared.type}');
+    for (final key in declared.fields.keys) {
+      if (key == 'type' || key == 'actions') continue;
+      cli.out.writeln('$key\t${declared.fields[key]}');
+    }
+    for (final action in declared.actions) {
+      cli.out.writeln('action\t$action');
+    }
+    // The event vocabulary is derived and never declared: the actions crossed
+    // with the three phases, which is the whole of what an entity publishes.
+    for (final action in declared.actions) {
+      for (final phase in EventPhase.values) {
+        cli.out.writeln('event\t$action.${phase.suffix}');
+      }
+    }
+  }
 }
 
 /// `entity publish <name> <remote>` — give it an origin.
@@ -88,7 +142,11 @@ final class PublishCommand extends EntityCommand {
   String get description => 'Give an entity an origin and push to it.';
 
   @override
-  Future<void> run() => throw UnimplementedError('entity publish');
+  Future<void> run() async {
+    final rest = argResults!.rest;
+    if (rest.length < 2) usageException('publish: <name> <remote> are required');
+    await cli.entityNamed(rest[0], place: placeOption).publish(cli.locate(rest[1]));
+  }
 }
 
 /// `entity remotes <name>` — where bytes may travel from here.
@@ -102,5 +160,22 @@ final class RemotesCommand extends EntityCommand {
   String get description => 'The declared remotes.';
 
   @override
-  Future<void> run() => throw UnimplementedError('entity remotes');
+  Future<void> run() async {
+    final named = positional('name');
+    for (final remote in cli.entityNamed(named, place: placeOption).remotes) {
+      cli.out.writeln('${remote.name}\t${remote.url}');
+    }
+  }
 }
+
+/// The path grammar the two verbs that take a *source* share: a local source is
+/// resolved against the injected working directory, and anything with a scheme
+/// or an ssh shorthand is left exactly as written.
+bool isLocalSource(String source) =>
+    !source.contains('://') && !RegExp(r'^[^/]+@').hasMatch(source);
+
+/// A local source made absolute against [from]; anything else, verbatim.
+String locateSource(String source, {required String from}) =>
+    isLocalSource(source) && !p.isAbsolute(source)
+        ? p.normalize(p.join(from, source))
+        : source;
