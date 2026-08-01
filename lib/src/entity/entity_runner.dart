@@ -82,6 +82,22 @@ final class EntityRunner {
   final StringSink err;
   final String? _cwdOverride;
 
+  /// Content, verbatim. A separate channel because an instance may hold
+  /// anything and [out] is a text sink: `read` must be able to hand back a
+  /// PNG as faithfully as a line of YAML.
+  void writeBytes(List<int> bytes) {
+    if (identical(out, io.stdout)) {
+      io.stdout.add(bytes);
+      return;
+    }
+    out.write(String.fromCharCodes(bytes));
+  }
+
+  /// What a body said, passed to the operator without being published. An
+  /// acting body's own streams are noise on stdout, where the landed sha is
+  /// the whole answer.
+  void writeThrough(List<int> bytes) => err.write(String.fromCharCodes(bytes));
+
   late final CommandRunner<void> _runner;
 
   /// The process's answer. **0 ok · 1 not found · 3 refused · 64 usage.**
@@ -158,6 +174,14 @@ final class EntityRunner {
       // not a fault in the machine.
       err.writeln('entity: ${e.message}');
       exitCode = notFoundCode;
+    } on Object catch (e) {
+      // An act whose body failed produced no state worth landing, and the
+      // number is the body's own: the caller wrote that program and knows what
+      // its codes mean, so inventing one here would discard the only report
+      // the failure actually made.
+      final failed = bodyFailureCode(e);
+      if (failed == null) rethrow;
+      exitCode = failed;
     }
   }
 }
