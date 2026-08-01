@@ -1,7 +1,7 @@
-import 'git/git.dart';
-import 'git/git_ambient.dart';
-import 'model/actor.dart';
-import 'model/commit.dart';
+import '../git/git.dart';
+import '../git/git_ambient.dart';
+import '../git/model/actor.dart';
+import '../git/model/commit.dart';
 
 /// One exercise of agency, and the irreducible act of the platform: **an actor
 /// wrote into an instance's worktree and committed. The commit is the action.**

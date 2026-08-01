@@ -1,5 +1,5 @@
 import '../entity_runner.dart';
-import '../model/commit.dart';
+import '../../git/model/commit.dart';
 import 'entity_command.dart';
 
 /// `entity new <name> <instance> [--from <ref>]` — the constructor.

@@ -6,11 +6,11 @@ import 'package:path/path.dart' as p;
 import '../place/place.dart';
 import 'arming/arming.dart';
 import 'event.dart';
-import 'git/git_ambient.dart';
+import '../git/git_ambient.dart';
 import 'instance.dart';
 import 'manifest.dart';
-import 'model/commit.dart';
-import 'model/remote.dart';
+import '../git/model/commit.dart';
+import '../git/model/remote.dart';
 
 /// One named thing of an application's ontology, and **the class**.
 ///

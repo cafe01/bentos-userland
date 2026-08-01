@@ -1,6 +1,7 @@
 import 'dart:io';
 
-import 'package:bentos_userland/entity.dart';
+import 'package:bentos_userland/entity.dart' show Action;
+import 'package:bentos_userland/git.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 

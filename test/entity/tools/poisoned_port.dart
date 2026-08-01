@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:bentos_userland/entity.dart';
-import 'package:bentos_userland/src/entity/git/process_git.dart';
+import 'package:bentos_userland/src/git/process_git.dart';
 
 /// A child process that drives the port under a **poisoned environment** —
 /// `GIT_DIR` and its family exported by whoever spawned it, all of them lies.

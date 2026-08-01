@@ -1,7 +1,7 @@
 import 'dart:io';
 
-import 'git/git_ambient.dart';
-import 'model/commit.dart';
+import '../git/git_ambient.dart';
+import '../git/model/commit.dart';
 
 /// A persistent worktree standing beside an instance — **the condition of
 /// being materialized**, which an instance is put into and released from rather

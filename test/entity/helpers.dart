@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:bentos_userland/entity.dart';
 import 'package:path/path.dart' as p;
 
-import 'fake_git.dart';
+import '../git/fake_git.dart';
 
 /// The repository an installation of [name] at [placePath] stands in — the
 /// documented layout, spelled once here.

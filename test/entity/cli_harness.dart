@@ -1,6 +1,6 @@
 import 'package:bentos_userland/entity.dart';
 
-import 'fake_git.dart';
+import '../git/fake_git.dart';
 import 'helpers.dart';
 
 /// What one run of the coreutil left behind: the two streams and the number the

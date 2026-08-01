@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:bentos_userland/entity.dart';
 // The concrete port is not part of the public surface — a caller never names it,
 // because the ambient already is it. Tier C is the one reader that must.
-import 'package:bentos_userland/src/entity/git/process_git.dart';
+import 'package:bentos_userland/src/git/process_git.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 

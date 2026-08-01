@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 
-import '../model/actor.dart';
-import '../model/commit.dart';
-import '../model/remote.dart';
+import 'model/actor.dart';
+import 'model/commit.dart';
+import 'model/remote.dart';
 import 'git.dart';
 
 /// The real port: `git` as a subprocess.
@@ -378,6 +378,69 @@ final class ProcessGit implements Git {
     if (result.exitCode != 0) return null;
     final answer = _text(result.stdout).trim();
     return answer.isEmpty ? null : answer;
+  }
+
+  // -------------------------------------------------------- the superproject
+
+  @override
+  String? topLevel(String path) {
+    if (!Directory(path).existsSync()) return null;
+    final result = _run(
+      ['rev-parse', '--path-format=absolute', '--show-toplevel'],
+      workingDirectory: path,
+    );
+    if (result.exitCode != 0) return null;
+    final answer = _text(result.stdout).trim();
+    return answer.isEmpty ? null : answer;
+  }
+
+  @override
+  String? currentBranch(String workTree) {
+    final result = _run(
+      ['symbolic-ref', '--quiet', '--short', 'HEAD'],
+      workingDirectory: workTree,
+    );
+    if (result.exitCode != 0) return null;
+    final name = _text(result.stdout).trim();
+    return name.isEmpty ? null : name;
+  }
+
+  @override
+  List<String> branchesIn(String workTree) {
+    final result = _run(
+      ['for-each-ref', '--format=%(refname:strip=2)', 'refs/heads/'],
+      workingDirectory: workTree,
+    );
+    if (result.exitCode != 0) return const [];
+    return _lines(_text(result.stdout))..sort();
+  }
+
+  @override
+  void stageGitlink(String workTree, {required String path, required Commit at}) {
+    final result = _run(
+      ['update-index', '--add', '--cacheinfo', '160000,${at.sha},$path'],
+      workingDirectory: workTree,
+    );
+    if (result.exitCode != 0) {
+      throw _failure(['update-index', '--cacheinfo', path], result);
+    }
+  }
+
+  @override
+  Commit? stagedGitlink(String workTree, String path) {
+    final result = _run(
+      ['ls-files', '--stage', '-z', '--', path],
+      workingDirectory: workTree,
+    );
+    if (result.exitCode != 0) return null;
+    for (final record in _text(result.stdout).split('\x00')) {
+      if (record.trim().isEmpty) continue;
+      // `<mode> <sha> <stage>\t<path>` — the mode is the whole question.
+      final fields = record.split('\t').first.split(' ');
+      if (fields.length < 2 || fields[0] != '160000') return null;
+      return Commit(fields[1]);
+    }
+    return null;
   }
 
   // ------------------------------------------------------------------ remotes

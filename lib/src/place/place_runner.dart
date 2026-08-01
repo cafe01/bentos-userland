@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import 'commands/info_command.dart';
 import 'commands/init_command.dart';
+import 'commands/superrepo_commands.dart';
 import 'commands/tree_command.dart';
 import 'commands/where_command.dart';
 import 'commands/who_command.dart';
@@ -12,8 +13,9 @@ import 'habitat_index.dart';
 import 'home_ambient.dart';
 import 'place.dart';
 
-/// The `place` coreutil's command runner: dispatch to the five spatial verbs
-/// (`where`, `tree`, `info`, `who`, `init`), all reading through the Place API.
+/// The `place` coreutil's command runner: the five spatial verbs (`where`,
+/// `tree`, `info`, `who`, `init`) and the superrepo's (`ls`, `pin`,
+/// `timeline`), all reading through the Place API.
 /// The current directory is injected for hermetic testing; the filesystem
 /// itself rides `Place`'s own `IOOverrides`/zone hermeticity.
 final class PlaceRunner {
@@ -26,13 +28,16 @@ final class PlaceRunner {
         _cwdOverride = currentDirectory {
     _runner = CommandRunner<void>(
       'place',
-      'The WHERE organ — orient in space: where, tree, info, who, init.',
+      'The WHERE organ — orient in space: where, tree, info, who, init; and the constellation: ls, pin, timeline.',
     )
       ..addCommand(WhereCommand(this))
       ..addCommand(TreeCommand(this))
       ..addCommand(InfoCommand(this))
       ..addCommand(WhoCommand(this))
-      ..addCommand(InitCommand(this));
+      ..addCommand(InitCommand(this))
+      ..addCommand(LsCommand(this))
+      ..addCommand(PinCommand(this))
+      ..addCommand(TimelineCommand(this));
   }
 
   final StringSink out;

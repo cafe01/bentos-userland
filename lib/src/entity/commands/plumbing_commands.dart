@@ -2,9 +2,9 @@ import 'dart:io';
 
 import '../entity.dart';
 import '../entity_runner.dart';
-import '../git/git_ambient.dart';
-import '../model/actor.dart';
-import '../model/commit.dart';
+import '../../git/git_ambient.dart';
+import '../../git/model/actor.dart';
+import '../../git/model/commit.dart';
 import '../workspace.dart';
 import 'entity_command.dart';
 

@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:bentos_userland/entity.dart';
+import 'package:bentos_userland/git.dart';
 import 'package:path/path.dart' as p;
 
 /// An in-memory [Git] — **the design's own infrastructure**, and the collaborator
@@ -222,6 +222,52 @@ final class FakeGit implements Git {
       if (entry.value.worktrees.containsKey(path)) return entry.key;
     }
     return null;
+  }
+
+  // -------------------------------------------------------- the superproject
+
+  /// The working trees this fake machine knows to be repositories — declared by
+  /// a test, because *is this directory inside a repository* is a fact about
+  /// the world and not about the ontology.
+  final Set<String> workTrees = {};
+
+  /// Staged entries, by working tree and path: mode and object name. Modelled
+  /// as an index and not as a tree, because the pin stops at the index — the
+  /// commit belongs to whoever inhabits the place.
+  final Map<String, Map<String, ({String mode, String sha})>> index = {};
+
+  @override
+  String? topLevel(String path) {
+    final matches = [
+      for (final root in workTrees)
+        if (p.equals(root, path) || p.isWithin(root, path)) root,
+    ]..sort((a, b) => b.length.compareTo(a.length));
+    return matches.isEmpty ? null : matches.first;
+  }
+
+  /// The branches of each declared working tree, and which one is checked out
+  /// — a fact about the containing repository, which this fake models only as
+  /// far as the superproject's half asks about it.
+  final Map<String, List<String>> branchNames = {};
+  final Map<String, String?> heads = {};
+
+  @override
+  String? currentBranch(String workTree) => heads[workTree];
+
+  @override
+  List<String> branchesIn(String workTree) =>
+      [...?branchNames[workTree]]..sort();
+
+  @override
+  void stageGitlink(String workTree, {required String path, required Commit at}) {
+    (index[workTree] ??= {})[path] = (mode: '160000', sha: at.sha);
+  }
+
+  @override
+  Commit? stagedGitlink(String workTree, String path) {
+    final entry = index[workTree]?[path];
+    if (entry == null || entry.mode != '160000') return null;
+    return Commit(entry.sha);
   }
 
   @override

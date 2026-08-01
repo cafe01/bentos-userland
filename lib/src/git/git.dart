@@ -1,6 +1,6 @@
-import '../model/actor.dart';
-import '../model/commit.dart';
-import '../model/remote.dart';
+import 'model/actor.dart';
+import 'model/commit.dart';
+import 'model/remote.dart';
 
 /// One commit as the substrate reports it — the raw record the ontology dresses
 /// as an [Action].
@@ -158,6 +158,46 @@ abstract interface class Git {
   /// Null when [path] is no worktree of anything, which is the ordinary answer
   /// for a caller that released twice.
   String? worktreeRepository(String path);
+
+  // -------------------------------------------------------- the superproject
+
+  /// The working tree root of the repository containing [path], or null when
+  /// nothing there is one.
+  ///
+  /// The superproject's half of the model asks the question the other way round
+  /// from everything above: a place is handed to us as a directory and whether
+  /// it lies inside a repository — and which — is the substrate's to answer.
+  String? topLevel(String path);
+
+  /// The branch checked out in [workTree], or null when the head is detached.
+  ///
+  /// Asked by working tree and not by git dir, because the caller here holds a
+  /// directory and no repository of its own: a place is contained by a
+  /// repository, it does not own one.
+  String? currentBranch(String workTree);
+
+  /// The branch names of the repository containing [workTree].
+  List<String> branchesIn(String workTree);
+
+  /// Writes a **gitlink** into the index of the repository whose working tree
+  /// is [workTree]: a tree entry of mode `160000` at [path], carrying [at].
+  ///
+  /// The pin is this entry and nothing else. It is an index write and stops
+  /// there: the index is written by whoever registers, and the tree is written
+  /// by whoever commits — so a pin is **visible and not yet true**, which is the
+  /// same distinction the sister draws between `.attempted` and `.landed`. The
+  /// two halves of the model reached that shape independently.
+  ///
+  /// [at] need not be an object this repository holds. A gitlink names a commit
+  /// of *another* repository, so the superproject records the name without ever
+  /// being able to resolve it — which is what makes a pinned clone cheap.
+  void stageGitlink(String workTree, {required String path, required Commit at});
+
+  /// The commit a gitlink at [path] carries, read back from the index — null
+  /// when nothing is staged there, and null when what is staged is not mode
+  /// `160000`, because an ordinary file at that path is not a weaker pin but a
+  /// different thing entirely.
+  Commit? stagedGitlink(String workTree, String path);
 
   /// The declared remotes.
   List<Remote> remotes(String gitDir);

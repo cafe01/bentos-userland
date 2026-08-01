@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import '../git/git_ambient.dart';
+import '../git/model/commit.dart';
 import 'home_ambient.dart';
 import 'model/place_meta.dart';
 
@@ -64,14 +66,18 @@ import 'model/place_meta.dart';
 /// layer over the primitive, never on the handle. The asymmetry is
 /// deliberate.
 ///
-/// # The superrepo half — designed, not built
+/// # The superrepo half
 ///
 /// A place is also a Git superrepo, and the half that says so knows that
 /// entities exist, their names, their origins and the commits it holds them
 /// at — and nothing of what is inside them. It is **structural on both
-/// counts**. Every member of it throws [UnimplementedError] today: the contract
-/// is stated, the bodies are construction's, and the spatial half above is
-/// untouched and in use.
+/// counts**: it enumerates, it pins, it reports the timeline, and it never
+/// looks inside an entity or acts upon one.
+///
+/// What it does *not* do is bring anything down. That is one act with two
+/// halves — the descent is the landlord's, the fetching and checking out is the
+/// tenant's — and the two are joined one floor up, in the coreutil, as
+/// installing already is.
 ///
 /// # Hermeticity
 ///
@@ -265,7 +271,7 @@ final class Place {
           name: name,
           url: records[name]!['url'] ?? '',
           path: records[name]!['path'] ?? name,
-          sha: records[name]!['sha'] ?? '',
+          sha: _readPin(records[name]!['path'] ?? name),
         ),
     ];
   }
@@ -280,7 +286,7 @@ final class Place {
       name: name,
       url: record['url'] ?? '',
       path: record['path'] ?? name,
-      sha: record['sha'] ?? '',
+      sha: _readPin(record['path'] ?? name),
     );
   }
 
@@ -301,9 +307,10 @@ final class Place {
     required String sha,
   }) {
     final records = _modules;
-    records[name] = {'path': path, 'url': url, 'sha': sha};
+    records[name] = {'path': path, 'url': url};
     _writeModules(records);
-    return (name: name, url: url, path: path, sha: sha);
+    _writePin(path, sha);
+    return (name: name, url: url, path: path, sha: _readPin(path));
   }
 
   /// Moves an installation's pin to [sha].
@@ -312,11 +319,9 @@ final class Place {
   /// the one thing this surface deliberately does not decide** — whose rule
   /// calls this is not yet ours to state.
   void pin(String name, String sha) {
-    final records = _modules;
-    final record = records[name];
+    final record = _modules[name];
     if (record == null) return;
-    record['sha'] = sha;
-    _writeModules(records);
+    _writePin(record['path'] ?? name, sha);
   }
 
   /// Forgets an installation. Structural: the plot's contents are not this
@@ -329,16 +334,57 @@ final class Place {
   }
 
   /// The registration file: `.gitmodules` in the place's own tree, standard
-  /// keys and Git's own config grammar, so a place is an ordinary superproject
-  /// to anything that reads one.
+  /// keys — `path` and `url` — and Git's own config grammar, so a place is an
+  /// ordinary superproject to anything that reads one.
   ///
-  /// **The `sha` key is the pin standing in for the gitlink**, and it is the one
-  /// non-standard thing here. The pin is properly a tree entry of mode `160000`,
-  /// which is an index write and therefore a Git operation — and `Place` holds
-  /// no port with which to make one. Writing it is the half of registration that
-  /// waits on that decision; until then the value is recorded here, where the
-  /// address already is, and `installed` answers with the same record either way.
+  /// **The pin is not here.** It is a gitlink, and a gitlink lives in the tree;
+  /// this file carries the address and the layout, exactly as it does for every
+  /// other superproject on earth. Anything else recorded here would be a second
+  /// answer to a question the substrate already answers.
   File get _modulesFile => File(p.join(root.path, '.gitmodules'));
+
+  /// The pin: **a real gitlink**, a tree entry of mode `160000` at the
+  /// installation's path, written into the index of the repository this place
+  /// lies in.
+  ///
+  /// Two consequences worth not re-deriving.
+  ///
+  /// **The primitive registers; it never signs.** The write stops at the index,
+  /// because committing is the act of whoever *inhabits* the place — a place is
+  /// third-party ground, and a primitive that commits on its own account would
+  /// be acting in the name of an inhabitant who never authorized it.
+  ///
+  /// **So a pin is visible before it is true**, which is the distinction the
+  /// sister draws between `.attempted` and `.landed`. The two halves of the
+  /// model arrived at that shape down independent roads.
+  ///
+  /// A place lying inside no repository holds no pin, and answers the empty
+  /// string rather than pretending: the record is still enumerable, and only
+  /// the commit it is held at is absent.
+  void _writePin(String path, String sha) {
+    final workTree = _superproject;
+    if (workTree == null || sha.isEmpty) return;
+    ambientGit.stageGitlink(
+      workTree,
+      path: _indexPath(workTree, path),
+      at: Commit(sha),
+    );
+  }
+
+  String _readPin(String path) {
+    final workTree = _superproject;
+    if (workTree == null) return '';
+    return ambientGit.stagedGitlink(workTree, _indexPath(workTree, path))?.sha ?? '';
+  }
+
+  /// The working tree the pin is indexed in — the repository containing this
+  /// place, which is very often not the place itself: most places are ordinary
+  /// directories inside one repository, and the gitlink belongs to that
+  /// repository's index at the path it knows the installation by.
+  String? get _superproject => ambientGit.topLevel(root.path);
+
+  String _indexPath(String workTree, String path) =>
+      p.relative(p.join(root.path, path), from: workTree);
 
   Map<String, Map<String, String>> get _modules {
     final file = _modulesFile;
@@ -378,27 +424,43 @@ final class Place {
     _modulesFile.writeAsStringSync(buf.toString());
   }
 
-  /// The timelines this place holds. A place's branch means **time** and always
-  /// will — a configuration of the constellation — which is what distinguishes
-  /// it from an entity's branch, whose meaning is the application's word.
-  /// Timelines are cheap, and several stand at once.
-  List<String> get timelines => throw UnimplementedError('Place.timelines');
+  /// The timelines this place holds. A place's branch means **time** and always — a configuration of the
+  /// constellation — which is what distinguishes it from an entity's branch,
+  /// whose meaning is the application's word. Timelines are cheap, and several
+  /// stand at once.
+  ///
+  /// They are the branches of the repository *containing* this place, for the
+  /// same reason the pin is: a place is contained by a repository and does not
+  /// own one, so the WHEN of a place is the WHEN of whatever holds it. A place
+  /// inside no repository stands outside time and answers with nothing.
+  List<String> get timelines {
+    final workTree = _superproject;
+    return workTree == null ? const [] : ambientGit.branchesIn(workTree);
+  }
 
   /// The timeline in view — the configuration [installed] reports.
-  String get timeline => throw UnimplementedError('Place.timeline');
+  ///
+  /// The empty string where there is no repository, and equally where the head
+  /// is detached: both are *no timeline in view*, and a place standing at a
+  /// commit nobody named is exactly that.
+  String get timeline {
+    final workTree = _superproject;
+    return workTree == null ? '' : ambientGit.currentBranch(workTree) ?? '';
+  }
 
-  /// Brings the constellation down: the entities of this place at their pins
-  /// and, when [recursive], the tree of places beneath it too. This is what
-  /// makes cloning a place take the whole macrocosm.
-  ///
-  /// Installing an entity does **not** do this — a site that only reacts never
-  /// needs a worktree — and materializing is therefore a deliberate act,
-  /// performed when someone means to look.
-  ///
-  /// The one asynchronous member of the whole surface, and the one place the
-  /// sync/async law's second clause reaches `Place`: it fetches.
-  Future<void> materialize({bool recursive = false}) =>
-      throw UnimplementedError('Place.materialize');
+  // There is no `materialize` here, and the absence is the design.
+  //
+  // Bringing the constellation down is one act with two halves: enumerating
+  // what is installed and descending the tree of places is the landlord's, and
+  // bringing a repository down at its pin is the tenant's — the entity holds
+  // its own layout under the plot, absolutely, and a `Place` that cloned into
+  // it would be building a path the gate forbids it to know. The two halves are
+  // joined in the coreutil, exactly as `install` already joins them, with the
+  // ownership of each fixed at the gate rather than duplicated in two surfaces.
+  //
+  // Which is also why nothing here is asynchronous: the whole spatial primitive
+  // costs local disk and our own code, and the one member that would have
+  // crossed the network was the one that belonged to the tenant.
 
   /// Metadata re-read on every access — a live handle never snapshots. The
   /// primitive owns where metadata lives; [PlaceMeta] only parses.

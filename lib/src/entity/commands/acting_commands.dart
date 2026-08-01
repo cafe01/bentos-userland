@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import '../model/actor.dart';
+import '../../git/model/actor.dart';
 import 'entity_command.dart';
 
 /// `entity act <coord> <action> [--actor <a>] -- <command>` — the porcelain of

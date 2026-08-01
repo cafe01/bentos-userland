@@ -3,10 +3,10 @@ import 'dart:io';
 
 import 'action.dart';
 import 'entity.dart';
-import 'git/git_ambient.dart';
+import '../git/git_ambient.dart';
 import 'materialization.dart';
-import 'model/actor.dart';
-import 'model/commit.dart';
+import '../git/model/actor.dart';
+import '../git/model/commit.dart';
 import 'workspace.dart';
 
 /// One object of the class — a ref, whose state is the tree at that ref. A

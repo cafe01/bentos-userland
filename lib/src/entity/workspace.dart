@@ -1,9 +1,9 @@
 import 'dart:io';
 
 import 'action.dart';
-import 'git/git_ambient.dart';
-import 'model/actor.dart';
-import 'model/commit.dart';
+import '../git/git_ambient.dart';
+import '../git/model/actor.dart';
+import '../git/model/commit.dart';
 
 /// The private area an act writes in — a materialization of the tip the actor
 /// read, which the actor owns alone and discards when it is done.
