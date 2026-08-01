@@ -64,6 +64,15 @@ import 'model/place_meta.dart';
 /// layer over the primitive, never on the handle. The asymmetry is
 /// deliberate.
 ///
+/// # The superrepo half — designed, not built
+///
+/// A place is also a Git superrepo, and the half that says so knows that
+/// entities exist, their names, their origins and the commits it holds them
+/// at — and nothing of what is inside them. It is **structural on both
+/// counts**. Every member of it throws [UnimplementedError] today: the contract
+/// is stated, the bodies are construction's, and the spatial half above is
+/// untouched and in use.
+///
 /// # Hermeticity
 ///
 /// Built on raw `dart:io`; testability rides [IOOverrides], exactly as
@@ -224,6 +233,90 @@ final class Place {
     File(p.join(marker.path, 'place.yaml')).writeAsStringSync(buf.toString());
     return this;
   }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // The Git half — DESIGNED AND NOT BUILT.
+  //
+  // Every member below throws [UnimplementedError] by design, not by neglect:
+  // the contract is the design chair's deliverable and the bodies are
+  // construction's. The spatial half above is built and in use; nothing here
+  // touches it.
+  // ───────────────────────────────────────────────────────────────────────
+
+  /// The entities installed here, as the current [timeline] declares them.
+  ///
+  /// **Enumeration, not interrogation.** A place knows that entities exist —
+  /// their names, their origins, and the commits it holds them at — and knows
+  /// nothing of what is inside them. That containment is a fact of the
+  /// platform's ontology up to the altitude at which a person sees a desk with
+  /// things on it, which is why the spatial primitive carries it while staying
+  /// blind to content.
+  ///
+  /// The record is deliberately a record: **`Place` imports no type from the
+  /// entity package**, so the dependency stays one-way (entity → place) and the
+  /// gate speaks only names, URLs, paths and shas. What any of these *is* — its
+  /// type, its actions, its instances — is read by the entity itself, through
+  /// its own name resolution, which walks this same tree of places.
+  List<({String name, String url, String path, String sha})> get installed =>
+      throw UnimplementedError('Place.installed');
+
+  /// The installation answering to [name] here, or null. The single step of the
+  /// entity's upward walk; the walk itself belongs to the entity, because
+  /// nearest-wins resolution is its law and not the place's.
+  ({String name, String url, String path, String sha})? lookup(String name) =>
+      throw UnimplementedError('Place.lookup');
+
+  /// Records an entity as installed here: the gitlink in the place's tree and
+  /// the address beside it.
+  ///
+  /// > **The tenant asks; the landlord records.**
+  ///
+  /// Installing is one act with two halves — the clone and the arming are the
+  /// entity's, the registration and the pin are the place's, because the
+  /// gitlink lives in the place's own tree and no tenant writes there. This is
+  /// the half the landlord performs, and the reason there is no `place install`
+  /// verb at any surface.
+  ({String name, String url, String path, String sha}) register(
+    String name, {
+    required String url,
+    required String path,
+    required String sha,
+  }) =>
+      throw UnimplementedError('Place.register');
+
+  /// Moves an installation's pin to [sha].
+  ///
+  /// The mechanism only. **When a place advances a pin is a policy, and it is
+  /// the one thing this surface deliberately does not decide** — whose rule
+  /// calls this is not yet ours to state.
+  void pin(String name, String sha) => throw UnimplementedError('Place.pin');
+
+  /// Forgets an installation. Structural: the plot's contents are not this
+  /// primitive's to delete, because what a tenant keeps under its grant is the
+  /// tenant's alone.
+  void unregister(String name) => throw UnimplementedError('Place.unregister');
+
+  /// The timelines this place holds. A place's branch means **time** and always
+  /// will — a configuration of the constellation — which is what distinguishes
+  /// it from an entity's branch, whose meaning is the application's word.
+  /// Timelines are cheap, and several stand at once.
+  List<String> get timelines => throw UnimplementedError('Place.timelines');
+
+  /// The timeline in view — the configuration [installed] reports.
+  String get timeline => throw UnimplementedError('Place.timeline');
+
+  /// Brings the constellation down: the entities of this place at their pins
+  /// and, when [recursive], the tree of places beneath it too. This is what
+  /// makes cloning a place take the whole macrocosm.
+  ///
+  /// Installing an entity does **not** do this — a site that only reacts never
+  /// needs a worktree — and materializing is therefore a deliberate act,
+  /// performed when someone means to look.
+  ///
+  /// The one asynchronous member of the whole surface, and the one place the
+  /// sync/async law's second clause reaches `Place`: it fetches.
+  Future<void> materialize({bool recursive = false}) =>
+      throw UnimplementedError('Place.materialize');
 
   /// Metadata re-read on every access — a live handle never snapshots. The
   /// primitive owns where metadata lives; [PlaceMeta] only parses.
