@@ -257,14 +257,32 @@ final class Place {
   /// gate speaks only names, URLs, paths and shas. What any of these *is* — its
   /// type, its actions, its instances — is read by the entity itself, through
   /// its own name resolution, which walks this same tree of places.
-  List<({String name, String url, String path, String sha})> get installed =>
-      throw UnimplementedError('Place.installed');
+  List<({String name, String url, String path, String sha})> get installed {
+    final records = _modules;
+    return [
+      for (final name in records.keys.toList()..sort())
+        (
+          name: name,
+          url: records[name]!['url'] ?? '',
+          path: records[name]!['path'] ?? name,
+          sha: records[name]!['sha'] ?? '',
+        ),
+    ];
+  }
 
   /// The installation answering to [name] here, or null. The single step of the
   /// entity's upward walk; the walk itself belongs to the entity, because
   /// nearest-wins resolution is its law and not the place's.
-  ({String name, String url, String path, String sha})? lookup(String name) =>
-      throw UnimplementedError('Place.lookup');
+  ({String name, String url, String path, String sha})? lookup(String name) {
+    final record = _modules[name];
+    if (record == null) return null;
+    return (
+      name: name,
+      url: record['url'] ?? '',
+      path: record['path'] ?? name,
+      sha: record['sha'] ?? '',
+    );
+  }
 
   /// Records an entity as installed here: the gitlink in the place's tree and
   /// the address beside it.
@@ -281,20 +299,84 @@ final class Place {
     required String url,
     required String path,
     required String sha,
-  }) =>
-      throw UnimplementedError('Place.register');
+  }) {
+    final records = _modules;
+    records[name] = {'path': path, 'url': url, 'sha': sha};
+    _writeModules(records);
+    return (name: name, url: url, path: path, sha: sha);
+  }
 
   /// Moves an installation's pin to [sha].
   ///
   /// The mechanism only. **When a place advances a pin is a policy, and it is
   /// the one thing this surface deliberately does not decide** — whose rule
   /// calls this is not yet ours to state.
-  void pin(String name, String sha) => throw UnimplementedError('Place.pin');
+  void pin(String name, String sha) {
+    final records = _modules;
+    final record = records[name];
+    if (record == null) return;
+    record['sha'] = sha;
+    _writeModules(records);
+  }
 
   /// Forgets an installation. Structural: the plot's contents are not this
   /// primitive's to delete, because what a tenant keeps under its grant is the
   /// tenant's alone.
-  void unregister(String name) => throw UnimplementedError('Place.unregister');
+  void unregister(String name) {
+    final records = _modules;
+    if (records.remove(name) == null) return;
+    _writeModules(records);
+  }
+
+  /// The registration file: `.gitmodules` in the place's own tree, standard
+  /// keys and Git's own config grammar, so a place is an ordinary superproject
+  /// to anything that reads one.
+  ///
+  /// **The `sha` key is the pin standing in for the gitlink**, and it is the one
+  /// non-standard thing here. The pin is properly a tree entry of mode `160000`,
+  /// which is an index write and therefore a Git operation — and `Place` holds
+  /// no port with which to make one. Writing it is the half of registration that
+  /// waits on that decision; until then the value is recorded here, where the
+  /// address already is, and `installed` answers with the same record either way.
+  File get _modulesFile => File(p.join(root.path, '.gitmodules'));
+
+  Map<String, Map<String, String>> get _modules {
+    final file = _modulesFile;
+    if (!file.existsSync()) return {};
+    final records = <String, Map<String, String>>{};
+    String? current;
+    for (final line in file.readAsLinesSync()) {
+      final trimmed = line.trim();
+      final header = RegExp(r'^\[submodule\s+"(.+)"\]$').firstMatch(trimmed);
+      if (header != null) {
+        current = header.group(1);
+        records[current!] ??= {};
+        continue;
+      }
+      if (current == null || !trimmed.contains('=')) continue;
+      final at = trimmed.indexOf('=');
+      records[current]![trimmed.substring(0, at).trim()] =
+          trimmed.substring(at + 1).trim();
+    }
+    return records;
+  }
+
+  void _writeModules(Map<String, Map<String, String>> records) {
+    if (records.isEmpty) {
+      if (_modulesFile.existsSync()) _modulesFile.deleteSync();
+      return;
+    }
+    final buf = StringBuffer();
+    for (final name in records.keys.toList()..sort()) {
+      buf.writeln('[submodule "$name"]');
+      final record = records[name]!;
+      for (final key in record.keys.toList()..sort()) {
+        buf.writeln('\t$key = ${record[key]}');
+      }
+    }
+    _modulesFile.parent.createSync(recursive: true);
+    _modulesFile.writeAsStringSync(buf.toString());
+  }
 
   /// The timelines this place holds. A place's branch means **time** and always
   /// will — a configuration of the constellation — which is what distinguishes

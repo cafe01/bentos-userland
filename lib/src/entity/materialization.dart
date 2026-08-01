@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'git/git_ambient.dart';
 import 'model/commit.dart';
 
 /// A persistent worktree standing beside an instance — **the condition of
@@ -22,7 +23,8 @@ final class Materialization {
     required this.directory,
     required this.gitDir,
     required this.ref,
-  });
+    required Commit at,
+  }) : _at = at;
 
   /// Where the files stand. An ordinary directory: by the time work happens the
   /// thing is materialized and the target is a local path, which is the whole
@@ -32,16 +34,27 @@ final class Materialization {
   final String gitDir;
   final String ref;
 
+  /// What the files stand at. Held rather than asked for: the substrate has no
+  /// verb for *which commit is this worktree at*, and the answer is anyway a
+  /// fact about the looker's own last act, not about the instance.
+  Commit _at;
+
   /// The commit the files currently stand at — not the instance's tip, which
   /// may have moved.
-  Commit get at => throw UnimplementedError('Materialization.at');
+  Commit get at => _at;
 
   /// Brings the files up to the instance's present tip. The duty of whoever
   /// looks; nothing does it for them.
-  void refresh() => throw UnimplementedError('Materialization.refresh');
+  void refresh() {
+    final tip = ambientGit.revParse(gitDir, ref);
+    if (tip == null || tip == _at) return;
+    ambientGit.worktreeRemove(gitDir, path: directory.path);
+    ambientGit.worktreeAdd(gitDir, path: directory.path, at: tip);
+    _at = tip;
+  }
 
   /// Discards the worktree and deregisters it. Public here — unlike in
   /// [Workspace], where the bracket owns the lifetime — because the lifetime of
   /// a face's worktree is the face's own affair and may outlive any call.
-  void release() => throw UnimplementedError('Materialization.release');
+  void release() => ambientGit.worktreeRemove(gitDir, path: directory.path);
 }

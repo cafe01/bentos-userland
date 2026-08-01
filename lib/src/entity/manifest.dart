@@ -1,3 +1,5 @@
+import 'package:yaml/yaml.dart';
+
 /// The entity's self-description, carried **in band** — a file in the genesis
 /// tree — and the entity system's only contract.
 ///
@@ -46,6 +48,29 @@ final class Manifest {
 
   /// Parses a manifest document. Construction's body; the shape it must
   /// produce is this class.
-  factory Manifest.parse(String source) =>
-      throw UnimplementedError('Manifest.parse');
+  factory Manifest.parse(String source) {
+    final document = loadYaml(source);
+    final fields = <String, Object?>{
+      if (document is Map)
+        for (final entry in document.entries) '${entry.key}': _plain(entry.value),
+    };
+    return Manifest(
+      type: '${fields['type'] ?? ''}',
+      actions: [
+        if (fields['actions'] case final List<Object?> declared)
+          for (final action in declared) '$action',
+      ],
+      fields: fields,
+    );
+  }
+
+  /// The document as ordinary Dart, so that [fields] is an escape hatch and not
+  /// a second library's types leaking through the contract.
+  static Object? _plain(Object? node) => switch (node) {
+        final Map<Object?, Object?> map => {
+            for (final entry in map.entries) '${entry.key}': _plain(entry.value),
+          },
+        final List<Object?> list => [for (final item in list) _plain(item)],
+        _ => node,
+      };
 }

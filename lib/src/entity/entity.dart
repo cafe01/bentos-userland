@@ -1,9 +1,12 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:path/path.dart' as p;
 
 import '../place/place.dart';
+import 'arming/arming.dart';
 import 'event.dart';
+import 'git/git_ambient.dart';
 import 'instance.dart';
 import 'manifest.dart';
 import 'model/commit.dart';
@@ -76,10 +79,68 @@ final class Entity {
   /// The ref instances are born from, and where the manifest lives.
   static const String genesisRef = 'refs/heads/genesis';
 
+  /// The name the entity was authored under, stated in genesis. A record, never
+  /// a binding: the name is semantic and the same identity stands at many
+  /// coordinates.
+  static const String _entityTrailer = 'Bentos-Entity';
+
+  /// What makes one authoring distinct from another of the same name.
+  static const String _genesisTrailer = 'Bentos-Genesis';
+
+  static final _entropy = math.Random.secure();
+
+  static String _mintIdentity() => List.generate(
+        4,
+        (_) => _entropy.nextInt(1 << 32).toRadixString(16).padLeft(8, '0'),
+      ).join();
+
   /// Installs the entity here — authored, with no origin and nothing to fetch
   /// from. The one member that consumes the anchor; by liveness this same
   /// handle then resolves to what it just made.
-  Entity create() => throw UnimplementedError('Entity.create');
+  Entity create() {
+    final place = Place(_anchor ?? Directory.current.path);
+    final gitDir = p.join(place.plot(plotNamespace).path, name, repositoryDirName);
+    ambientGit.init(gitDir);
+    final genesisSha = _bearGenesis(gitDir, name);
+    // The tenant asks; the landlord records. The gitlink is the place's own
+    // tree entry and no tenant writes there.
+    place.register(name, url: '', path: name, sha: genesisSha.sha);
+    ArmingTables(gitDir).ensureArmed();
+    return this;
+  }
+
+  /// The ref instances are born from: the class's structure, empty until a
+  /// manifest is written into it. A first swap against *no ref at all*, which is
+  /// how a genesis refuses to happen twice.
+  ///
+  /// **Genesis carries an identity of its own**, and it must. `create` authors
+  /// an entity with no origin, so two people who each author `bentos.llm` have
+  /// made two things that share a name — two participants, never two views. A
+  /// genesis with no identity would be byte-identical under content addressing,
+  /// and the two lines would then federate as though they were one, silently.
+  /// The token is what makes that impossible.
+  static Commit _bearGenesis(String gitDir, String name) {
+    final empty = Directory.systemTemp.createTempSync('entity-genesis-');
+    try {
+      final tree = ambientGit.writeTree(gitDir, workTree: empty.path);
+      final sha = ambientGit.commitTree(
+        gitDir,
+        tree: tree,
+        parents: const [],
+        message: 'genesis\n\n$_entityTrailer: $name\n'
+            '$_genesisTrailer: ${_mintIdentity()}\n',
+      );
+      ambientGit.updateRef(
+        gitDir,
+        ref: genesisRef,
+        newCommit: Commit(sha),
+        expected: null,
+      );
+      return Commit(sha);
+    } finally {
+      empty.deleteSync(recursive: true);
+    }
+  }
 
   /// Brings a copy of an entity that exists elsewhere into a place: the clone,
   /// its registration as the place's submodule, and the arming of whatever its
@@ -96,19 +157,66 @@ final class Entity {
   /// performed when someone means to look.
   ///
   /// Asynchronous: it crosses the network.
-  static Future<Entity> install(String source, {String? at, String? as}) =>
-      throw UnimplementedError('Entity.install');
+  static Future<Entity> install(String source, {String? at, String? as}) async {
+    final place = Place(at ?? Directory.current.path);
+    final name = as ?? _nameFromSource(source);
+    final gitDir = p.join(place.plot(plotNamespace).path, name, repositoryDirName);
+    await ambientGit.clone(source, gitDir);
+    place.register(
+      name,
+      url: source,
+      path: name,
+      sha: ambientGit.revParse(gitDir, genesisRef)?.sha ?? '',
+    );
+    ArmingTables(gitDir).ensureArmed();
+    // Nothing is checked out: a site that only reacts holds no worktree at all,
+    // and bringing the tree down is the place's own recursive verb.
+    return Entity(name, from: place.root.path);
+  }
+
+  /// The name a source implies when none is given: the repository's own, minus
+  /// the substrate's suffix.
+  static String _nameFromSource(String source) {
+    final base = p.basename(source.endsWith('/')
+        ? source.substring(0, source.length - 1)
+        : source);
+    if (base != repositoryDirName) {
+      return base.endsWith('.git') ? base.substring(0, base.length - 4) : base;
+    }
+    // `<plot>/<name>/repo.git` — the layout's own shape, so the name is the
+    // directory the repository stands in.
+    return p.basename(p.dirname(source));
+  }
 
   /// What the thing says it is, read from the genesis tree. The entity system's
   /// only contract, carried in band.
-  Manifest get manifest => throw UnimplementedError('Entity.manifest');
+  Manifest get manifest {
+    final gitDir = _gitDir;
+    final at = ambientGit.revParse(gitDir, genesisRef);
+    if (at == null) throw StateError('no genesis: $name');
+    return Manifest.parse(
+      String.fromCharCodes(
+        ambientGit.catFile(gitDir, '${at.sha}:${Manifest.path}'),
+      ),
+    );
+  }
 
   /// The genesis commit — the class's uninitialized structure.
-  Commit get genesis => throw UnimplementedError('Entity.genesis');
+  Commit get genesis {
+    final at = ambientGit.revParse(_gitDir, genesisRef);
+    if (at == null) throw StateError('no genesis: $name');
+    return at;
+  }
 
   /// The objects of this class. **Genesis is not among them**: it is the
   /// structure instances are born from, not one of them.
-  List<Instance> get instances => throw UnimplementedError('Entity.instances');
+  List<Instance> get instances {
+    const genesisName = 'genesis';
+    return [
+      for (final ref in ambientGit.branches(_gitDir))
+        if (ref != genesisName) Instance(this, ref),
+    ];
+  }
 
   /// A handle to one instance. Creates nothing; the instance need not exist.
   Instance instance(String id) => Instance(this, id);
@@ -130,23 +238,43 @@ final class Entity {
     Set<EventPattern> events, {
     required List<String> command,
     String instance = '*',
-  }) =>
-      throw UnimplementedError('Entity.on');
+  }) {
+    if (events.isEmpty) {
+      throw ArgumentError.value(events, 'events', 'arm on at least one');
+    }
+    final tables = ArmingTables(_gitDir)..ensureArmed();
+    Registration? first;
+    for (final pattern in events) {
+      final armed =
+          tables.add(instance: instance, pattern: pattern, command: command);
+      first ??= armed;
+    }
+    return first!;
+  }
 
   /// Disarms the registration [id]. Idempotent.
-  void off(String id) => throw UnimplementedError('Entity.off');
+  void off(String id) => ArmingTables(_gitDir).remove(id);
 
   /// What is armed here.
-  List<Registration> get listeners => throw UnimplementedError('Entity.listeners');
+  List<Registration> get listeners => ArmingTables(_gitDir).all;
 
   /// Where bytes may travel. Not who is authoritative — that is declared, never
   /// computed, and `origin` is a default rather than a truth.
-  List<Remote> get remotes => throw UnimplementedError('Entity.remotes');
+  List<Remote> get remotes => ambientGit.remotes(_gitDir);
 
   /// Gives an entity created here an origin and pushes to it. The push moves
   /// bytes; that the remote is now authoritative is a declaration, and never a
   /// consequence of the mechanism.
-  Future<void> publish(String remote) => throw UnimplementedError('Entity.publish');
+  Future<void> publish(String remote) async {
+    final gitDir = _gitDir;
+    // [remote] is where bytes may travel — a URL. It is declared as `origin`
+    // because that is the default a reader expects, and declaring is not
+    // electing: which copy is authoritative is said elsewhere.
+    const named = 'origin';
+    final declared = ambientGit.remotes(gitDir).any((r) => r.name == named);
+    if (!declared) ambientGit.addRemote(gitDir, name: named, url: remote);
+    await ambientGit.push(gitDir, remote: named);
+  }
 
   /// The directory name the bare repository stands under, inside the plot. The
   /// worktree half of an installation stands in the place's tree; this half is

@@ -1,3 +1,5 @@
+import 'git/git.dart';
+import 'git/git_ambient.dart';
 import 'model/actor.dart';
 import 'model/commit.dart';
 
@@ -30,7 +32,17 @@ import 'model/commit.dart';
 /// reading the substrate on each access rather than snapshotting it.
 final class Action {
   /// Reads the action landed at [commit] of the instance's ref.
-  Action({required this.gitDir, required this.ref, required this.commit});
+  ///
+  /// The port is captured **here**, at the moment the primitive mints the
+  /// handle, rather than read from the ambient on every access. An action is
+  /// the one handle that routinely outlives the call that produced it — it is
+  /// what `act` returns, and a caller reads its name and its diff after the
+  /// acting is over. Reading the ambient then would answer out of whatever zone
+  /// the caller happens to be standing in, which is a different substrate.
+  Action({required this.gitDir, required this.ref, required this.commit})
+      : _git = ambientGit;
+
+  final Git _git;
 
   /// The entity's own directory — the common one. A ref update made from a
   /// worktree resolves to that worktree's private directory, where no table and
@@ -48,21 +60,28 @@ final class Action {
   /// The declared noun, read from the commit's structured form. The **only**
   /// part of an act the substrate reads — enough to match a subscription, never
   /// enough to interpret.
-  String get name => throw UnimplementedError('Action.name');
+  String get name => nameIn(_record.message) ?? '';
 
   /// Who acted, from the commit's author.
-  Actor get actor => throw UnimplementedError('Action.actor');
+  Actor get actor => _record.author;
 
   /// When, from the commit's author date.
-  DateTime get instant => throw UnimplementedError('Action.instant');
+  DateTime get instant => _record.instant;
 
   /// The state the act was taken *at* — the value the swap demanded the ref
   /// still hold.
-  Commit get parent => throw UnimplementedError('Action.parent');
+  Commit get parent {
+    final parents = _record.parents;
+    return parents.isEmpty ? Commit.zero : Commit(parents.first);
+  }
 
   /// What this act changed. Derived on every call, because the substrate stores
   /// whole states and never differences.
-  Diff diff() => throw UnimplementedError('Action.diff');
+  Diff diff() => _git.diffTree(gitDir, from: parent, to: commit);
+
+  /// The substrate's record, re-read on every access — a handle is a lens and
+  /// never a snapshot.
+  RawCommit get _record => _git.showCommit(gitDir, commit);
 
   /// The structured form the action's name is written in and read back from.
   ///

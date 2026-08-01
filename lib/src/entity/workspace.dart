@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'action.dart';
+import 'git/git_ambient.dart';
 import 'model/actor.dart';
 import 'model/commit.dart';
 
@@ -55,10 +56,35 @@ final class Workspace {
   /// an ordinary outcome and not an error. Releasing is **not** implied — the
   /// plumbing family's caller may still want the directory, and the bracket
   /// releases in its own `finally`.
-  ActionResult commit(String name, {Actor? actor}) =>
-      throw UnimplementedError('Workspace.commit');
+  ActionResult commit(String name, {Actor? actor}) {
+    // The payload is hashed before the ref is in question — which is why a
+    // refusal one step later cannot rewrite it, and why the object of a refused
+    // act still exists, orphaned.
+    final tree = ambientGit.writeTree(gitDir, workTree: directory.path);
+    final sha = ambientGit.commitTree(
+      gitDir,
+      tree: tree,
+      parents: [expectedTip.sha],
+      message: Action.messageFor(name),
+      actor: actor,
+    );
+    final landed = ambientGit.updateRef(
+      gitDir,
+      ref: ref,
+      newCommit: Commit(sha),
+      expected: expectedTip,
+    );
+    if (landed) {
+      return Landed(Action(gitDir: gitDir, ref: ref, commit: Commit(sha)));
+    }
+    return Refused(
+      'the ref moved',
+      expected: expectedTip,
+      found: ambientGit.revParse(gitDir, ref),
+    );
+  }
 
   /// Discards the area and deregisters the worktree. Idempotent: the coreutil's
   /// `release` may honestly run twice.
-  void release() => throw UnimplementedError('Workspace.release');
+  void release() => ambientGit.worktreeRemove(gitDir, path: directory.path);
 }

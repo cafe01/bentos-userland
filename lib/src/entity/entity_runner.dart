@@ -81,13 +81,14 @@ final class EntityRunner {
 
   late final CommandRunner<void> _runner;
 
-  /// The process's answer. **0 ok · 1 usage · 3 refused** — refusal earns a
-  /// code of its own because it is an ordinary outcome of concurrent agency
-  /// and a caller must be able to retry on it without parsing prose.
+  /// The process's answer. **0 ok · 64 usage · 3 refused** — usage is
+  /// `EX_USAGE`, spoken the same way `place` and `mem` speak it, and refusal
+  /// earns a code of its own because it is an ordinary outcome of concurrent
+  /// agency that a caller must be able to retry on without parsing prose.
   int exitCode = 0;
 
   static const int okCode = 0;
-  static const int usageCode = 1;
+  static const int usageCode = 64;
   static const int refusedCode = 3;
 
   /// The working directory — injected override, else the process's own.

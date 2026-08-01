@@ -1,6 +1,9 @@
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
+
 import '../event.dart';
+import 'shim_source.dart';
 
 /// The arming tables of one installation — where a [Registration] is written,
 /// read and removed, and where the shim is installed.
@@ -30,26 +33,74 @@ final class ArmingTables {
   /// The table a phase's listeners are written to. One file per phase, which is
   /// what lets the shim open exactly one and read nothing it will not use.
   File tableFor(EventPhase phase) =>
-      throw UnimplementedError('ArmingTables.tableFor');
+      File(p.join(gitDir, tablesDirName, phase.name));
 
   /// Installs the shim, mode 755, and creates the tables directory. Idempotent:
   /// arming an already-armed installation rewrites the shim and keeps the
   /// lines.
-  void ensureArmed() => throw UnimplementedError('ArmingTables.ensureArmed');
+  void ensureArmed() {
+    Directory(p.join(gitDir, tablesDirName)).createSync(recursive: true);
+    final hook = File(p.join(gitDir, hookPath))
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync(referenceTransactionShim);
+    // The shim is a program the substrate execs; a mode bit is the whole of
+    // what makes it one.
+    Process.runSync('chmod', ['755', hook.path]);
+  }
 
   /// Appends a registration and returns it with its assigned id.
   Registration add({
     required String instance,
     required EventPattern pattern,
     required List<String> command,
-  }) =>
-      throw UnimplementedError('ArmingTables.add');
+  }) {
+    final armed = Registration(
+      id: _mintId(),
+      instance: instance,
+      pattern: pattern,
+      command: command,
+    );
+    final table = tableFor(pattern.phase)..parent.createSync(recursive: true);
+    table.writeAsStringSync(
+      '${encode(armed)}\n',
+      mode: FileMode.append,
+    );
+    return armed;
+  }
 
   /// Every line armed here, across the three tables.
-  List<Registration> get all => throw UnimplementedError('ArmingTables.all');
+  List<Registration> get all => [
+        for (final phase in EventPhase.values)
+          for (final line in _linesOf(phase)) ?decode(line, phase),
+      ];
 
   /// Removes the line with this id, from whichever table holds it. Idempotent.
-  void remove(String id) => throw UnimplementedError('ArmingTables.remove');
+  void remove(String id) {
+    for (final phase in EventPhase.values) {
+      final table = tableFor(phase);
+      if (!table.existsSync()) continue;
+      final kept = [
+        for (final line in table.readAsLinesSync())
+          if (decode(line, phase)?.id != id) line,
+      ];
+      table.writeAsStringSync(kept.isEmpty ? '' : '${kept.join('\n')}\n');
+    }
+  }
+
+  List<String> _linesOf(EventPhase phase) {
+    final table = tableFor(phase);
+    return table.existsSync() ? table.readAsLinesSync() : const [];
+  }
+
+  /// A short, stable handle. Uniqueness is all it owes — the id names a line
+  /// for `off` and carries no meaning of its own.
+  String _mintId() {
+    final taken = all.map((r) => r.id).toSet();
+    for (var n = 1;; n++) {
+      final candidate = 'r$n';
+      if (!taken.contains(candidate)) return candidate;
+    }
+  }
 
   /// The wire form of one line: `<id>\t<instance>\t<action>\t<command…>`.
   ///
