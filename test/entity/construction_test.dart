@@ -396,12 +396,100 @@ void main() {
     // Four gates of the PoC varied the state inside one machine and all
     // passed; the fifth varied the machine, and was the only one that could
     // expose a locality dependency. It found one on its first run.
-    test('a clone arms differently and reacts to a pushed act', () {}, skip: _owed);
+    late Directory here;
+    late Directory there;
+    late Entity mine;
+    late Instance one;
 
-    test('the receiving side runs its own hook on push', () {}, skip: _owed);
+    setUp(() async {
+      here = _place('entity_here_');
+      there = _place('entity_there_');
+      mine = Entity('t.thing', from: here.path).create();
+      one = mine.instance('one').create();
+      // One act before the clone, so the other site is born holding a past.
+      final first = await one.act('note', (workspace) {
+        File('${workspace.directory.path}/note').writeAsStringSync('first\n');
+      });
+      expect(first, isA<Landed>());
+      await Entity.install(repositoryOf(here.path, mine.name), at: there.path);
+    });
 
-    test('a site that only reacts holds no worktree and still reads state', () {},
-        skip: _owed);
+    tearDown(() {
+      for (final dir in [here, there]) {
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      }
+    });
+
+    Entity theirs() => Entity('t.thing', from: there.path);
+
+    test('a clone arms differently and reacts to a pushed act', () async {
+      // **Arming is per installation** — beside the repository, outside every
+      // tree, never cloned. So a clone arrives inert, and one line of difference
+      // is the whole distance between a site that watches and a site that works.
+      expect(theirs().listeners, isEmpty, reason: 'arming does not travel');
+
+      final witness = File('${there.path}/witness');
+      theirs().on(
+        {const EventPattern(action: '*', phase: EventPhase.landed)},
+        command: [_listener(there, 'record', 'printf "%s\\n" "\$4" >> "${witness.path}"')],
+      );
+      expect(theirs().listeners, hasLength(1));
+      expect(mine.listeners, isEmpty, reason: 'this site never armed anything');
+
+      final landed = await one.act('note', (workspace) {
+        File('${workspace.directory.path}/note').writeAsStringSync('second\n');
+      }) as Landed;
+      // The act landed here and woke nothing here — the other site is where the
+      // reaction lives.
+      expect(File('${here.path}/witness').existsSync(), isFalse);
+
+      await mine.publish(repositoryOf(there.path, mine.name));
+
+      await _settles(witness);
+      expect(witness.readAsStringSync().trim(), equals(landed.action.commit.sha));
+      expect(theirs().instance('one').tip, equals(landed.action.commit));
+    });
+
+    test('the receiving side runs its own hook on push', () async {
+      // Federation is not a second mechanism: the receiving side runs the same
+      // shim at the same phase, so a site may refuse what another site landed —
+      // and the refusal is the substrate's own, not a protocol we invented.
+      theirs().on(
+        {const EventPattern(action: '*', phase: EventPhase.attempted)},
+        command: [_listener(there, 'refuse', 'exit 1')],
+      );
+      final standing = theirs().instance('one').tip;
+
+      final landed = await one.act('note', (workspace) {
+        File('${workspace.directory.path}/note').writeAsStringSync('second\n');
+      }) as Landed;
+
+      await expectLater(
+        mine.publish(repositoryOf(there.path, mine.name)),
+        throwsA(isA<ProcessException>()),
+        reason: 'the receiving side declined the update',
+      );
+      expect(theirs().instance('one').tip, equals(standing),
+          reason: 'nothing became true there');
+      expect(one.tip, equals(landed.action.commit),
+          reason: 'and it stays true here — the two lines are participants');
+    });
+
+    test('a site that only reacts holds no worktree and still reads state', () async {
+      // Install does not materialize. A federated site that only reacts holds no
+      // worktree at all, and reading at the ref is what it lives on.
+      expect(Directory('${there.path}/${mine.name}').existsSync(), isFalse,
+          reason: 'nothing was checked out into the place tree');
+
+      expect(
+        utf8.decode(theirs().instance('one').read('note')),
+        equals('first\n'),
+      );
+      // And it knows what it holds without looking at a file: the class, its
+      // objects, and their acts, all read at the refs.
+      expect([for (final i in theirs().instances) i.id], equals(['one']));
+      expect(theirs().instance('one').log.single.name, equals('note'));
+    });
   });
 
   group('acceptance', () {
