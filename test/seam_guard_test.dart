@@ -59,6 +59,25 @@ void main() {
     );
   });
 
+  test('the spatial API knows of no entity — only the coreutil joins them', () {
+    final offenders = [
+      for (final file in filesUnder(['place']))
+        if (!p.split(rel(file)).contains('commands') &&
+            file.readAsStringSync().contains(RegExp(r"import '.*entity/")))
+          rel(file),
+    ];
+
+    expect(
+      offenders,
+      isEmpty,
+      reason: 'the dependency is one-way (entity → place): a place enumerates '
+          'what is installed in it and knows nothing of what an entity is. '
+          '`materialize` joins the landlord\'s half with the tenant\'s, and it '
+          'does that in the coreutil, where `install` already joins the same '
+          'two from the other side: $offenders',
+    );
+  });
+
   test('the substrate answers to neither sister', () {
     final offenders = [
       for (final file in filesUnder(['git']))

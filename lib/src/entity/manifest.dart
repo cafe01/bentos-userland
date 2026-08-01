@@ -21,10 +21,23 @@ import 'package:yaml/yaml.dart';
 /// shape for a schema that is not settled: the document is carried whole, the
 /// parts we have decided are typed, and nothing is lost while we decide the
 /// rest.
+/// How many objects of a class coexist. The one thing the manifest says that a
+/// primitive outside the entity must act on, which is why it is typed here and
+/// the rest of the document is not.
+enum Cardinality {
+  /// One object, and the entity's pin is its state — a memory bank, a settings
+  /// store.
+  singular,
+
+  /// Objects that coexist, none of them *the* one — conversations, cases, runs.
+  plural,
+}
+
 final class Manifest {
   const Manifest({
     required this.type,
     required this.actions,
+    required this.cardinality,
     required this.fields,
   });
 
@@ -38,6 +51,21 @@ final class Manifest {
   /// three phases *is* the entity's event vocabulary — which is why nothing
   /// declares events anywhere.
   final List<String> actions;
+
+  /// How many objects of this class coexist — and therefore **what materializing
+  /// the entity brings down**: a singular entity's pin *is* its state, so its
+  /// tree is what a place holds it at; a plural entity has no single commit that
+  /// could mean *all fifty conversations*, so what comes down is the class —
+  /// genesis, with the structure and this document.
+  ///
+  /// **Absent means [Cardinality.plural]**, and the reason is honesty rather
+  /// than frequency: undeclared, we do not know, and bringing genesis down
+  /// brings what we know the thing *is*. Electing some branch as *the* state
+  /// would be the primitive inventing ontology nobody gave it. Note that
+  /// `create` leaves genesis empty, so *no manifest at all* is the ordinary
+  /// condition of every freshly authored entity — the behaviour on absence is
+  /// the common behaviour, and it has to be the conservative one.
+  final Cardinality cardinality;
 
   /// The document entire, as parsed. The escape hatch that keeps an unsettled
   /// schema from being frozen by this type.
@@ -60,6 +88,9 @@ final class Manifest {
         if (fields['actions'] case final List<Object?> declared)
           for (final action in declared) '$action',
       ],
+      cardinality: fields['cardinality'] == 'singular'
+          ? Cardinality.singular
+          : Cardinality.plural,
       fields: fields,
     );
   }

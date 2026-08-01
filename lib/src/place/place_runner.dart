@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import 'commands/info_command.dart';
 import 'commands/init_command.dart';
+import 'commands/materialize_command.dart';
 import 'commands/superrepo_commands.dart';
 import 'commands/tree_command.dart';
 import 'commands/where_command.dart';
@@ -37,7 +38,8 @@ final class PlaceRunner {
       ..addCommand(InitCommand(this))
       ..addCommand(LsCommand(this))
       ..addCommand(PinCommand(this))
-      ..addCommand(TimelineCommand(this));
+      ..addCommand(TimelineCommand(this))
+      ..addCommand(MaterializeCommand(this));
   }
 
   final StringSink out;

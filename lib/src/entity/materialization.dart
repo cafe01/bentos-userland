@@ -32,7 +32,13 @@ final class Materialization {
   final Directory directory;
 
   final String gitDir;
-  final String ref;
+
+  /// The ref the files follow, and **null when they follow none**: a tree
+  /// standing at a commit declared from outside — a place's pin — has no tip to
+  /// catch up with, and moving it is the declarer's act rather than a
+  /// ref-follow. So [refresh] has nothing to do there, and says so by doing
+  /// nothing.
+  final String? ref;
 
   /// What the files stand at. Held rather than asked for: the substrate has no
   /// verb for *which commit is this worktree at*, and the answer is anyway a
@@ -46,7 +52,9 @@ final class Materialization {
   /// Brings the files up to the instance's present tip. The duty of whoever
   /// looks; nothing does it for them.
   void refresh() {
-    final tip = ambientGit.revParse(gitDir, ref);
+    final following = ref;
+    if (following == null) return;
+    final tip = ambientGit.revParse(gitDir, following);
     if (tip == null || tip == _at) return;
     ambientGit.worktreeRemove(gitDir, path: directory.path);
     ambientGit.worktreeAdd(gitDir, path: directory.path, at: tip);

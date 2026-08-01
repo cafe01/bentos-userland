@@ -9,6 +9,7 @@ import 'event.dart';
 import '../git/git_ambient.dart';
 import 'instance.dart';
 import 'manifest.dart';
+import 'materialization.dart';
 import '../git/model/commit.dart';
 import '../git/model/remote.dart';
 
@@ -220,6 +221,35 @@ final class Entity {
 
   /// A handle to one instance. Creates nothing; the instance need not exist.
   Instance instance(String id) => Instance(this, id);
+
+  /// Puts **the class** into the materialized condition: the entity's own tree
+  /// at [at], standing at [path] — the tenant's half of bringing a constellation
+  /// down, which the place's recursive verb composes with its own enumeration.
+  ///
+  /// What commit [at] is, is the caller's word and never this primitive's: a
+  /// place materializes what it declares, and an entity has no opinion about
+  /// which of its commits someone else holds it at. Hence no ref on the way
+  /// out — the tree follows nothing, and re-materializing is the declarer
+  /// asking again.
+  ///
+  /// **Present means update, never re-clone.** A worktree already standing here
+  /// is moved to [at]; the repository is untouched either way, because throwing
+  /// away a tree someone may be looking at is not what *bring this up to date*
+  /// means. A directory that stands here and is no worktree of ours is not ours
+  /// to delete, and the substrate's refusal travels.
+  Materialization materialize(Commit at, {required String path}) {
+    final gitDir = _gitDir;
+    if (ambientGit.worktreeRepository(path) != null) {
+      ambientGit.worktreeRemove(gitDir, path: path);
+    }
+    ambientGit.worktreeAdd(gitDir, path: path, at: at);
+    return Materialization(
+      directory: Directory(path),
+      gitDir: gitDir,
+      ref: null,
+      at: at,
+    );
+  }
 
   /// Arms a listener at this installation: when an act matching one of [events]
   /// occurs, [command] is run with the occurrence appended.
