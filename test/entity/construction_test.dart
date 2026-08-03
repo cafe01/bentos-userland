@@ -632,10 +632,13 @@ void main() {
 
   group('acceptance', () {
     // The lab's `bash test/gates.sh` walks the whole vocabulary of
-    // `bentos.llm` on raw Git — five gates, twenty-three assertions, no API
-    // key. Construction promotes it: the same gates, driven through the
-    // `entity` coreutil instead of hand-spelled shell, is the acceptance proof
-    // that the primitive absorbed the PoC without losing a property.
+    // `bentos.llm` — six gates, twenty-nine assertions, no API key.
+    // Construction promotes it: the same gates, driven through the `entity`
+    // coreutil instead of the hand-spelled Git the PoC ran on, is the
+    // acceptance proof that the primitive absorbed the PoC without losing a
+    // property. Nothing there spells Git for a *mechanism* act any more; the
+    // two assertions that still do assert about the interior of Git, and say
+    // so on the line.
     //
     // Source: `lab/entity/test/gates.sh` · promotion list: `lab/entity/PROMOTION.md`
     //
@@ -679,7 +682,7 @@ void main() {
         0,
         reason: 'the gates did not pass:\n${ran.stdout}\n${ran.stderr}',
       );
-      expect('${ran.stdout}', contains('All 23 gates green.'));
+      expect('${ran.stdout}', contains('All 29 gates green.'));
     }, timeout: const Timeout(Duration(minutes: 10)));
   });
 }
