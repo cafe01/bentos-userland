@@ -82,6 +82,23 @@ abstract interface class Git {
   /// content is read at a ref with no worktree anywhere.
   List<int> catFile(String gitDir, String object);
 
+  /// The entry names directly under [path] in the tree at [at] — full paths
+  /// from the root, sorted, one level deep, and empty where nothing is there.
+  ///
+  /// The listing half of reading at a ref. [catFile] hands back one path at a
+  /// time, so without this every reader of composite state has to leave the
+  /// ontology to find out what the paths *are*.
+  List<String> lsTree(String gitDir, {required Commit at, required String path});
+
+  /// Whether [ancestor] is reachable from [descendant] — the question that
+  /// separates a line extended from two lines diverged, and the only thing
+  /// [fetch]'s caller needs in order to know which of the two it received.
+  bool isAncestor(
+    String gitDir, {
+    required Commit ancestor,
+    required Commit descendant,
+  });
+
   /// Stages [workTree] entire and writes its tree object, returning the name.
   /// The staging is folded in deliberately: *the tree of this worktree* is one
   /// idea, and splitting it would put an index — a detail of the substrate —
@@ -213,7 +230,16 @@ abstract interface class Git {
   /// refuse, which is federation using exactly the mechanism local action uses.
   Future<void> push(String gitDir, {required String remote, String? ref});
 
-  /// Brings refs down from [remote]. Nothing is merged: what arrives is
-  /// another participant's line, and joining lines is an act of its own.
-  Future<void> fetch(String gitDir, {required String remote});
+  /// Brings [ref] down from [remote] and answers **what arrived**: the commit
+  /// the remote's line stands at, or null when the remote has no such ref.
+  ///
+  /// Nothing is merged and no local ref moves — what arrives is another
+  /// participant's line, and what to do about it is the ontology's word one
+  /// floor up. The return value is what makes that possible: a line brought
+  /// down and left unnamed is a state nothing above here can speak of.
+  Future<Commit?> fetch(
+    String gitDir, {
+    required String remote,
+    required String ref,
+  });
 }

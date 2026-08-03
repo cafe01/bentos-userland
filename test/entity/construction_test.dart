@@ -164,6 +164,57 @@ void main() {
       );
     });
 
+    test('ls-tree lists one level at a commit, and the fake agrees', () {
+      final first = land(
+        {'messages/0001.txt': 'a\n', 'meta/card.json': '{}\n'},
+        ref: 'refs/heads/one',
+      );
+      land(
+        {
+          'messages/0001.txt': 'a\n',
+          'messages/0002.txt': 'b\n',
+          'meta/card.json': '{}\n',
+        },
+        ref: 'refs/heads/one',
+        parent: first,
+      );
+      final tip = git.revParse(gitDir, 'refs/heads/one')!;
+
+      expect(
+        git.lsTree(gitDir, at: tip, path: 'messages'),
+        equals(['messages/0001.txt', 'messages/0002.txt']),
+      );
+      // The root lists entries and not the tree beneath them — the reading is
+      // one level deep, exactly as `ls` is.
+      expect(
+        git.lsTree(gitDir, at: tip, path: ''),
+        equals(['messages', 'meta']),
+      );
+      // At an earlier point the answer is different, which is the whole reason
+      // the reading takes a commit.
+      expect(
+        git.lsTree(gitDir, at: first, path: 'messages'),
+        equals(['messages/0001.txt']),
+      );
+      expect(git.lsTree(gitDir, at: tip, path: 'nowhere'), isEmpty);
+    });
+
+    test('is-ancestor separates a line extended from two lines diverged', () {
+      final root = land({'a': '1\n'}, ref: 'refs/heads/one');
+      final ahead = land({'a': '2\n'}, ref: 'refs/heads/one', parent: root);
+      // A sibling off the same parent: neither line contains the other. The
+      // second ref is pointed at the shared parent first, exactly as a fork is.
+      git.branch(gitDir, name: 'two', startPoint: root);
+      final sibling = land({'a': '3\n'}, ref: 'refs/heads/two', parent: root);
+
+      expect(git.isAncestor(gitDir, ancestor: root, descendant: ahead), isTrue);
+      expect(git.isAncestor(gitDir, ancestor: ahead, descendant: root), isFalse,
+          reason: 'behind is not ahead');
+      expect(git.isAncestor(gitDir, ancestor: ahead, descendant: sibling), isFalse);
+      expect(git.isAncestor(gitDir, ancestor: root, descendant: root), isTrue,
+          reason: 'a commit is its own ancestor, and fetching it changes nothing');
+    });
+
     test('update-ref with a stale expectation is refused by git itself', () {
       final first = land({'a': '1\n'}, ref: 'refs/heads/one');
       final second =
@@ -490,6 +541,71 @@ void main() {
       // objects, and their acts, all read at the refs.
       expect([for (final i in theirs().instances) i.id], equals(['one']));
       expect(theirs().instance('one').log.single.name, equals('note'));
+    });
+
+    test('fetch brings the other site\'s line down and advances the ref', () async {
+      // The mirror of push. The act is taken over *there*, and this site — which
+      // pushed nothing and was told nothing — brings it home.
+      final landed = await theirs().instance('one').act('note', (workspace) {
+        File('${workspace.directory.path}/note').writeAsStringSync('theirs\n');
+      }) as Landed;
+      final standing = one.tip;
+      expect(standing, isNot(equals(landed.action.commit)));
+
+      final result = await one.fetch(repositoryOf(there.path, mine.name));
+
+      expect(result, isA<Landed>());
+      expect((result as Landed).action.commit, equals(landed.action.commit));
+      expect(one.tip, equals(landed.action.commit),
+          reason: 'the local ref moved — this is the half push does over there');
+      expect(utf8.decode(one.read('note')), equals('theirs\n'),
+          reason: 'and the content arrived with it');
+    });
+
+    test('a fetch of an instance born elsewhere brings it into being here', () async {
+      // The other direction of the same choice: no local ref at all. Nothing to
+      // fast-forward, and the honest outcome is still a landing — this is how an
+      // instance authored at another site first appears at this one.
+      final born = await theirs().instance('two').create().act('note', (w) {
+        File('${w.directory.path}/note').writeAsStringSync('elsewhere\n');
+      }) as Landed;
+      final newcomer = mine.instance('two');
+      expect(newcomer.tip, isNull, reason: 'this site never heard of it');
+
+      final result = await newcomer.fetch(repositoryOf(there.path, mine.name));
+
+      expect(result, isA<Landed>());
+      expect(newcomer.tip, equals(born.action.commit));
+      expect([for (final i in mine.instances) i.id], contains('two'));
+    });
+
+    test('two lines that diverged are refused, and nothing moves', () async {
+      // Both sites act on the same instance from the same parent. Neither line
+      // contains the other, so there is no line to extend — and joining them is
+      // an act of its own, which fetch declines to invent.
+      final ours = await one.act('note', (w) {
+        File('${w.directory.path}/note').writeAsStringSync('ours\n');
+      }) as Landed;
+      await theirs().instance('one').act('note', (w) {
+        File('${w.directory.path}/note').writeAsStringSync('theirs\n');
+      });
+
+      final result = await one.fetch(repositoryOf(there.path, mine.name));
+
+      expect(result, isA<Refused>());
+      expect((result as Refused).reason, equals('diverged'));
+      expect(one.tip, equals(ours.action.commit),
+          reason: 'our line is untouched — divergence is legitimate');
+      expect(utf8.decode(one.read('note')), equals('ours\n'));
+    });
+
+    test('a remote that carries no such instance refuses', () async {
+      final absent = mine.instance('never-born');
+      final result = await absent.fetch(repositoryOf(there.path, mine.name));
+
+      expect(result, isA<Refused>());
+      expect((result as Refused).reason, contains('no such instance'));
+      expect(absent.tip, isNull);
     });
   });
 

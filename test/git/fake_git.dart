@@ -79,6 +79,43 @@ final class FakeGit implements Git {
   }
 
   @override
+  List<String> lsTree(
+    String gitDir, {
+    required Commit at,
+    required String path,
+  }) {
+    final repo = _repo(gitDir);
+    final tree = repo.trees[repo.commits[at.sha]?.tree] ?? const {};
+    final prefix = path.isEmpty || path.endsWith('/') ? path : '$path/';
+    // One level deep, as the substrate lists it: what lies under a directory
+    // entry is that entry's own listing, not this one's.
+    final names = <String>{};
+    for (final entry in tree.keys) {
+      if (!entry.startsWith(prefix)) continue;
+      final rest = entry.substring(prefix.length);
+      if (rest.isEmpty) continue;
+      final cut = rest.indexOf('/');
+      names.add(cut < 0 ? '$prefix$rest' : '$prefix${rest.substring(0, cut)}');
+    }
+    return names.toList()..sort();
+  }
+
+  @override
+  bool isAncestor(
+    String gitDir, {
+    required Commit ancestor,
+    required Commit descendant,
+  }) {
+    final repo = _repo(gitDir);
+    for (String? at = descendant.sha; at != null;) {
+      if (at == ancestor.sha) return true;
+      final obj = repo.commits[at];
+      at = (obj == null || obj.parents.isEmpty) ? null : obj.parents.first;
+    }
+    return false;
+  }
+
+  @override
   String writeTree(String gitDir, {required String workTree}) {
     final entries = <String, String>{};
     final dir = Directory(workTree);
@@ -301,15 +338,21 @@ final class FakeGit implements Git {
   }
 
   @override
-  Future<void> fetch(String gitDir, {required String remote}) async {
-    final url = _repo(gitDir).remotes.firstWhere((r) => r.name == remote).url;
+  Future<Commit?> fetch(
+    String gitDir, {
+    required String remote,
+    required String ref,
+  }) async {
+    final declared = _repo(gitDir).remotes.where((r) => r.name == remote);
+    final url = declared.isEmpty ? remote : declared.first.url;
     final source = _repo(url);
     final into = _repo(gitDir);
+    // The objects arrive; no ref of this repository moves. What the caller
+    // does with the line it received is the ontology's word.
     into.commits.addAll(source.commits);
     into.trees.addAll(source.trees);
-    for (final entry in source.refs.entries) {
-      into.refs['refs/remotes/$remote/${p.basename(entry.key)}'] = entry.value;
-    }
+    final there = source.refs[ref];
+    return there == null ? null : Commit(there);
   }
 
   RawCommit _raw(String sha, CommitObj obj) => RawCommit(

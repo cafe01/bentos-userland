@@ -112,6 +112,55 @@ void main() {
         );
       });
     });
+
+    test('a tree is listed at the ref, one level, sorted', () async {
+      await writeAct(site.run(() => llm.instance('s1')), 'prompt', 'a',
+          file: 'messages/0002.txt');
+      await writeAct(site.run(() => llm.instance('s1')), 'reply', 'b',
+          file: 'messages/0001.txt');
+      await writeAct(site.run(() => llm.instance('s1')), 'note', 'c',
+          file: 'meta/card.json');
+      site.run(() {
+        // The listing a folded machine lives on: the names under one directory,
+        // in the order the substrate keeps them, and nothing from elsewhere.
+        expect(
+          llm.instance('s1').ls('messages'),
+          equals(['messages/0001.txt', 'messages/0002.txt']),
+        );
+        expect(
+          llm.instance('s1').ls(''),
+          equals(['messages', 'meta']),
+          reason: 'the root lists directories, one level deep',
+        );
+        expect(llm.instance('s1').ls('nowhere'), isEmpty,
+            reason: 'a path that is not there is an answer, not a failure');
+      });
+    });
+
+    test('both readings answer at a point in history, not only the present', () async {
+      // What a validator asks: *was this legal where it was taken*. It stands at
+      // the parent of the commit landing, which is never the tip.
+      final first = await writeAct(
+          site.run(() => llm.instance('s1')), 'prompt', 'hello',
+          file: 'messages/0001.txt') as Landed;
+      await writeAct(site.run(() => llm.instance('s1')), 'reply', 'answer',
+          file: 'messages/0002.txt');
+
+      site.run(() {
+        final s1 = llm.instance('s1');
+        expect(s1.ls('messages'), hasLength(2), reason: 'the present');
+        expect(
+          s1.ls('messages', at: first.action.commit),
+          equals(['messages/0001.txt']),
+          reason: 'and the past, which is a different answer',
+        );
+        expect(
+          String.fromCharCodes(
+              s1.read('messages/0001.txt', at: first.action.commit)),
+          'hello',
+        );
+      });
+    });
   });
 
   group('the compare-and-swap', () {

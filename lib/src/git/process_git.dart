@@ -177,6 +177,51 @@ final class ProcessGit implements Git {
   }
 
   @override
+  List<String> lsTree(
+    String gitDir, {
+    required Commit at,
+    required String path,
+  }) {
+    final result = _run([
+      '--git-dir=$gitDir',
+      'ls-tree',
+      '--name-only',
+      at.sha,
+      '--',
+      // The trailing slash is what asks for the entries *inside*: a bare
+      // `messages` names the tree entry itself, and the listing would answer
+      // with the directory it was asked to look in.
+      if (path.isNotEmpty) (path.endsWith('/') ? path : '$path/'),
+    ]);
+    // A path that is not in the tree is not an error: the honest answer to
+    // *what is under here* is that nothing is.
+    if (result.exitCode != 0) return const [];
+    return _lines(_text(result.stdout))..sort();
+  }
+
+  @override
+  bool isAncestor(
+    String gitDir, {
+    required Commit ancestor,
+    required Commit descendant,
+  }) {
+    final result = _run([
+      '--git-dir=$gitDir',
+      'merge-base',
+      '--is-ancestor',
+      ancestor.sha,
+      descendant.sha,
+    ]);
+    // 0 and 1 are the answer; anything else is the substrate failing to
+    // answer at all — an unknown object, most often — and must not be read
+    // as *no*.
+    if (result.exitCode > 1) {
+      throw _failure(const ['merge-base', '--is-ancestor'], result);
+    }
+    return result.exitCode == 0;
+  }
+
+  @override
   String writeTree(String gitDir, {required String workTree}) {
     // The staging is folded in: *the tree of this worktree* is one idea, and
     // the index it needs is a detail of the substrate — so it is a scratch file
@@ -499,8 +544,33 @@ final class ProcessGit implements Git {
   }
 
   @override
-  Future<void> fetch(String gitDir, {required String remote}) async {
-    await _gitAsync(['--git-dir=$gitDir', 'fetch', '--quiet', remote]);
+  Future<Commit?> fetch(
+    String gitDir, {
+    required String remote,
+    required String ref,
+  }) async {
+    // Deliberately fetched into no local ref: `FETCH_HEAD` is where the line
+    // lands, and moving anything is the ontology's act one floor up.
+    final result = await Process.run(
+      executable,
+      ['--git-dir=$gitDir', 'fetch', '--quiet', remote, ref],
+      environment: {
+        for (final e in Platform.environment.entries)
+          if (!_poisoned.contains(e.key)) e.key: e.value,
+      },
+      includeParentEnvironment: false,
+      stdoutEncoding: null,
+      stderrEncoding: null,
+    );
+    if (result.exitCode != 0) {
+      // A remote that does not carry this ref is an ordinary answer — the
+      // instance simply does not exist over there. Every other failure is a
+      // network or repository fault and stays a throw.
+      final complaint = _text(result.stderr);
+      if (complaint.contains("couldn't find remote ref")) return null;
+      throw _failure(['fetch', remote, ref], result);
+    }
+    return revParse(gitDir, 'FETCH_HEAD');
   }
 
   static List<String> _lines(String raw) => [

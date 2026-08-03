@@ -75,10 +75,28 @@ final class Instance {
 
   /// The bytes at [path] in this instance's tree, read **at the ref, with no
   /// worktree** — the reading a federated site that only reacts lives on.
-  List<int> read(String path) {
-    final at = tip;
-    if (at == null) throw StateError('not born: $this');
-    return ambientGit.catFile(_gitDir, '${at.sha}:$path');
+  ///
+  /// [at] names a point in this instance's history and defaults to the present
+  /// tip. It is not a convenience: a reader that can only see the present
+  /// cannot answer *was this act legal where it was taken*, and a validator
+  /// asks exactly that, at the parent of the commit landing.
+  List<int> read(String path, {Commit? at}) {
+    final standing = at ?? tip;
+    if (standing == null) throw StateError('not born: $this');
+    return ambientGit.catFile(_gitDir, '${standing.sha}:$path');
+  }
+
+  /// The paths directly under [path] in this instance's tree, sorted, read at
+  /// the ref like [read] and at the same point in history.
+  ///
+  /// The listing half of reading. [read] hands back one path at a time, so
+  /// without this any reader of composite state — a machine folded out of a
+  /// directory of messages — has to leave the ontology to find out what the
+  /// paths are, and the escape hatch ends up doing ordinary work.
+  List<String> ls(String path, {Commit? at}) {
+    final standing = at ?? tip;
+    if (standing == null) throw StateError('not born: $this');
+    return ambientGit.lsTree(_gitDir, at: standing, path: path);
   }
 
   /// Takes one action: opens a private area at the current tip, runs [body] to
@@ -156,10 +174,50 @@ final class Instance {
   Future<void> push(String remote) =>
       ambientGit.push(_gitDir, remote: remote, ref: ref);
 
-  /// Brings the remote's line down. Nothing is merged — divergence is
-  /// legitimate, and joining two lines is an act of its own.
-  Future<void> fetch(String remote) =>
-      ambientGit.fetch(_gitDir, remote: remote);
+  /// Brings this instance's line down from [remote] and advances the local ref
+  /// to it — **the mirror of [push]**, and the reason federation is symmetric:
+  /// push moves the ref over there under the hook over there, fetch moves the
+  /// ref here under the hook here. The same compare-and-swap, so a received act
+  /// is validated, refused and reacted to exactly as a local one is.
+  ///
+  /// Nothing is merged. What lands is a line *extended* — the local tip an
+  /// ancestor of what arrived, or no local tip at all, which is how an instance
+  /// born at another site arrives here for the first time. Two lines that
+  /// genuinely diverged are [Refused]: joining them is an act of its own, and
+  /// divergence is legitimate rather than a fault to repair.
+  Future<ActionResult> fetch(String remote) async {
+    final gitDir = _gitDir;
+    final standing = ambientGit.revParse(gitDir, ref);
+    final arrived = await ambientGit.fetch(gitDir, remote: remote, ref: ref);
+    if (arrived == null) {
+      return Refused('no such instance at $remote', expected: standing);
+    }
+    if (standing != null) {
+      if (standing == arrived) {
+        // Already holding it. Idempotent on purpose: fetching twice is the
+        // ordinary shape of a face that polls, and the second one is not a
+        // refusal.
+        return Landed(Action(gitDir: gitDir, ref: ref, commit: arrived));
+      }
+      if (!ambientGit.isAncestor(gitDir, ancestor: standing, descendant: arrived)) {
+        return Refused('diverged', expected: standing, found: arrived);
+      }
+    }
+    final moved = ambientGit.updateRef(
+      gitDir,
+      ref: ref,
+      newCommit: arrived,
+      expected: standing,
+    );
+    if (!moved) {
+      return Refused(
+        'the ref moved while fetching',
+        expected: standing,
+        found: ambientGit.revParse(gitDir, ref),
+      );
+    }
+    return Landed(Action(gitDir: gitDir, ref: ref, commit: arrived));
+  }
 
   /// The ref this instance is, fully qualified.
   String get ref => 'refs/heads/$id';
