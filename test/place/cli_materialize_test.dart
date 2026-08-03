@@ -79,7 +79,14 @@ void main() {
   }
 
   setUp(() {
-    scratch = Directory.systemTemp.createTempSync('place_materialize_');
+    // Canonical by construction: these tests assert the *printed* path, and a
+    // place answers with its resolved root. The system temp is reached through
+    // a link on some machines, so a habitat that did not say which spelling it
+    // stands in would be asserting its own locality by accident. The other
+    // spelling is a question of its own, asked in `place_locality_test.dart`.
+    scratch = Directory(Directory.systemTemp
+        .createTempSync('place_materialize_')
+        .resolveSymbolicLinksSync());
     campus = '${scratch.path}/campus';
     Directory('$campus/.place').createSync(recursive: true);
     Process.runSync('git', ['init', '--quiet', '--initial-branch=main', campus]);

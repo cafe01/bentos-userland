@@ -27,7 +27,12 @@ String repositoryOf(String placePath, String name) => p.join(
 /// the one thing `IOOverrides` cannot reach — the subprocess.
 final class Site {
   Site([String label = 'site']) {
-    root = Directory.systemTemp.createTempSync('entity_$label');
+    // Resolved: a place answers with its canonical root, and the system temp is
+    // reached through a link on some machines. A site that kept the link's
+    // spelling would have its assertions comparing two vocabularies of one path.
+    root = Directory(Directory.systemTemp
+        .createTempSync('entity_$label')
+        .resolveSymbolicLinksSync());
     Directory('${root.path}/.place').createSync(recursive: true);
     File('${root.path}/.place/place.yaml').writeAsStringSync('name: $label\n');
   }

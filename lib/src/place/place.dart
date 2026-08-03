@@ -467,10 +467,41 @@ final class Place {
   PlaceMeta get _meta =>
       PlaceMeta.load(File(p.join(root.path, _markerName, 'place.yaml')));
 
-  /// The anchor, absolute and normalized against the working directory.
+  /// The anchor, absolute, normalized against the working directory, and
+  /// **canonical** — symbolic links resolved away.
+  ///
+  /// The class speaks one path vocabulary, and this is where it is fixed: a
+  /// place is identified by its resolved root, so two handles reaching one
+  /// directory by different spellings are one place. Canonicalizing here rather
+  /// than at each use is what keeps that true of every derived member at once —
+  /// and load-bearing for the pin, which is a path *relative to* a working tree
+  /// Git always names canonically, so a root spelled through a link would
+  /// compute a relation to a tree it does not appear to be under.
   String get _absoluteAnchor {
     final a = p.normalize(_anchor);
-    return p.isAbsolute(a) ? a : p.normalize(p.join(Directory.current.path, a));
+    final absolute =
+        p.isAbsolute(a) ? a : p.normalize(p.join(Directory.current.path, a));
+    return _canonical(absolute);
+  }
+
+  /// [path] with its links resolved, degrading rather than throwing: a handle
+  /// is legal at a path that does not exist, so the deepest existing ancestor
+  /// is resolved and the absent tail re-appended. A path resolvable nowhere
+  /// answers itself.
+  static String _canonical(String path) {
+    final tail = <String>[];
+    var probe = path;
+    while (true) {
+      try {
+        final resolved = Directory(probe).resolveSymbolicLinksSync();
+        return tail.isEmpty ? resolved : p.joinAll([resolved, ...tail.reversed]);
+      } on FileSystemException {
+        final parentDir = p.dirname(probe);
+        if (parentDir == probe) return path;
+        tail.add(p.basename(probe));
+        probe = parentDir;
+      }
+    }
   }
 
   /// The resolution walk: anchor → referent. Never nowhere.
@@ -504,5 +535,8 @@ final class Place {
     }
   }
 
-  static bool _isHome(String path) => p.equals(path, ambientHome);
+  /// The home probe, in the class's one vocabulary: the walk runs on canonical
+  /// paths, so the ambient home is canonicalized before it is compared. A home
+  /// reached by a link would otherwise never be recognized as the place it is.
+  static bool _isHome(String path) => p.equals(path, _canonical(ambientHome));
 }

@@ -36,7 +36,10 @@ String _stage(Directory scratch, Map<String, String> files) {
 /// A real place on disk. No port is installed around it: above this line the
 /// ambient already **is** [ProcessGit], which is the whole point of Tier C.
 Directory _place(String label) {
-  final root = Directory.systemTemp.createTempSync(label);
+  // Resolved: a place answers with its canonical root, so the habitat states
+  // which spelling it stands in rather than inheriting the system temp's.
+  final root = Directory(
+      Directory.systemTemp.createTempSync(label).resolveSymbolicLinksSync());
   Directory('${root.path}/.place').createSync(recursive: true);
   File('${root.path}/.place/place.yaml').writeAsStringSync('name: $label\n');
   return root;
