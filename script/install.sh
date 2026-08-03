@@ -30,6 +30,7 @@ mkdir -p "$PREFIX"
 EXECUTABLES=(
   "chat-codec:chat_codec"
   "chat-render:chat_render"
+  "entity:entity"
   "llm:llm"
   "mem:mem"
   "place:place"
