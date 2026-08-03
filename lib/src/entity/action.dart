@@ -62,6 +62,16 @@ final class Action {
   /// enough to interpret.
   String get name => nameIn(_record.message) ?? '';
 
+  /// The legible sentence the actor said this act was, or null when it said
+  /// nothing. **Stored, printed, never read**: the floor holds the same posture
+  /// toward it that it holds toward content, and nothing beneath interprets it.
+  ///
+  /// What it buys is a history that reads as *who did what* rather than merely
+  /// *what appeared* — `café · user say · prompt` — which the noun alone cannot
+  /// say, the noun being what an act deposits and never the verb that deposited
+  /// it.
+  String? get sentence => sayIn(_record.message);
+
   /// Who acted, from the commit's author.
   Actor get actor => _record.author;
 
@@ -92,17 +102,51 @@ final class Action {
   /// subject is a human surface and a matcher must not depend on one.
   static const String nameTrailer = 'Bentos-Action';
 
-  /// The message an act commits with, given its noun.
-  static String messageFor(String name) => '$name\n\n$nameTrailer: $name\n';
+  /// The trailer the legible sentence is written in and read back from.
+  ///
+  /// A second trailer rather than the subject alone, for the noun's own reason:
+  /// the subject is a human surface, and a reader that must not parse prose
+  /// needs the fact stated unambiguously. What the subject then carries is the
+  /// sentence when there is one — so `git log --oneline`, which is nobody's
+  /// contract and everybody's first look, reads as the actor's own words.
+  static const String sayTrailer = 'Bentos-Say';
+
+  /// The message an act commits with, given its noun and the sentence its actor
+  /// said it was.
+  ///
+  /// [say] is normalized to one line: a trailer is a line, and a newline in one
+  /// would silently truncate what is read back. Blank is the same as absent.
+  static String messageFor(String name, {String? say}) {
+    final sentence = sayOneLine(say);
+    final subject = sentence ?? name;
+    final buffer = StringBuffer('$subject\n\n$nameTrailer: $name\n');
+    if (sentence != null) buffer.write('$sayTrailer: $sentence\n');
+    return buffer.toString();
+  }
+
+  /// The sentence as it may be written into a trailer, or null when there is
+  /// nothing to say.
+  static String? sayOneLine(String? say) {
+    if (say == null) return null;
+    final flattened = say.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return flattened.isEmpty ? null : flattened;
+  }
 
   /// The declared noun carried by [message], or null when it declares none —
   /// which is what an ordinary Git commit made outside the ontology looks like,
   /// and it is never an error.
-  static String? nameIn(String message) {
+  static String? nameIn(String message) => _trailer(message, nameTrailer);
+
+  /// The legible sentence carried by [message], or null when it carries none —
+  /// which every act took before the sentence existed looks like, and which an
+  /// act that simply had nothing to say looks like too.
+  static String? sayIn(String message) => _trailer(message, sayTrailer);
+
+  static String? _trailer(String message, String key) {
     for (final line in message.split('\n')) {
       final trimmed = line.trim();
-      if (trimmed.startsWith('$nameTrailer:')) {
-        return trimmed.substring(nameTrailer.length + 1).trim();
+      if (trimmed.startsWith('$key:')) {
+        return trimmed.substring(key.length + 1).trim();
       }
     }
     return null;

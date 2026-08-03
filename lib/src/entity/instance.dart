@@ -103,7 +103,8 @@ final class Instance {
 
   /// Takes one action: opens a private area at the current tip, runs [body] to
   /// write into it, commits under the noun [name] with compare-and-swap, and
-  /// releases the area in a `finally`.
+  /// releases the area in a `finally`. [say] rides along as the act's legible
+  /// sentence, stored and never interpreted.
   ///
   /// **The only safe path.** Dart has no destructor, so an exposed lifetime is
   /// a leak by construction — an orphaned directory and a worktree entry left
@@ -121,11 +122,12 @@ final class Instance {
     String name,
     FutureOr<void> Function(Workspace) body, {
     Actor? actor,
+    String? say,
   }) async {
     final workspace = beginAct();
     try {
       await body(workspace);
-      return workspace.commit(name, actor: actor);
+      return workspace.commit(name, actor: actor, say: say);
     } finally {
       workspace.release();
     }

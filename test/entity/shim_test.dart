@@ -62,6 +62,19 @@ exit 0
     File(p.join(repo, 'bentos', phase)).writeAsStringSync('$line\n');
   }
 
+  /// One table line: `<id>\t<instance>\t<action>\t<lifetime>\t<command…>`.
+  String armed(
+    String id,
+    String instance,
+    String action,
+    String command, {
+    String life = 'always',
+  }) =>
+      [id, instance, action, life, command].join('\t');
+
+  String tableOf(String phase) =>
+      File(p.join(repo, 'bentos', phase)).readAsStringSync();
+
   /// A listener that records its arguments and answers with [exitCode].
   String listener(String label, {int exitCode = 0}) {
     final script = File(p.join(tmp.path, label))
@@ -114,7 +127,7 @@ exit $exitCode
   group('the attempted phase holds the act', () {
     test('a listener that refuses aborts the transaction', () {
       declareAction(newSha, 'prompt');
-      arm('attempted', ['r1', '*', 'prompt', listener('validator', exitCode: 1)].join('\t'));
+      arm('attempted', armed('r1', '*', 'prompt', listener('validator', exitCode: 1)));
 
       final result = fireWith('prepared', ['$oldSha $newSha refs/heads/s1']);
       expect(result.exitCode, isNot(0), reason: 'a non-zero exit aborts the update');
@@ -123,7 +136,7 @@ exit $exitCode
 
     test('a listener that consents lets it through, and runs in line', () {
       declareAction(newSha, 'prompt');
-      arm('attempted', ['r1', '*', 'prompt', listener('validator')].join('\t'));
+      arm('attempted', armed('r1', '*', 'prompt', listener('validator')));
 
       expect(fireWith('prepared', ['$oldSha $newSha refs/heads/s1']).exitCode, 0);
       expect(
@@ -137,7 +150,7 @@ exit $exitCode
   group('the landed phase wakes and forgets', () {
     test('a subscriber is fired detached', () async {
       declareAction(newSha, 'reply');
-      arm('landed', ['r2', '*', 'reply', listener('subscriber')].join('\t'));
+      arm('landed', armed('r2', '*', 'reply', listener('subscriber')));
 
       expect(fireWith('committed', ['$oldSha $newSha refs/heads/s1']).exitCode, 0);
       expect(
@@ -149,14 +162,14 @@ exit $exitCode
 
     test('a subscriber that fails does not fail the landing', () async {
       declareAction(newSha, 'reply');
-      arm('landed', ['r2', '*', 'reply', listener('bad', exitCode: 9)].join('\t'));
+      arm('landed', armed('r2', '*', 'reply', listener('bad', exitCode: 9)));
       expect(fireWith('committed', ['$oldSha $newSha refs/heads/s1']).exitCode, 0);
     });
   });
 
   test('the aborted phase publishes the refusal', () async {
     declareAction(newSha, 'prompt');
-    arm('refused', ['r3', '*', '*', listener('onrefused')].join('\t'));
+    arm('refused', armed('r3', '*', '*', listener('onrefused')));
     expect(fireWith('aborted', ['$oldSha $newSha refs/heads/s1']).exitCode, 0);
     expect(await appears(logOf('onrefused')), isTrue);
   });
@@ -164,7 +177,7 @@ exit $exitCode
   group('what is not an action', () {
     setUp(() {
       declareAction(newSha, 'prompt');
-      arm('landed', ['r', '*', '*', listener('any')].join('\t'));
+      arm('landed', armed('r', '*', '*', listener('any')));
     });
 
     test('a birth is not an act', () async {
@@ -196,7 +209,7 @@ exit $exitCode
   group('selection', () {
     test('an action glob that does not match stays silent', () {
       declareAction(newSha, 'prompt');
-      arm('attempted', ['r', '*', 'reply', listener('v', exitCode: 1)].join('\t'));
+      arm('attempted', armed('r', '*', 'reply', listener('v', exitCode: 1)));
       expect(
         fireWith('prepared', ['$oldSha $newSha refs/heads/s1']).exitCode,
         0,
@@ -206,20 +219,20 @@ exit $exitCode
 
     test('an instance glob that does not match stays silent', () {
       declareAction(newSha, 'prompt');
-      arm('attempted', ['r', 's2', 'prompt', listener('v', exitCode: 1)].join('\t'));
+      arm('attempted', armed('r', 's2', 'prompt', listener('v', exitCode: 1)));
       expect(fireWith('prepared', ['$oldSha $newSha refs/heads/s1']).exitCode, 0);
     });
 
     test('a prefix glob selects a family of nouns', () {
       declareAction(newSha, 'tool-result');
-      arm('attempted', ['r', '*', 'tool-*', listener('v', exitCode: 1)].join('\t'));
+      arm('attempted', armed('r', '*', 'tool-*', listener('v', exitCode: 1)));
       expect(fireWith('prepared', ['$oldSha $newSha refs/heads/s1']).exitCode, isNot(0));
     });
 
     test('a commented line is not a fault', () {
       declareAction(newSha, 'prompt');
       File(p.join(repo, 'bentos', 'attempted')).writeAsStringSync(
-        '# disabled for now\n\n${['r', '*', 'prompt', listener('v')].join('\t')}\n',
+        '# disabled for now\n\n${armed('r', '*', 'prompt', listener('v'))}\n',
       );
       expect(fireWith('prepared', ['$oldSha $newSha refs/heads/s1']).exitCode, 0);
       expect(logOf('v').existsSync(), isTrue);
@@ -232,8 +245,82 @@ exit $exitCode
     // worktree's private directory, where no table lives — and would fail
     // SILENTLY, which is the whole reason self-location is a law.
     declareAction(newSha, 'prompt');
-    arm('attempted', ['r', '*', '*', listener('v')].join('\t'));
+    arm('attempted', armed('r', '*', '*', listener('v')));
     expect(fireWith('prepared', ['$oldSha $newSha refs/heads/s1']).exitCode, 0);
     expect(logOf('v').readAsStringSync(), startsWith(repo));
+  });
+
+  group('a once line is spent by firing', () {
+    test('it runs, and it is gone from the table', () async {
+      declareAction(newSha, 'reply');
+      arm('landed', armed('r9', '*', 'reply', listener('sub'), life: 'once'));
+
+      expect(fireWith('committed', ['$oldSha $newSha refs/heads/s1']).exitCode, 0);
+      expect(await appears(logOf('sub')), isTrue, reason: 'it fired');
+      expect(tableOf('landed').trim(), isEmpty, reason: 'and it is spent');
+    });
+
+    test('a second occurrence finds nothing armed', () async {
+      declareAction(newSha, 'reply');
+      arm('landed', armed('r9', '*', 'reply', listener('sub'), life: 'once'));
+
+      fireWith('committed', ['$oldSha $newSha refs/heads/s1']);
+      expect(await appears(logOf('sub')), isTrue);
+      logOf('sub').deleteSync();
+
+      fireWith('committed', ['$oldSha $newSha refs/heads/s1']);
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      expect(logOf('sub').existsSync(), isFalse);
+    });
+
+    test('only the line that fired is spent', () {
+      declareAction(newSha, 'prompt');
+      File(p.join(repo, 'bentos', 'attempted')).writeAsStringSync([
+        armed('r1', '*', 'prompt', listener('spent'), life: 'once'),
+        armed('r2', '*', 'prompt', listener('standing')),
+        armed('r3', '*', 'reply', listener('elsewhere'), life: 'once'),
+      ].join('\n'));
+
+      expect(fireWith('prepared', ['$oldSha $newSha refs/heads/s1']).exitCode, 0);
+      final left = [
+        for (final line in tableOf('attempted').split('\n'))
+          if (line.trim().isNotEmpty) line.split('\t').first,
+      ];
+      expect(left, isNot(contains('r1')), reason: 'r1 fired');
+      expect(left, contains('r2'), reason: 'r2 is not a once line');
+      expect(
+        left,
+        contains('r3'),
+        reason: 'r3 never matched, so it was never spent',
+      );
+    });
+
+    test('refused at attempted, it is spent all the same', () {
+      // The pruning happens at the moment of firing and before the command
+      // runs: a refusal leaves the shim by `exit 1`, and a line pruned after
+      // would fire forever.
+      declareAction(newSha, 'prompt');
+      arm('attempted',
+          armed('r1', '*', 'prompt', listener('gate', exitCode: 1), life: 'once'));
+
+      expect(fireWith('prepared', ['$oldSha $newSha refs/heads/s1']).exitCode, isNot(0));
+      expect(tableOf('attempted').trim(), isEmpty);
+    });
+
+    test('a line armed before the lifetime column keeps its whole command', () {
+      // Tables outlive the binary that wrote them. Read the old shape by the
+      // new rule and the command loses its first argument — silently, in the
+      // one place nothing is watching.
+      declareAction(newSha, 'prompt');
+      arm('attempted', ['r1', '*', 'prompt', '${listener('v')} --at /tmp/ent']
+          .join('\t'));
+
+      expect(fireWith('prepared', ['$oldSha $newSha refs/heads/s1']).exitCode, 0);
+      expect(
+        logOf('v').readAsStringSync().trim(),
+        '--at /tmp/ent $repo refs/heads/s1 $oldSha $newSha prompt',
+      );
+      expect(tableOf('attempted'), contains('r1'), reason: 'and it lives on');
+    });
   });
 }

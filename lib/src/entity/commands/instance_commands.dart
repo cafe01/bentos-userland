@@ -90,6 +90,11 @@ final class LsCommand extends EntityCommand {
 ///
 /// Reading an instance's events in sequence *is* reading its log under another
 /// name, which is why an actor's context comes free with the medium.
+///
+/// The sentence is the last column, and empty when the act said nothing: what
+/// makes the log read as *who did what* rather than *what appeared*. Last
+/// because it is the one field with no fixed shape, so every column before it
+/// stays where a `cut` already found it.
 final class LogCommand extends EntityCommand {
   LogCommand(super.cli);
 
@@ -108,6 +113,7 @@ final class LogCommand extends EntityCommand {
           act.name,
           act.actor.name,
           act.instant.toIso8601String(),
+          act.sentence ?? '',
         ].join('\t'),
       );
     }
@@ -141,6 +147,9 @@ final class ShowCommand extends EntityCommand {
     final act = selected.first;
     cli.out.writeln('action\t${act.name}');
     cli.out.writeln('actor\t${act.actor.name}');
+    // Only when there is one: a field printed empty would say the act declared
+    // a sentence and left it blank, which is a different fact.
+    if (act.sentence != null) cli.out.writeln('say\t${act.sentence}');
     cli.out.writeln('parent\t${act.parent.sha}');
     for (final change in act.diff().changes) {
       cli.out.writeln('${change.kind.name}\t${change.path}');

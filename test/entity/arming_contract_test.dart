@@ -1,4 +1,7 @@
 import 'package:bentos_userland/entity.dart';
+// The table's layout is that component's alone and stays out of the public
+// surface, so the wire form is proven where it lives.
+import 'package:bentos_userland/src/entity/arming/arming.dart';
 import 'package:test/test.dart';
 
 import 'helpers.dart';
@@ -100,6 +103,67 @@ void main() {
         final r = llm.on({EventPattern.parse('prompt.landed')}, command: ['x']);
         expect(r.instance, '*');
       });
+    });
+
+    test('a line armed by `once` says so, and one armed by `on` does not', () {
+      site.run(() {
+        final spent = llm.once({EventPattern.parse('reply.landed')}, command: ['m']);
+        final standing = llm.on({EventPattern.parse('prompt.landed')}, command: ['r']);
+        expect(spent.once, isTrue);
+        expect(standing.once, isFalse);
+        // Round trip: the lifetime is what the table carries, not what the
+        // handle remembers — the shim reads the file and nothing else.
+        final read = {for (final l in llm.listeners) l.id: l.once};
+        expect(read[spent.id], isTrue);
+        expect(read[standing.id], isFalse);
+      });
+    });
+  });
+
+  group('the wire form of a line', () {
+    Registration line(String encoded) =>
+        ArmingTables.decode(encoded, EventPhase.landed)!;
+
+    test('round trips through the table, lifetime and all', () {
+      const armed = Registration(
+        id: 'r7',
+        instance: 's1',
+        pattern: EventPattern(action: 'prompt', phase: EventPhase.landed),
+        command: ['llm-runner', '--at', '/tmp/ent'],
+        once: true,
+      );
+      final read = line(ArmingTables.encode(armed));
+      expect(read.id, 'r7');
+      expect(read.instance, 's1');
+      expect(read.pattern.action, 'prompt');
+      expect(read.command, ['llm-runner', '--at', '/tmp/ent']);
+      expect(read.once, isTrue);
+    });
+
+    test('a line written before the lifetime existed keeps its whole command', () {
+      // Tables are per installation and outlive the binary that wrote them. Read
+      // the old shape by the new rule and the command silently loses its first
+      // argument — in the one place nobody is watching.
+      final read = line(['r1', '*', 'prompt', 'llm-runner --at /tmp/ent'].join('\t'));
+      expect(read.command, ['llm-runner', '--at', '/tmp/ent']);
+      expect(read.once, isFalse);
+    });
+
+    test('a command whose first word is a lifetime word is still the command', () {
+      final read = line(['r1', '*', 'prompt', 'always', 'once --now'].join('\t'));
+      expect(read.command, ['once', '--now']);
+      expect(read.once, isFalse);
+    });
+
+    test('a blank, a comment and a line with no command are not lines', () {
+      expect(ArmingTables.decode('', EventPhase.landed), isNull);
+      expect(ArmingTables.decode('# off for now', EventPhase.landed), isNull);
+      expect(
+        ArmingTables.decode(['r1', '*', 'prompt', 'once', ''].join('\t'),
+            EventPhase.landed),
+        isNull,
+        reason: 'a registration with nothing to wake is not a registration',
+      );
     });
   });
 }

@@ -5,9 +5,9 @@ import '../../git/model/actor.dart';
 import '../entity_runner.dart';
 import 'entity_command.dart';
 
-/// `entity act <coord> <action> [--actor <a>] -- <command>` — the porcelain of
-/// the whole write: the bracket with the command as its body, so an actor
-/// script is its own body and nothing else.
+/// `entity act <coord> <action> [--actor <a>] [--say <phrase>] -- <command>` —
+/// the porcelain of the whole write: the bracket with the command as its body,
+/// so an actor script is its own body and nothing else.
 ///
 /// It opens a private area at the tip, runs the command in it, commits under
 /// the declared noun with compare-and-swap, and releases. **It does not invoke
@@ -18,7 +18,13 @@ import 'entity_command.dart';
 /// `.attempted` said no. Both are ordinary, and a caller retries by re-reading.
 final class ActCommand extends EntityCommand {
   ActCommand(super.cli) {
-    argParser.addOption('actor', help: 'The identity written as the author.');
+    argParser
+      ..addOption('actor', help: 'The identity written as the author.')
+      ..addOption(
+        'say',
+        help: 'The legible sentence, stored and never interpreted.',
+        valueHelp: 'phrase',
+      );
   }
 
   @override
@@ -60,6 +66,7 @@ final class ActCommand extends EntityCommand {
         if (code != 0) throw _BodyFailed(code);
       },
       actor: actor == null ? null : Actor(actor),
+      say: argResults!['say'] as String?,
     );
     cli.report(result);
   }

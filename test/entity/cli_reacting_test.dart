@@ -29,7 +29,7 @@ void main() {
       expect(id, isNotEmpty);
 
       final armed = await cli.run(['listeners', 't.chat:*']);
-      expect(armed.out, contains('$id\t*\tprompt.landed\tnotify.sh --loud'));
+      expect(armed.out, contains('$id\t*\tprompt.landed\talways\tnotify.sh --loud'));
     });
 
     test('several events, an id per line — none of them unreachable',
@@ -55,8 +55,8 @@ void main() {
       await cli.run(['on', 't.chat:*', '*.landed', '--', 'notify.sh']);
 
       final r = await cli.run(['listeners', 't.chat:*']);
-      expect(r.out, contains('prompt.attempted\tgate.sh'));
-      expect(r.out, contains('*.landed\tnotify.sh'));
+      expect(r.out, contains('prompt.attempted\talways\tgate.sh'));
+      expect(r.out, contains('*.landed\talways\tnotify.sh'));
     });
 
     test('an unreadable pattern is never silently armed on nothing', () async {
@@ -69,6 +69,54 @@ void main() {
 
     test('without a command, it is a usage fault', () async {
       final r = await cli.run(['on', 't.chat:*', 'prompt.landed']);
+
+      expect(r.code, EntityRunner.usageCode);
+      expect(r.err, contains('-- <command>'));
+    });
+  });
+
+  group('entity once', () {
+    test('arms a line that says it will spend itself', () async {
+      final r = await cli.run(
+        ['once', 't.chat:c1', 'reply.landed', '--', 'monitor.sh'],
+      );
+
+      expect(r.code, 0);
+      final armed = await cli.run(['listeners', 't.chat:c1']);
+      expect(armed.out, contains('${r.out.trim()}\tc1\treply.landed\tonce\tmonitor.sh'));
+    });
+
+    test('it is `on` in every respect but the lifetime', () async {
+      final spent = await cli.run(['once', 't.chat:*', 'reply.landed', '--', 'm.sh']);
+      final standing = await cli.run(['on', 't.chat:*', 'reply.landed', '--', 'm.sh']);
+
+      final lines = {
+        for (final line in (await cli.run(['listeners', 't.chat:*'])).out.trim().split('\n'))
+          line.split('\t').first: line.split('\t')[3],
+      };
+      expect(lines[spent.out.trim()], 'once');
+      expect(lines[standing.out.trim()], 'always');
+    });
+
+    test('off takes its id like any other', () async {
+      final id = (await cli.run(
+        ['once', 't.chat:*', 'reply.landed', '--', 'm.sh'],
+      )).out.trim();
+
+      await cli.run(['off', 't.chat:*', id]);
+      expect((await cli.run(['listeners', 't.chat:*'])).out, isEmpty);
+    });
+
+    test('an unreadable pattern is never silently armed on nothing', () async {
+      final r = await cli.run(['once', 't.chat:*', 'reply.happened', '--', 'm.sh']);
+
+      expect(r.code, EntityRunner.usageCode);
+      expect(r.err, contains('unknown phase'));
+      expect((await cli.run(['listeners', 't.chat:*'])).out, isEmpty);
+    });
+
+    test('without a command, it is a usage fault', () async {
+      final r = await cli.run(['once', 't.chat:*', 'reply.landed']);
 
       expect(r.code, EntityRunner.usageCode);
       expect(r.err, contains('-- <command>'));

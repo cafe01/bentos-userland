@@ -52,11 +52,14 @@ final class Workspace {
   /// Closes the act: the area's content becomes a commit declared as [name],
   /// and the ref moves by compare-and-swap against [expectedTip].
   ///
+  /// [say] is the legible sentence — what a person reads, stored beside the
+  /// noun and never interpreted here or anywhere beneath.
+  ///
   /// Returns [Landed] or [Refused]; it does not throw for a lost race, which is
   /// an ordinary outcome and not an error. Releasing is **not** implied — the
   /// plumbing family's caller may still want the directory, and the bracket
   /// releases in its own `finally`.
-  ActionResult commit(String name, {Actor? actor}) {
+  ActionResult commit(String name, {Actor? actor, String? say}) {
     // The payload is hashed before the ref is in question — which is why a
     // refusal one step later cannot rewrite it, and why the object of a refused
     // act still exists, orphaned.
@@ -65,7 +68,7 @@ final class Workspace {
       gitDir,
       tree: tree,
       parents: [expectedTip.sha],
-      message: Action.messageFor(name),
+      message: Action.messageFor(name, say: say),
       actor: actor,
     );
     final landed = ambientGit.updateRef(

@@ -89,6 +89,25 @@ void main() {
       expect(Directory(opened.area).existsSync(), isFalse);
     });
 
+    test('the plumbing says the sentence too — a program is a caller here',
+        () async {
+      // The family that matters most: the callers are programs, and an actor
+      // whose write does not fit the bracket must still be able to say what it
+      // did. Without this the sentence is a porcelain-only fact.
+      final opened = await work('t.chat:c1');
+      File('${opened.area}/1.txt').writeAsStringSync('hello');
+
+      await cli.run([
+        'commit', 't.chat:c1', 'prompt',
+        '-w', opened.area, '--parent', opened.parent, '--actor', 'cafe',
+        '--say', 'user say',
+      ]);
+
+      expect((await cli.run(['log', 't.chat:c1'])).out.trim().split('\t').last,
+          'user say');
+      await cli.run(['release', opened.area]);
+    });
+
     test('a stale parent is refused, and refusal is not an error', () async {
       // Two actors read the same tip. The first lands; the second is holding a
       // value the ref no longer has, and the substrate refuses it under lock.

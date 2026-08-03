@@ -53,12 +53,14 @@ final class ArmingTables {
     required String instance,
     required EventPattern pattern,
     required List<String> command,
+    bool once = false,
   }) {
     final armed = Registration(
       id: _mintId(),
       instance: instance,
       pattern: pattern,
       command: command,
+      once: once,
     );
     final table = tableFor(pattern.phase)..parent.createSync(recursive: true);
     table.writeAsStringSync(
@@ -102,26 +104,49 @@ final class ArmingTables {
     }
   }
 
-  /// The wire form of one line: `<id>\t<instance>\t<action>\t<command…>`.
+  /// The wire form of one line:
+  /// `<id>\t<instance>\t<action>\t<lifetime>\t<command…>`.
   ///
   /// Tab-separated because the shim reads it with `IFS=$'\t' read`, and because
   /// a command line contains spaces and must survive being written by a
   /// program and read by a shell without either quoting the other's dialect.
-  static String encode(Registration r) =>
-      [r.id, r.instance, r.pattern.action, r.command.join(' ')].join('\t');
+  ///
+  /// The lifetime stands before the command because the command is the only
+  /// variadic field — and it is spelled in words rather than a flag so that a
+  /// person reading the table sees what the line will do to itself.
+  static String encode(Registration r) => [
+        r.id,
+        r.instance,
+        r.pattern.action,
+        r.once ? onceLifetime : alwaysLifetime,
+        r.command.join(' '),
+      ].join('\t');
+
+  static const String alwaysLifetime = 'always';
+  static const String onceLifetime = 'once';
 
   /// Reads one line back. Returns null for a blank or commented line — a table
   /// is a file people edit, and a comment is not a fault.
+  ///
+  /// A line with no lifetime column is read as `always` with the whole tail as
+  /// its command: tables are per installation and outlive the binary that wrote
+  /// them, and an upgraded installation whose lines suddenly lost their first
+  /// argument would fail silently, in the one place nothing is watching.
   static Registration? decode(String line, EventPhase phase) {
     final trimmed = line.trim();
     if (trimmed.isEmpty || trimmed.startsWith('#')) return null;
     final parts = line.split('\t');
     if (parts.length < 4) return null;
+    final declared = parts[3].trim();
+    final stated = declared == onceLifetime || declared == alwaysLifetime;
+    final tail = parts.sublist(stated ? 4 : 3).join('\t').trim();
+    if (tail.isEmpty) return null;
     return Registration(
       id: parts[0],
       instance: parts[1],
       pattern: EventPattern(action: parts[2], phase: phase),
-      command: parts.sublist(3).join('\t').trim().split(RegExp(r'\s+')),
+      command: tail.split(RegExp(r'\s+')),
+      once: declared == onceLifetime,
     );
   }
 }

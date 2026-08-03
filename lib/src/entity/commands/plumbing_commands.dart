@@ -114,8 +114,8 @@ final class WorkCommand extends EntityCommand {
   }
 }
 
-/// `entity commit <coord> <action> -w <path> --parent <sha> [--actor <a>]` —
-/// close an act opened by `work`.
+/// `entity commit <coord> <action> -w <path> --parent <sha> [--actor <a>] [--say <phrase>]`
+/// — close an act opened by `work`.
 ///
 /// `--parent` is the whole reason the last step is plumbing: ordinary Git
 /// commits onto whatever tip it finds when it runs, and an act must instead
@@ -130,7 +130,12 @@ final class CommitCommand extends EntityCommand {
     argParser
       ..addOption('worktree', abbr: 'w', help: 'The area opened by `work`.')
       ..addOption('parent', help: 'The value the ref must still hold.')
-      ..addOption('actor', help: 'The identity written as the author.');
+      ..addOption('actor', help: 'The identity written as the author.')
+      ..addOption(
+        'say',
+        help: 'The legible sentence, stored and never interpreted.',
+        valueHelp: 'phrase',
+      );
   }
 
   @override
@@ -158,7 +163,11 @@ final class CommitCommand extends EntityCommand {
       expectedTip: Commit(parent),
     );
     cli.report(
-      workspace.commit(rest[1], actor: actor == null ? null : Actor(actor)),
+      workspace.commit(
+        rest[1],
+        actor: actor == null ? null : Actor(actor),
+        say: argResults!['say'] as String?,
+      ),
     );
   }
 }

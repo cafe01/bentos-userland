@@ -198,6 +198,64 @@ void main() {
     });
   });
 
+  group('the legible sentence', () {
+    Future<Action> sayingAct(String? say) async {
+      final landed = await site.runAsync(
+        () => llm.instance('s1').act(
+              'prompt',
+              (ws) => File(p.join(ws.directory.path, 'm.txt'))
+                  .writeAsStringSync('hello'),
+              actor: const Actor('cafe'),
+              say: say,
+            ),
+      ) as Landed;
+      return landed.action;
+    }
+
+    test('rides along with the act and comes back whole', () async {
+      final act = await sayingAct('user say');
+      expect(act.sentence, 'user say');
+      expect(act.name, 'prompt', reason: 'the noun is untouched by it');
+    });
+
+    test('an act that said nothing has no sentence', () async {
+      expect(await sayingAct(null).then((a) => a.sentence), isNull);
+      expect(
+        await sayingAct('   ').then((a) => a.sentence),
+        isNull,
+        reason: 'blank is the same as absent, never an empty sentence',
+      );
+    });
+
+    test('it is normalized to one line, because a trailer is a line', () {
+      expect(Action.sayOneLine('user\nsay'), 'user say');
+      expect(
+        Action.sayIn(Action.messageFor('prompt', say: 'user\nsay')),
+        'user say',
+        reason: 'a newline in the trailer would truncate what is read back',
+      );
+    });
+
+    test('the subject carries it, so `log --oneline` reads as the actor', () {
+      expect(
+        Action.messageFor('prompt', say: 'user say').split('\n').first,
+        'user say',
+      );
+      expect(
+        Action.messageFor('prompt').split('\n').first,
+        'prompt',
+        reason: 'with nothing said, the noun is still the subject',
+      );
+    });
+
+    test('the substrate reads the noun and never the sentence', () async {
+      // The sentence is stored, printed and never interpreted — so a sentence
+      // that spells another noun changes nothing about what matched.
+      final act = await sayingAct('reply');
+      expect(act.name, 'prompt');
+    });
+  });
+
   group('what an act is not', () {
     test('acting never wakes a listener in process', () async {
       final witness = File(p.join(site.root.path, 'woken'));

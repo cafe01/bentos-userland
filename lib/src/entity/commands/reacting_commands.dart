@@ -1,3 +1,4 @@
+import '../arming/arming.dart';
 import '../event.dart';
 import 'entity_command.dart';
 
@@ -11,7 +12,7 @@ import 'entity_command.dart';
 ///
 /// Arming is per installation and never tracked, so what differs between two
 /// deployments of one entity is one line in a table.
-final class OnCommand extends EntityCommand {
+final class OnCommand extends ArmingCommand {
   OnCommand(super.cli);
 
   @override
@@ -21,12 +22,46 @@ final class OnCommand extends EntityCommand {
   String get description => 'Arm a command on an entity\'s events.';
 
   @override
+  bool get spent => false;
+}
+
+/// `entity once <coord> <event>[,<event>] -- <command>` — the same line with its
+/// own removal attached: it fires, and it is gone.
+///
+/// **The only lifecycle the floor offers a subscriber.** Liveness, a pid, a
+/// signal, a body that outlives its wake — all of that is the actor's own, and
+/// nothing here holds a notion of a live one. This serves the caller that wants
+/// exactly the next occurrence and nothing after it.
+///
+/// One line per event, so `once` on two events that fire once each fires twice.
+/// Whoever wants them spent together is describing an actor.
+final class OnceCommand extends ArmingCommand {
+  OnceCommand(super.cli);
+
+  @override
+  String get name => 'once';
+
+  @override
+  String get description => 'Arm a command that fires once, then unregisters.';
+
+  @override
+  bool get spent => true;
+}
+
+/// What `on` and `once` share: everything but whether the line survives firing.
+abstract base class ArmingCommand extends EntityCommand {
+  ArmingCommand(super.cli);
+
+  /// Whether the line removes itself when it fires.
+  bool get spent;
+
+  @override
   Future<void> run() async {
     final rest = argResults!.rest;
-    if (rest.length < 2) usageException('on: <coord> <event> are required');
+    if (rest.length < 2) usageException('$name: <coord> <event> are required');
     final woken = body();
     if (woken.isEmpty) {
-      usageException('on: the command is required — `-- <command>`');
+      usageException('$name: the command is required — `-- <command>`');
     }
 
     final coord = coordinate();
@@ -38,13 +73,11 @@ final class OnCommand extends EntityCommand {
       try {
         pattern = EventPattern.parse(text.trim());
       } on FormatException catch (e) {
-        usageException('on: ${e.message}');
+        usageException('$name: ${e.message}');
       }
-      final armed = entity.on(
-        {pattern},
-        command: woken,
-        instance: coord.instance,
-      );
+      final armed = spent
+          ? entity.once({pattern}, command: woken, instance: coord.instance)
+          : entity.on({pattern}, command: woken, instance: coord.instance);
       cli.out.writeln(armed.id);
     }
   }
@@ -91,9 +124,17 @@ final class ListenersCommand extends EntityCommand {
           line.instance != coord.instance) {
         continue;
       }
+      // The lifetime is printed because a line that will disappear on its next
+      // firing is not the same fact as one that will not, and a table read as
+      // if it were would be the graph lying about itself.
       cli.out.writeln(
-        [line.id, line.instance, '${line.pattern}', line.command.join(' ')]
-            .join('\t'),
+        [
+          line.id,
+          line.instance,
+          '${line.pattern}',
+          line.once ? ArmingTables.onceLifetime : ArmingTables.alwaysLifetime,
+          line.command.join(' '),
+        ].join('\t'),
       );
     }
   }

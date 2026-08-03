@@ -443,6 +443,33 @@ void main() {
       expect(witness.readAsStringSync().trim(), equals('reply'));
     });
 
+    test('a once line fires on the real substrate and is gone', () async {
+      // The axis neither other tier varies: a real repository, the real git
+      // transaction, and a line that must remove itself from a table the hook
+      // is reading at that instant.
+      final armed = thing.once(
+        {const EventPattern(action: '*', phase: EventPhase.landed)},
+        command: [_listener(site, 'onceling', 'printf "%s\\n" "\$5" >> "${witness.path}"')],
+      );
+
+      expect(await one.act('note', (w) {
+        File('${w.directory.path}/a').writeAsStringSync('1\n');
+      }), isA<Landed>());
+      await _settles(witness);
+      expect(witness.readAsStringSync().trim(), 'note');
+      expect(thing.listeners.map((l) => l.id), isNot(contains(armed.id)));
+
+      expect(await one.act('note2', (w) {
+        File('${w.directory.path}/b').writeAsStringSync('2\n');
+      }), isA<Landed>());
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      expect(
+        witness.readAsStringSync().trim(),
+        'note',
+        reason: 'the second landing found nothing armed',
+      );
+    });
+
     test('a landing wakes a subscriber that outlives the git process', () async {
       // A landing is never held hostage to what it wakes: the listener sleeps
       // past every process in the chain, and the act returns without it.

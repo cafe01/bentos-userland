@@ -46,6 +46,39 @@ void main() {
       expect(log.out, contains('\tprompt\talfred\t'));
     });
 
+    test('--say rides along, and the log reads as who did what', () async {
+      await cli.run([
+        'act', 't.chat:c1', 'prompt', '--actor', 'cafe',
+        '--say', 'user say', '--', ...writes('1.txt', 'hello'),
+      ]);
+
+      final log = await cli.run(['log', 't.chat:c1']);
+      expect(log.out.trim().split('\t').last, 'user say');
+
+      final shown = await cli.run([
+        'show', 't.chat:c1', log.out.trim().split('\t').first,
+      ]);
+      expect(shown.out, contains('say\tuser say'));
+      expect(shown.out, contains('action\tprompt'),
+          reason: 'the noun is what it always was');
+    });
+
+    test('an act that said nothing leaves the column empty and says no more',
+        () async {
+      await cli.run(['act', 't.chat:c1', 'prompt', '--', ...writes('1.txt', 'a')]);
+
+      final log = await cli.run(['log', 't.chat:c1']);
+      // The raw line, not a trimmed one: a trailing empty field is exactly what
+      // `trim` eats, and the column is still there.
+      final fields = log.out.split('\n').first.split('\t');
+      expect(fields, hasLength(5));
+      expect(fields.last, isEmpty);
+
+      final shown = await cli.run(['show', 't.chat:c1', fields.first]);
+      expect(shown.out, isNot(contains('say\t')),
+          reason: 'an empty field would claim the act declared one and left it blank');
+    });
+
     test('a talkative body does not pollute the answer', () async {
       final r = await cli.run([
         'act', 't.chat:c1', 'prompt', '--',

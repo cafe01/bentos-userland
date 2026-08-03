@@ -267,6 +267,34 @@ final class Entity {
     Set<EventPattern> events, {
     required List<String> command,
     String instance = '*',
+  }) =>
+      _arm(events, command: command, instance: instance, once: false);
+
+  /// Arms [command] the same way, with its own removal attached: the line is
+  /// gone the moment it fires.
+  ///
+  /// **The only lifecycle the floor offers a subscriber.** Everything else
+  /// about a listener's life belongs to the actor — a standing process is an
+  /// actor with a body of its own, and nothing here holds a notion of a live
+  /// one. What this serves is the caller that wants exactly the next
+  /// occurrence: a face that types a turn and falls into a monitor until the
+  /// reaction it waited for arrives.
+  ///
+  /// One line per pattern, so arming on two events and having one fire leaves
+  /// the other armed. Whoever wants both spent together is describing an actor,
+  /// not a registration.
+  Registration once(
+    Set<EventPattern> events, {
+    required List<String> command,
+    String instance = '*',
+  }) =>
+      _arm(events, command: command, instance: instance, once: true);
+
+  Registration _arm(
+    Set<EventPattern> events, {
+    required List<String> command,
+    required String instance,
+    required bool once,
   }) {
     if (events.isEmpty) {
       throw ArgumentError.value(events, 'events', 'arm on at least one');
@@ -274,8 +302,12 @@ final class Entity {
     final tables = ArmingTables(_gitDir)..ensureArmed();
     Registration? first;
     for (final pattern in events) {
-      final armed =
-          tables.add(instance: instance, pattern: pattern, command: command);
+      final armed = tables.add(
+        instance: instance,
+        pattern: pattern,
+        command: command,
+        once: once,
+      );
       first ??= armed;
     }
     return first!;

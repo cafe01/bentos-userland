@@ -71,6 +71,7 @@ final class EntityRunner {
       ..addCommand(MaterializeCommand(this))
       ..addCommand(RefreshCommand(this))
       ..addCommand(OnCommand(this))
+      ..addCommand(OnceCommand(this))
       ..addCommand(OffCommand(this))
       ..addCommand(ListenersCommand(this))
       ..addCommand(ResolveCommand(this))

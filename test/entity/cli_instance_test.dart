@@ -167,6 +167,9 @@ void main() {
         'reply',
         'llm',
         anything,
+        // The sentence, empty when the act said nothing. Last, so every column
+        // before it stays where a `cut` already found it.
+        '',
       ]);
       expect(lines.last.split('\t')[0], first.commit.sha);
       expect(lines.last.split('\t')[1], 'prompt');

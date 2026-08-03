@@ -85,6 +85,7 @@ final class Registration {
     required this.instance,
     required this.pattern,
     required this.command,
+    this.once = false,
   });
 
   /// The handle `off` takes. Stable for the life of the line.
@@ -104,4 +105,14 @@ final class Registration {
   /// listener needs and nothing about a worktree, since a site armed to react
   /// may hold no worktree at all.
   final List<String> command;
+
+  /// Whether this line removes itself when it fires — **the only lifecycle the
+  /// floor offers a subscriber**. Everything else about a listener's life is
+  /// the actor's own: liveness, a pid, a signal, a body that outlives its wake.
+  ///
+  /// The removal happens at the moment of firing and before the command runs,
+  /// so a line can never fire twice — including at `.attempted`, where a
+  /// refusal ends the transaction and would otherwise leave the shim no path to
+  /// the pruning.
+  final bool once;
 }

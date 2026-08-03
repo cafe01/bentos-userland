@@ -56,8 +56,13 @@ const String referenceTransactionShim = r'''#!/usr/bin/env bash
 #   $REPO/bentos/landed      woken detached
 #   $REPO/bentos/refused     woken detached
 # Line format, tab-separated:
-#   <id>\t<instance-glob>\t<action-glob>\t<command...>
+#   <id>\t<instance-glob>\t<action-glob>\t<always|once>\t<command...>
 # Each command is called as: <cmd> <repo> <ref> <old> <new> <action>
+#
+# A `once` line is pruned from its table at the moment it matches and BEFORE
+# its command runs — so it can never fire twice, including at `prepared`, where
+# a refusal exits this script immediately. The table is replaced by rename, so
+# the loop reading it keeps the file it opened.
 
 set -uo pipefail
 
@@ -80,6 +85,7 @@ unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_QUARANTINE_P
 
 ZERO=0000000000000000000000000000000000000000
 LOG="$REPO/bentos/reactor.log"
+TAB=$'\t'
 
 while read -r old new ref; do
   case "$ref" in refs/heads/*) ;; *) continue ;; esac
@@ -93,14 +99,29 @@ while read -r old new ref; do
            | sed -n 's/^Bentos-Action: //p' | head -n 1)
   [ -n "$action" ] || action="-"
 
-  while IFS=$'\t' read -r id inst_glob act_glob cmd; do
+  while IFS=$'\t' read -r id inst_glob act_glob life cmd; do
     [ -z "${id:-}" ] && continue
     case "$id" in \#*) continue ;; esac
+    # A line written before the lifetime column existed: the tail is all
+    # command, and it lives forever. Reading it any other way would silently
+    # eat its first argument.
+    case "${life:-}" in
+      once|always) ;;
+      *) cmd="${life:-}${cmd:+$TAB$cmd}"; life=always ;;
+    esac
     [ -n "${cmd:-}" ] || continue
     # shellcheck disable=SC2254
     case "$instance" in $inst_glob) ;; *) continue ;; esac
     # shellcheck disable=SC2254
     case "$action" in $act_glob) ;; *) continue ;; esac
+
+    # Fired means spent. Pruned before the command runs, because at `prepared` a
+    # refusal leaves this script by `exit 1` and would never come back for it.
+    if [ "$life" = "once" ]; then
+      pruned="$TABLE.$$"
+      grep -v "^$id$TAB" "$TABLE" > "$pruned" 2>/dev/null
+      mv -f "$pruned" "$TABLE"
+    fi
 
     if [ "$hold" = "1" ]; then
       if ! $cmd "$REPO" "$ref" "$old" "$new" "$action" >>"$LOG" 2>&1; then
