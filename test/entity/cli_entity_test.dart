@@ -171,6 +171,100 @@ void main() {
     });
   });
 
+  group('entity fetch', () {
+    /// Two sites over one port, and a line taken at the far one — the shape
+    /// federation actually has: A publishes to B, and the way back is `fetch`
+    /// by the name publishing already declared.
+    Future<({Site there, String remote, Action taken})> published() async {
+      final origin = Site('origin');
+      addTearDown(origin.dispose);
+      final away = repositoryOf(origin.root.path, 't.chat');
+      await Cli(origin, git: site.git).run(['create', 't.chat']);
+      await Cli(origin, git: site.git).run(['new', 't.chat', 'c1']);
+
+      await cli.run(['install', away, '--as', 't.chat']);
+      final taken = await site.runAsync(() async {
+        final result = await Entity('t.chat', from: origin.root.path)
+            .instance('c1')
+            .act('prompt', (w) {
+          File('${w.directory.path}/1.txt').writeAsStringSync('over there');
+        });
+        return (result as Landed).action;
+      });
+      return (there: origin, remote: 'origin', taken: taken);
+    }
+
+    test('brings the line down and moves the ref here', () async {
+      final far = await published();
+
+      final r = await cli.run(['fetch', 't.chat:c1', far.remote]);
+      expect(r.code, 0);
+      expect(r.out.trim(), far.taken.commit.sha);
+      expect((await cli.run(['tip', 't.chat:c1'])).out.trim(),
+          far.taken.commit.sha);
+      expect((await cli.run(['read', 't.chat:c1:1.txt'])).out, 'over there');
+    });
+
+    test('fetching twice is not a refusal', () async {
+      final far = await published();
+
+      await cli.run(['fetch', 't.chat:c1', far.remote]);
+      final again = await cli.run(['fetch', 't.chat:c1', far.remote]);
+      expect(again.code, 0);
+      expect(again.out.trim(), far.taken.commit.sha);
+    });
+
+    test('a line that diverged is refused, and the ref does not move',
+        () async {
+      final far = await published();
+      await cli.run(['fetch', 't.chat:c1', far.remote]);
+      // Both sides act on the same parent: two lines, legitimately.
+      await site.runAsync(() async =>
+          Entity('t.chat', from: far.there.root.path).instance('c1').act(
+              'reply', (w) => File('${w.directory.path}/2.txt').writeAsStringSync('theirs')));
+      final mine = await site.runAsync(() async {
+        final result = await Entity('t.chat', from: site.root.path)
+            .instance('c1')
+            .act('reply', (w) {
+          File('${w.directory.path}/3.txt').writeAsStringSync('mine');
+        });
+        return (result as Landed).action;
+      });
+
+      final r = await cli.run(['fetch', 't.chat:c1', far.remote]);
+      expect(r.code, EntityRunner.refusedCode);
+      expect(r.err, contains('diverged'));
+      expect((await cli.run(['tip', 't.chat:c1'])).out.trim(), mine.commit.sha);
+    });
+
+    test('an undeclared remote is not found — never a raw URL', () async {
+      final far = await published();
+      final away = repositoryOf(far.there.root.path, 't.chat');
+
+      final r = await cli.run(['fetch', 't.chat:c1', away]);
+      expect(r.code, EntityRunner.notFoundCode);
+      expect(r.err, contains('declares no remote'));
+      expect(r.out, isEmpty,
+          reason: 'founding a relation sideways would make remotes lie');
+    });
+
+    test('an instance the remote never carried is refused', () async {
+      final far = await published();
+
+      final r = await cli.run(['fetch', 't.chat:ghost', far.remote]);
+      expect(r.code, EntityRunner.refusedCode);
+      expect(r.err, contains('no such instance'));
+    });
+
+    test('without a remote, it is a usage fault', () async {
+      await cli.run(['create', 't.chat']);
+
+      final r = await cli.run(['fetch', 't.chat:c1']);
+      expect(r.code, EntityRunner.usageCode);
+      expect(r.err, contains('<remote>'));
+    });
+  });
+
   group('entity install', () {
     test('clones into this place, registers, and materializes nothing',
         () async {

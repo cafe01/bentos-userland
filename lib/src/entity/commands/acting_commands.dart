@@ -71,12 +71,19 @@ final class _BodyFailed implements Exception {
   final int code;
 }
 
-/// `entity read <coord>:<path>` — bytes, without materializing.
+/// `entity read <coord>:<path> [--at <sha>]` — bytes, without materializing.
 ///
 /// The reading a federated site that only reacts lives on: it holds no worktree
-/// at all, and still reads the state it must judge.
+/// at all, and still reads the state it must judge — at the tip by default, and
+/// at any point of the instance's line when the judgment is about one.
 final class ReadCommand extends EntityCommand {
-  ReadCommand(super.cli);
+  ReadCommand(super.cli) {
+    argParser.addOption(
+      'at',
+      help: 'Read at this commit rather than at the tip.',
+      valueHelp: 'sha',
+    );
+  }
 
   @override
   String get name => 'read';
@@ -93,7 +100,9 @@ final class ReadCommand extends EntityCommand {
     }
     // Bytes, verbatim: an instance may hold anything, and a coreutil that
     // decoded on the way out would be lying about what is stored.
-    cli.writeBytes(cli.instanceAt(coord, place: placeOption).read(path));
+    cli.writeBytes(
+      cli.instanceAt(coord, place: placeOption).read(path, at: pointInHistory()),
+    );
   }
 }
 

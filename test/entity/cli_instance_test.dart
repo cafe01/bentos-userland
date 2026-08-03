@@ -93,6 +93,63 @@ void main() {
       expect(r.code, 0);
       expect(r.out, isEmpty);
     });
+
+    test('a coordinate lists the instance\'s tree, one level, names only',
+        () async {
+      await cli.run(['new', 't.chat', 'c1']);
+      await act('c1', 'prompt', {
+        'messages/1.json': 'a',
+        'messages/2.json': 'b',
+        'messages/deep/3.json': 'c',
+      });
+
+      final r = await cli.run(['ls', 't.chat:c1:messages']);
+      expect(r.code, 0);
+      expect(r.out.trim().split('\n'),
+          ['messages/1.json', 'messages/2.json', 'messages/deep']);
+    });
+
+    test('a coordinate with no path lists the instance\'s root', () async {
+      await cli.run(['new', 't.chat', 'c1']);
+      await act('c1', 'prompt', {'messages/1.json': 'a', 'head': 'x'});
+
+      final r = await cli.run(['ls', 't.chat:c1']);
+      expect(r.code, 0);
+      expect(r.out.trim().split('\n'), ['head', 'messages']);
+    });
+
+    test('--at lists the tree as it stood, not as it stands', () async {
+      await cli.run(['new', 't.chat', 'c1']);
+      final first = await act('c1', 'prompt', {'messages/1.json': 'a'});
+      await act('c1', 'reply', {'messages/2.json': 'b'});
+
+      final now = await cli.run(['ls', 't.chat:c1:messages']);
+      expect(now.out.trim().split('\n'), hasLength(2));
+
+      final then = await cli.run(
+        ['ls', 't.chat:c1:messages', '--at', first.commit.sha],
+      );
+      expect(then.code, 0);
+      expect(then.out.trim().split('\n'), ['messages/1.json']);
+    });
+
+    test('a path with nothing under it is silence, not a failure', () async {
+      await cli.run(['new', 't.chat', 'c1']);
+      // The instance holds something, elsewhere: an empty answer must come from
+      // the path being empty, and not from the object being.
+      await act('c1', 'prompt', {'messages/1.json': 'a'});
+
+      final r = await cli.run(['ls', 't.chat:c1:nowhere']);
+      expect(r.code, 0);
+      expect(r.out, isEmpty);
+    });
+
+    test('an instance that was never born is not found', () async {
+      final r = await cli.run(['ls', 't.chat:ghost']);
+
+      expect(r.code, EntityRunner.notFoundCode);
+      expect(r.err, contains('not born'));
+    });
   });
 
   group('entity log', () {

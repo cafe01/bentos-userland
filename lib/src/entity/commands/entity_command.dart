@@ -1,6 +1,7 @@
 import 'package:args/command_runner.dart';
 
 import '../entity_runner.dart';
+import '../../git/model/commit.dart';
 import 'coordinate.dart';
 
 /// The base every `entity` verb stands on: the runner it writes through, and
@@ -35,6 +36,22 @@ abstract base class EntityCommand extends Command<void> {
     final raw = argResults!.arguments;
     final at = raw.indexOf('--');
     return at < 0 ? const [] : raw.sublist(at + 1);
+  }
+
+  /// The `--at <sha>` the reading verbs take, or null for the present tip.
+  ///
+  /// A point in history is a **named argument and never part of the
+  /// coordinate**: `<coord>@<sha>:<path>` would put a fifth dimension into the
+  /// address, and whether one belongs there is the ontology's question rather
+  /// than this surface's.
+  ///
+  /// It is not a convenience either. A validator stands at the parent of the
+  /// act landing and asks whether that act was legal *there*, which is never
+  /// the present — so a surface that could only read the tip would push every
+  /// historical reading back below the primitive.
+  Commit? pointInHistory() {
+    final at = argResults!['at'] as String?;
+    return at == null ? null : Commit(at);
   }
 
   /// The first positional read as a coordinate.

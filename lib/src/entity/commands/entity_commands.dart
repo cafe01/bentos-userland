@@ -1,6 +1,7 @@
 import 'package:path/path.dart' as p;
 
 import '../entity.dart';
+import '../entity_runner.dart';
 import '../event.dart';
 import '../manifest.dart';
 import 'entity_command.dart';
@@ -146,6 +147,49 @@ final class PublishCommand extends EntityCommand {
     final rest = argResults!.rest;
     if (rest.length < 2) usageException('publish: <name> <remote> are required');
     await cli.entityNamed(rest[0], place: placeOption).publish(cli.locate(rest[1]));
+  }
+}
+
+/// `entity fetch <coord> <remote>` — bring a line down, **the mirror of
+/// [PublishCommand]**: push moves the ref over there under the hook over there,
+/// fetch moves the ref here under the hook here. The same compare-and-swap, so
+/// an act received is validated, refused and reacted to exactly as one taken
+/// locally.
+///
+/// **The remote is a declared name, never a raw URL.** The symmetry with
+/// `publish` is of nature and not of signature: declaring a remote *founds a
+/// relation*, which is what `remotes` exists to report, so a fetch that took a
+/// URL would found one sideways and in silence, and `remotes` would begin
+/// lying about who this entity speaks with. `publish` declares because
+/// publishing is the founding act; `fetch` finds the relation already founded.
+///
+/// An undeclared name is therefore **not found** and not a refusal: refusal is
+/// the answer to concurrent agency — the line diverged — and a caller retries
+/// on it. Nothing about a name nobody declared is worth retrying.
+final class FetchCommand extends EntityCommand {
+  FetchCommand(super.cli);
+
+  @override
+  String get name => 'fetch';
+
+  @override
+  String get description => 'Bring an instance\'s line down from a remote.';
+
+  @override
+  Future<void> run() async {
+    final rest = argResults!.rest;
+    if (rest.length < 2) usageException('fetch: <coord> <remote> are required');
+    final coord = coordinate();
+    final entity = cli.entityNamed(coord.entity, place: placeOption);
+    final named = rest[1];
+    if (!entity.remotes.any((remote) => remote.name == named)) {
+      cli.err.writeln(
+        'entity fetch: ${coord.entity} declares no remote $named',
+      );
+      cli.exitCode = EntityRunner.notFoundCode;
+      return;
+    }
+    cli.report(await entity.instance(coord.instance).fetch(named));
   }
 }
 

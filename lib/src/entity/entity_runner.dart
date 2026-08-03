@@ -60,6 +60,7 @@ final class EntityRunner {
       ..addCommand(WhichCommand(this))
       ..addCommand(InfoCommand(this))
       ..addCommand(PublishCommand(this))
+      ..addCommand(FetchCommand(this))
       ..addCommand(RemotesCommand(this))
       ..addCommand(NewCommand(this))
       ..addCommand(LsCommand(this))

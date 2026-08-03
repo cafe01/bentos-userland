@@ -41,20 +41,51 @@ final class NewCommand extends EntityCommand {
 
 /// `entity ls <name>` — the instances. **Genesis is not one of them**: it is
 /// the structure they are born from.
+///
+/// `entity ls <coord>[:<path>] [--at <sha>]` — the paths one level under
+/// [path] in that instance's tree, the listing half of `read`. Without it every
+/// reader of composite state has to leave the ontology to find out what the
+/// paths *are*, and `path` — the escape hatch — ends up doing ordinary work.
+///
+/// One verb reading its argument two ways, because that is the surface's own
+/// grammar and not an overload invented here: a bare name is a class and a
+/// coordinate is an object, everywhere. Names are DNS-notation and hold no
+/// colon, so the two readings cannot collide.
+///
+/// Names, one per line, and nothing else. A column of type or object name is
+/// what a real consumer asks for, and none has.
 final class LsCommand extends EntityCommand {
-  LsCommand(super.cli);
+  LsCommand(super.cli) {
+    argParser.addOption(
+      'at',
+      help: 'List at this commit rather than at the tip.',
+      valueHelp: 'sha',
+    );
+  }
 
   @override
   String get name => 'ls';
 
   @override
-  String get description => 'The instances — genesis is not one.';
+  String get description => 'The instances of a class, or the paths under one.';
 
   @override
   Future<void> run() async {
-    final named = positional('name');
-    for (final one in cli.entityNamed(named, place: placeOption).instances) {
-      cli.out.writeln('${one.id}\t${one.tip?.sha ?? ''}');
+    final target = positional('name');
+    if (!target.contains(':')) {
+      for (final one in cli.entityNamed(target, place: placeOption).instances) {
+        cli.out.writeln('${one.id}\t${one.tip?.sha ?? ''}');
+      }
+      return;
+    }
+    final coord = coordinate();
+    final listed = cli
+        .instanceAt(coord, place: placeOption)
+        // No path is the instance's root: *what is in this object at all* is
+        // the question a reader arrives with before it knows any path.
+        .ls(coord.path ?? '', at: pointInHistory());
+    for (final path in listed) {
+      cli.out.writeln(path);
     }
   }
 }

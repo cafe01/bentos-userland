@@ -110,6 +110,20 @@ void main() {
       expect(Directory('${site.root.path}/t.chat').existsSync(), isFalse);
     });
 
+    test('--at reads the content as it stood at that act', () async {
+      await cli.run(['act', 't.chat:c1', 'prompt', '--', ...writes('1.txt', 'first')]);
+      final log = await cli.run(['log', 't.chat:c1']);
+      final first = log.out.trim().split('\t').first;
+      await cli.run(['act', 't.chat:c1', 'reply', '--', ...writes('1.txt', 'second')]);
+
+      expect((await cli.run(['read', 't.chat:c1:1.txt'])).out, 'second');
+
+      final r = await cli.run(['read', 't.chat:c1:1.txt', '--at', first]);
+      expect(r.code, 0);
+      expect(r.out, 'first',
+          reason: 'a validator judges an act where it was taken, never here');
+    });
+
     test('a coordinate with no path is a usage fault', () async {
       final r = await cli.run(['read', 't.chat:c1']);
 
