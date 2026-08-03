@@ -38,7 +38,7 @@ abstract base class EntityCommand extends Command<void> {
     return at < 0 ? const [] : raw.sublist(at + 1);
   }
 
-  /// The `--at <sha>` the reading verbs take, or null for the present tip.
+  /// The `--as-of <sha>` the reading verbs take, or null for the present tip.
   ///
   /// A point in history is a **named argument and never part of the
   /// coordinate**: `<coord>@<sha>:<path>` would put a fifth dimension into the
@@ -49,10 +49,22 @@ abstract base class EntityCommand extends Command<void> {
   /// act landing and asks whether that act was legal *there*, which is never
   /// the present — so a surface that could only read the tip would push every
   /// historical reading back below the primitive.
+  ///
+  /// **Spelled `--as-of` because `--at` means *where* in this utility**, and it
+  /// says so everywhere: `materialize --at <path>`, `refresh <coord> <path>`.
+  /// One flag carrying two dimensions is a defect that only appears in the hand
+  /// of whoever types it, which is the axis no assertion touches.
   Commit? pointInHistory() {
-    final at = argResults!['at'] as String?;
-    return at == null ? null : Commit(at);
+    final asOf = argResults!['as-of'] as String?;
+    return asOf == null ? null : Commit(asOf);
   }
+
+  /// Declares the point-in-history flag on a verb that reads.
+  void takesPointInHistory() => argParser.addOption(
+        'as-of',
+        help: 'Read as the instance stood at this commit.',
+        valueHelp: 'sha',
+      );
 
   /// The first positional read as a coordinate.
   Coordinate coordinate() {

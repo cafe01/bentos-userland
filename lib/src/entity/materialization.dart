@@ -23,8 +23,7 @@ final class Materialization {
     required this.directory,
     required this.gitDir,
     required this.ref,
-    required Commit at,
-  }) : _at = at;
+  });
 
   /// Where the files stand. An ordinary directory: by the time work happens the
   /// thing is materialized and the target is a local path, which is the whole
@@ -40,14 +39,19 @@ final class Materialization {
   /// nothing.
   final String? ref;
 
-  /// What the files stand at. Held rather than asked for: the substrate has no
-  /// verb for *which commit is this worktree at*, and the answer is anyway a
-  /// fact about the looker's own last act, not about the instance.
-  Commit _at;
-
   /// The commit the files currently stand at — not the instance's tip, which
   /// may have moved.
-  Commit get at => _at;
+  ///
+  /// **Asked of the disk, never held in memory.** The worktree carries its own
+  /// head and the substrate answers for it, so a materialization is mountable
+  /// by any process that holds the directory — which is what `entity refresh`
+  /// is, three processes after the one that stood the tree up. A commit kept in
+  /// a field would have been state we invented, true only for whoever
+  /// constructed the object.
+  ///
+  /// Null when nothing of ours stands there — the honest answer for a directory
+  /// already released.
+  Commit? get at => ambientGit.worktreeHead(directory.path);
 
   /// Brings the files up to the instance's present tip. The duty of whoever
   /// looks; nothing does it for them.
@@ -55,10 +59,9 @@ final class Materialization {
     final following = ref;
     if (following == null) return;
     final tip = ambientGit.revParse(gitDir, following);
-    if (tip == null || tip == _at) return;
+    if (tip == null || tip == at) return;
     ambientGit.worktreeRemove(gitDir, path: directory.path);
     ambientGit.worktreeAdd(gitDir, path: directory.path, at: tip);
-    _at = tip;
   }
 
   /// Discards the worktree and deregisters it. Public here — unlike in

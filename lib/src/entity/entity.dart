@@ -247,7 +247,6 @@ final class Entity {
       directory: Directory(path),
       gitDir: gitDir,
       ref: null,
-      at: at,
     );
   }
 

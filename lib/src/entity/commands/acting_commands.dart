@@ -1,6 +1,8 @@
 import 'dart:io';
 
+import '../../git/git_ambient.dart';
 import '../../git/model/actor.dart';
+import '../entity_runner.dart';
 import 'entity_command.dart';
 
 /// `entity act <coord> <action> [--actor <a>] -- <command>` — the porcelain of
@@ -71,18 +73,14 @@ final class _BodyFailed implements Exception {
   final int code;
 }
 
-/// `entity read <coord>:<path> [--at <sha>]` — bytes, without materializing.
+/// `entity read <coord>:<path> [--as-of <sha>]` — bytes, without materializing.
 ///
 /// The reading a federated site that only reacts lives on: it holds no worktree
 /// at all, and still reads the state it must judge — at the tip by default, and
 /// at any point of the instance's line when the judgment is about one.
 final class ReadCommand extends EntityCommand {
   ReadCommand(super.cli) {
-    argParser.addOption(
-      'at',
-      help: 'Read at this commit rather than at the tip.',
-      valueHelp: 'sha',
-    );
+    takesPointInHistory();
   }
 
   @override
@@ -130,6 +128,51 @@ final class MaterializeCommand extends EntityCommand {
         .instanceAt(coordinate(), place: placeOption)
         .materialize(at: at == null ? null : cli.locate(at));
     cli.out.writeln(standing.directory.path);
+  }
+}
+
+/// `entity refresh <coord> <path>` — bring a standing worktree up to the
+/// instance's present tip.
+///
+/// A face lags by construction: another participant may land an act at any
+/// moment, and nothing refreshes anyone's tree for them. This is the looker's
+/// own verb, and the sibling of `release` — both act on a directory somebody
+/// else's process stood up.
+///
+/// **It takes the coordinate as well as the path**, for the reason `commit`
+/// does: a worktree of ours is checked out detached, so the directory can
+/// report the repository it belongs to and the commit it stands at, but never
+/// the ref it follows — and the ref is the whole question, since refreshing
+/// means catching up with where that ref now points.
+///
+/// A tree already standing at the tip is left alone, and so is one that follows
+/// no ref at all: a place's materialization stands at a commit declared from
+/// outside, and moving it is the declarer's act.
+final class RefreshCommand extends EntityCommand {
+  RefreshCommand(super.cli);
+
+  @override
+  String get name => 'refresh';
+
+  @override
+  String get description => 'Bring a standing worktree up to the tip.';
+
+  @override
+  Future<void> run() async {
+    final rest = argResults!.rest;
+    if (rest.length < 2) usageException('refresh: <coord> <path> are required');
+    final path = cli.locate(rest[1]);
+    final standing = cli.instanceAt(coordinate(), place: placeOption);
+    if (ambientGit.worktreeHead(path) == null) {
+      // Nothing of ours stands there. Not-found and not a refusal: a directory
+      // nobody materialized is a thing the caller named and we cannot find.
+      cli.err.writeln('entity refresh: no worktree at $path');
+      cli.exitCode = EntityRunner.notFoundCode;
+      return;
+    }
+    final face = standing.materialization(path);
+    face.refresh();
+    cli.out.writeln(face.at?.sha ?? '');
   }
 }
 

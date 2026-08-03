@@ -425,6 +425,18 @@ final class ProcessGit implements Git {
     return answer.isEmpty ? null : answer;
   }
 
+  @override
+  Commit? worktreeHead(String path) {
+    if (!Directory(path).existsSync()) return null;
+    // Asked from inside the worktree, because that is the only vantage from
+    // which `HEAD` means *this* tree: asked of the repository it would answer
+    // with the bare repository's own head, which is another tree's business.
+    final result = _run(['rev-parse', 'HEAD'], workingDirectory: path);
+    if (result.exitCode != 0) return null;
+    final answer = _text(result.stdout).trim();
+    return answer.isEmpty ? null : Commit(answer);
+  }
+
   // -------------------------------------------------------- the superproject
 
   @override

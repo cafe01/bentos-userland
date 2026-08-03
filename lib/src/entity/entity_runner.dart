@@ -69,6 +69,7 @@ final class EntityRunner {
       ..addCommand(ActCommand(this))
       ..addCommand(ReadCommand(this))
       ..addCommand(MaterializeCommand(this))
+      ..addCommand(RefreshCommand(this))
       ..addCommand(OnCommand(this))
       ..addCommand(OffCommand(this))
       ..addCommand(ListenersCommand(this))

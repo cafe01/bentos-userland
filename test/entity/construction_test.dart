@@ -199,6 +199,27 @@ void main() {
       expect(git.lsTree(gitDir, at: tip, path: 'nowhere'), isEmpty);
     });
 
+    test('a worktree reports what it stands at, and it is not the ref', () {
+      final first = land({'a': '1\n'}, ref: 'refs/heads/one');
+      final path = '${scratch.path}/face';
+      git.worktreeAdd(gitDir, path: path, at: first);
+
+      expect(git.worktreeHead(path), equals(first));
+      expect(git.worktreeRepository(path), isNotNull);
+
+      // The ref moves and the files do not. What a face stands at is a fact
+      // about the looker's own last act, which is why it must be asked of the
+      // tree — the repository's own head is another question entirely.
+      final second = land({'a': '2\n'}, ref: 'refs/heads/one', parent: first);
+      expect(git.worktreeHead(path), equals(first),
+          reason: 'a materialization lags, and says so');
+      expect(git.revParse(gitDir, 'refs/heads/one'), equals(second));
+
+      git.worktreeRemove(gitDir, path: path);
+      expect(git.worktreeHead(path), isNull,
+          reason: 'nothing stands there any more');
+    });
+
     test('is-ancestor separates a line extended from two lines diverged', () {
       final root = land({'a': '1\n'}, ref: 'refs/heads/one');
       final ahead = land({'a': '2\n'}, ref: 'refs/heads/one', parent: root);

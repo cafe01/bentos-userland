@@ -118,7 +118,7 @@ void main() {
       expect(r.out.trim().split('\n'), ['head', 'messages']);
     });
 
-    test('--at lists the tree as it stood, not as it stands', () async {
+    test('--as-of lists the tree as it stood, not as it stands', () async {
       await cli.run(['new', 't.chat', 'c1']);
       final first = await act('c1', 'prompt', {'messages/1.json': 'a'});
       await act('c1', 'reply', {'messages/2.json': 'b'});
@@ -127,7 +127,7 @@ void main() {
       expect(now.out.trim().split('\n'), hasLength(2));
 
       final then = await cli.run(
-        ['ls', 't.chat:c1:messages', '--at', first.commit.sha],
+        ['ls', 't.chat:c1:messages', '--as-of', first.commit.sha],
       );
       expect(then.code, 0);
       expect(then.out.trim().split('\n'), ['messages/1.json']);

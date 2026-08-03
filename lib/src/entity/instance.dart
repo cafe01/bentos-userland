@@ -161,13 +161,22 @@ final class Instance {
     final path = at ??
         (Directory.systemTemp.createTempSync('entity-face-')..deleteSync()).path;
     ambientGit.worktreeAdd(gitDir, path: path, at: standing);
-    return Materialization(
-      directory: Directory(path),
-      gitDir: gitDir,
-      ref: ref,
-      at: standing,
-    );
+    return materialization(path);
   }
+
+  /// The materialization standing at [path], **mounted from the disk** — the
+  /// handle for a process that did not stand the tree up and holds only a
+  /// directory.
+  ///
+  /// The ref comes from here and not from the tree, because a worktree of ours
+  /// is detached and cannot report which instance it follows: that is the same
+  /// fact `commit` names a coordinate for, and the reason `entity refresh`
+  /// takes one too.
+  Materialization materialization(String path) => Materialization(
+        directory: Directory(path),
+        gitDir: _gitDir,
+        ref: ref,
+      );
 
   /// Sends this instance's ref to [remote]. The receiving side runs its own
   /// hook: the same refusal, the same wakings, at another site.

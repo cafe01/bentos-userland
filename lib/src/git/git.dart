@@ -176,6 +176,17 @@ abstract interface class Git {
   /// for a caller that released twice.
   String? worktreeRepository(String path);
 
+  /// The commit the worktree at [path] stands at — the other half of the
+  /// backwards resolution, and the fact a materialization is otherwise unable
+  /// to report about itself in a process that did not create it.
+  ///
+  /// A worktree of ours is checked out detached, so this is a fact about the
+  /// files and not about any ref: the ref may have moved a dozen times since,
+  /// and the answer is still where the looker stands.
+  ///
+  /// Null when [path] is no worktree, exactly as [worktreeRepository] is.
+  Commit? worktreeHead(String path);
+
   // -------------------------------------------------------- the superproject
 
   /// The working tree root of the repository containing [path], or null when

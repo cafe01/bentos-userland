@@ -110,7 +110,7 @@ void main() {
       expect(Directory('${site.root.path}/t.chat').existsSync(), isFalse);
     });
 
-    test('--at reads the content as it stood at that act', () async {
+    test('--as-of reads the content as it stood at that act', () async {
       await cli.run(['act', 't.chat:c1', 'prompt', '--', ...writes('1.txt', 'first')]);
       final log = await cli.run(['log', 't.chat:c1']);
       final first = log.out.trim().split('\t').first;
@@ -118,7 +118,7 @@ void main() {
 
       expect((await cli.run(['read', 't.chat:c1:1.txt'])).out, 'second');
 
-      final r = await cli.run(['read', 't.chat:c1:1.txt', '--at', first]);
+      final r = await cli.run(['read', 't.chat:c1:1.txt', '--as-of', first]);
       expect(r.code, 0);
       expect(r.out, 'first',
           reason: 'a validator judges an act where it was taken, never here');
@@ -148,6 +148,79 @@ void main() {
 
       expect(r.code, EntityRunner.notFoundCode);
       expect(r.err, contains('not born'));
+    });
+  });
+
+  group('entity refresh', () {
+    /// A face standing where someone looks, and the path it stands at.
+    Future<String> face() async {
+      await cli.run(['act', 't.chat:c1', 'prompt', '--', ...writes('1.txt', 'first')]);
+      final where = '${site.root.path}/face';
+      await cli.run(['materialize', 't.chat:c1', '--at', where]);
+      return where;
+    }
+
+    test('a face lags until it is refreshed, and then it does not', () async {
+      final where = await face();
+      await cli.run(['act', 't.chat:c1', 'reply', '--', ...writes('1.txt', 'second')]);
+
+      expect(File('$where/1.txt').readAsStringSync(), 'first',
+          reason: 'nothing refreshes a face for whoever looks');
+
+      final r = await cli.run(['refresh', 't.chat:c1', where]);
+      expect(r.code, 0);
+      expect(File('$where/1.txt').readAsStringSync(), 'second');
+      expect(r.out.trim(), (await cli.run(['tip', 't.chat:c1'])).out.trim());
+    });
+
+    test('a face already at the tip answers with it, and refreshes again',
+        () async {
+      // Idempotent on purpose: a face that polls asks a second time, and the
+      // second answer is not an error. What this cannot say is whether the
+      // early return inside the library fired — standing still and standing
+      // up again at the same commit are indistinguishable from out here.
+      final where = await face();
+
+      final once = await cli.run(['refresh', 't.chat:c1', where]);
+      final twice = await cli.run(['refresh', 't.chat:c1', where]);
+      expect(once.code, 0);
+      expect(twice.out.trim(), once.out.trim());
+      expect(once.out.trim(), (await cli.run(['tip', 't.chat:c1'])).out.trim());
+      expect(File('$where/1.txt').readAsStringSync(), 'first');
+    });
+
+    test('it is another process — nothing of the one that looked survives',
+        () async {
+      final where = await face();
+      await cli.run(['act', 't.chat:c1', 'reply', '--', ...writes('1.txt', 'second')]);
+
+      // The coordinate is the only thing carried in: the directory reports its
+      // repository and its commit, and never the ref it follows.
+      final r = await cli.run(['refresh', 't.chat:c1', where], cwd: site.root.path);
+      expect(r.code, 0);
+      expect(File('$where/1.txt').readAsStringSync(), 'second');
+    });
+
+    test('a directory nobody materialized is not found', () async {
+      final r = await cli.run(['refresh', 't.chat:c1', '${site.root.path}/nowhere']);
+
+      expect(r.code, EntityRunner.notFoundCode);
+      expect(r.err, contains('no worktree'));
+    });
+
+    test('a released face is not found either', () async {
+      final where = await face();
+      await cli.run(['release', where]);
+
+      final r = await cli.run(['refresh', 't.chat:c1', where]);
+      expect(r.code, EntityRunner.notFoundCode);
+    });
+
+    test('without a path, it is a usage fault', () async {
+      final r = await cli.run(['refresh', 't.chat:c1']);
+
+      expect(r.code, EntityRunner.usageCode);
+      expect(r.err, contains('<path>'));
     });
   });
 }

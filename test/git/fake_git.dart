@@ -261,6 +261,15 @@ final class FakeGit implements Git {
     return null;
   }
 
+  @override
+  Commit? worktreeHead(String path) {
+    for (final repo in repos.values) {
+      final standing = repo.worktrees[path];
+      if (standing != null) return Commit(standing);
+    }
+    return null;
+  }
+
   // -------------------------------------------------------- the superproject
 
   /// The working trees this fake machine knows to be repositories — declared by

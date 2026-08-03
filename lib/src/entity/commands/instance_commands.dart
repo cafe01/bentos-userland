@@ -42,7 +42,7 @@ final class NewCommand extends EntityCommand {
 /// `entity ls <name>` — the instances. **Genesis is not one of them**: it is
 /// the structure they are born from.
 ///
-/// `entity ls <coord>[:<path>] [--at <sha>]` — the paths one level under
+/// `entity ls <coord>[:<path>] [--as-of <sha>]` — the paths one level under
 /// [path] in that instance's tree, the listing half of `read`. Without it every
 /// reader of composite state has to leave the ontology to find out what the
 /// paths *are*, and `path` — the escape hatch — ends up doing ordinary work.
@@ -56,11 +56,7 @@ final class NewCommand extends EntityCommand {
 /// what a real consumer asks for, and none has.
 final class LsCommand extends EntityCommand {
   LsCommand(super.cli) {
-    argParser.addOption(
-      'at',
-      help: 'List at this commit rather than at the tip.',
-      valueHelp: 'sha',
-    );
+    takesPointInHistory();
   }
 
   @override
