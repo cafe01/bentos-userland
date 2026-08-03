@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:bentos_userland/entity.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'cli_harness.dart';
@@ -73,12 +74,12 @@ void main() {
     });
 
     test('the area is released whether the body succeeded or not', () async {
-      final before = _tempAreas();
+      final before = _actAreas(site);
 
       await cli.run(['act', 't.chat:c1', 'prompt', '--', ...writes('1.txt', 'a')]);
       await cli.run(['act', 't.chat:c1', 'prompt', '--', 'sh', '-c', 'exit 1']);
 
-      expect(_tempAreas(), before);
+      expect(_actAreas(site), before);
     });
 
     test('without a body, it is a usage fault', () async {
@@ -140,6 +141,19 @@ void main() {
       final r = await cli.run(['materialize', 't.chat:c1', '--at', where]);
       expect(r.code, 0);
       expect(r.out.trim(), where);
+      expect(File('$where/1.txt').readAsStringSync(), 'hello');
+    });
+
+    test('without --at, the face stands on the ground of the place that holds it',
+        () async {
+      await cli.run(['act', 't.chat:c1', 'prompt', '--', ...writes('1.txt', 'hello')]);
+
+      final r = await cli.run(['materialize', 't.chat:c1']);
+      expect(r.code, 0);
+      final where = r.out.trim();
+
+      expect(where, startsWith(site.root.path),
+          reason: 'a private area is born in the plot, never in the machine');
       expect(File('$where/1.txt').readAsStringSync(), 'hello');
     });
 
@@ -225,12 +239,19 @@ void main() {
   });
 }
 
-/// The private areas standing in the system's temp — what a released workspace
+/// The act areas standing in **this site's** ground — what a released workspace
 /// must leave none of.
-Set<String> _tempAreas() => Directory.systemTemp
-    .listSync()
-    .map((e) => e.path)
-    .where((path) => path.contains('entity-act-'))
-    .toSet();
+///
+/// Measured at the installation's own slice and nowhere else. Counting the
+/// machine's temp made the assertion depend on every other process on the box:
+/// a parallel sibling's area read as this site's leak, and the debris of past
+/// runs fattened the count for nobody's reason. Locality is what lets the suite
+/// run concurrently at all.
+Set<String> _actAreas(Site site) {
+  final ground = Directory(
+      p.join(p.dirname(repositoryOf(site.root.path, 't.chat')), 'acts'));
+  if (!ground.existsSync()) return const {};
+  return ground.listSync().map((e) => e.path).toSet();
+}
 
 String _quote(String text) => "'${text.replaceAll("'", r"'\''")}'";

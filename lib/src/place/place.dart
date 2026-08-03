@@ -237,6 +237,12 @@ final class Place {
     if (description != null) buf.writeln('description: $description');
     if (owner != null) buf.writeln('owner: $owner');
     File(p.join(marker.path, 'place.yaml')).writeAsStringSync(buf.toString());
+    // The control plane is infrastructure and never travels, so a place that is
+    // also a repository must not see its tenants' plots as changes to itself:
+    // an act in flight would otherwise show up as untracked in the tree it is
+    // writing into. Only the declaration is tracked, and this line with it.
+    File(p.join(marker.path, '.gitignore'))
+        .writeAsStringSync('*\n!place.yaml\n!.gitignore\n');
     return this;
   }
 

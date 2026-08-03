@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
+
 import 'action.dart';
 import 'entity.dart';
 import '../git/git_ambient.dart';
@@ -140,7 +142,7 @@ final class Instance {
     // An area of its own, always. Two bodies sharing one worktree corrupt each
     // other's payload before either reaches the swap — the race the CAS exists
     // for, happening one floor below it.
-    final area = Directory.systemTemp.createTempSync('entity-act-');
+    final area = _privateArea(gitDir, 'acts', 'act-');
     area.deleteSync();
     ambientGit.worktreeAdd(gitDir, path: area.path, at: at);
     return Workspace(
@@ -158,8 +160,7 @@ final class Instance {
     final gitDir = _gitDir;
     final standing = ambientGit.revParse(gitDir, ref);
     if (standing == null) throw StateError('not born: $this');
-    final path = at ??
-        (Directory.systemTemp.createTempSync('entity-face-')..deleteSync()).path;
+    final path = at ?? (_privateArea(gitDir, 'faces', 'face-')..deleteSync()).path;
     ambientGit.worktreeAdd(gitDir, path: path, at: standing);
     return materialization(path);
   }
@@ -233,4 +234,21 @@ final class Instance {
 
   @override
   String toString() => '${entity.name}:$id';
+}
+
+/// A private directory of this installation's own, under [kind], freshly named.
+///
+/// **The ground an act stands on belongs to the place that holds the entity**,
+/// not to the machine: the installation's slice of the plot is where a thing
+/// nobody addressed can exist without being anywhere. The system's temp made a
+/// global namespace out of a local fact, and put the area outside the ontology
+/// entirely — invisible to the place that owns the entity it is writing into.
+///
+/// The slice is the repository's own parent, so resolution has already decided
+/// *which* place: the walk up that answered with this [gitDir] is the same walk
+/// that says where the act happens. Nothing here reaches for a `Place`.
+Directory _privateArea(String gitDir, String kind, String prefix) {
+  final ground = Directory(p.join(p.dirname(gitDir), kind))
+    ..createSync(recursive: true);
+  return ground.createTempSync(prefix);
 }

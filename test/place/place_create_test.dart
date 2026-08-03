@@ -30,6 +30,19 @@ void main() {
       });
     });
 
+    test('the control plane ignores itself, except for its declaration', () {
+      runInMemoryFs((fs) {
+        Place('/hq/nested').create();
+        // A place is often a repository too, and the plots under .place/ are a
+        // tenant's private ground: an act in flight must not read as a change
+        // to the tree it is writing into.
+        final ignore = fs.file('/hq/nested/.place/.gitignore');
+        expect(ignore.existsSync(), isTrue,
+            reason: '.gitignore is written on create');
+        expect(ignore.readAsStringSync(), '*\n!place.yaml\n!.gitignore\n');
+      });
+    });
+
     test('name defaults to the directory name', () {
       runInMemoryFs((fs) {
         fs.directory('/hq/nested').createSync(recursive: true);
