@@ -1,0 +1,114 @@
+import 'dart:io' as io;
+
+import 'package:path/path.dart' as p;
+import 'package:toml/toml.dart';
+
+/// Where `bentos` keeps its state and which streams it watches.
+///
+/// The defaults are compiled in, so a machine that has nothing but the binary
+/// already knows where the userland is; `~/.bentos/config.toml` overrides them
+/// and the environment overrides that. The prefix is a variable and not a
+/// constant on purpose: pointing the installer at the real `~/.local/bin` is
+/// then one line of config rather than a patch.
+final class BentosConfig {
+  const BentosConfig({
+    required this.home,
+    required this.prefix,
+    required this.streams,
+  });
+
+  /// `~/.bentos` — versions, current links, the config itself.
+  final String home;
+
+  /// Where the names on the PATH are linked.
+  final String prefix;
+
+  final Map<String, StreamConfig> streams;
+
+  /// The compiled-in default, so a machine holding nothing but this binary
+  /// already knows where the userland is.
+  ///
+  /// The producing repo is the **campus**, not the userland: the userland
+  /// depends by path on sibling directories of the campus that are not its own
+  /// submodules, so it is not buildable alone and the artifact's producer is
+  /// the repo that holds all of them. The tag prefix follows from the same
+  /// fact — one repo, several products, each hanging its own releases.
+  static const defaultStreams = <String, StreamConfig>{
+    'bentos-userland': StreamConfig(
+      name: 'bentos-userland',
+      repo: 'cafe01/bentos-workspace',
+      tagPrefix: 'userland-v',
+    ),
+  };
+
+  String get versionsDir => p.join(home, 'versions');
+  String get configPath => p.join(home, 'config.toml');
+
+  StreamConfig? stream(String name) => streams[name];
+
+  /// The config as the process sees it: compiled-in defaults, then the file,
+  /// then `BENTOS_HOME` / `BENTOS_PREFIX`. [environment] and [homeDir] are
+  /// injected so a test never reads the operator's own machine.
+  static BentosConfig load({
+    Map<String, String>? environment,
+    String? homeDir,
+  }) {
+    final env = environment ?? io.Platform.environment;
+    final userHome = homeDir ?? env['HOME'] ?? env['USERPROFILE'] ?? '.';
+    final home = env['BENTOS_HOME'] ?? p.join(userHome, '.bentos');
+
+    var prefix = p.join(userHome, '.local', 'bin');
+    final streams = <String, StreamConfig>{...defaultStreams};
+
+    final file = io.File(p.join(home, 'config.toml'));
+    if (file.existsSync()) {
+      final doc = TomlDocument.parse(file.readAsStringSync()).toMap();
+      final declaredPrefix = doc['prefix'];
+      if (declaredPrefix is String && declaredPrefix.isNotEmpty) {
+        prefix = _expandUser(declaredPrefix, userHome);
+      }
+      final declared = doc['streams'];
+      if (declared is Map) {
+        for (final entry in declared.entries) {
+          final body = entry.value;
+          if (body is! Map) continue;
+          streams['${entry.key}'] = StreamConfig(
+            name: '${entry.key}',
+            repo: body['repo'] as String?,
+            tagPrefix: body['tag_prefix'] as String?,
+            dir: switch (body['dir']) {
+              final String d when d.isNotEmpty => _expandUser(d, userHome),
+              _ => null,
+            },
+          );
+        }
+      }
+    }
+
+    final envPrefix = env['BENTOS_PREFIX'];
+    if (envPrefix != null && envPrefix.isNotEmpty) {
+      prefix = _expandUser(envPrefix, userHome);
+    }
+
+    return BentosConfig(home: home, prefix: prefix, streams: streams);
+  }
+
+  static String _expandUser(String path, String userHome) =>
+      path.startsWith('~/') ? p.join(userHome, path.substring(2)) : path;
+}
+
+/// One producing repo. A stream is either a GitHub repo (the real registry) or
+/// a local directory holding a manifest and its assets — the fixture form,
+/// which proves the mechanism without a network.
+final class StreamConfig {
+  const StreamConfig({required this.name, this.repo, this.tagPrefix, this.dir});
+
+  final String name;
+  final String? repo;
+
+  /// Which product's releases in [repo] this stream means.
+  final String? tagPrefix;
+  final String? dir;
+
+  bool get isLocal => dir != null;
+}

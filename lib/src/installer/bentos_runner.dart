@@ -1,0 +1,107 @@
+import 'dart:io' as io;
+
+import 'package:args/command_runner.dart';
+import 'package:http/http.dart' as http;
+
+import 'commands/install_command.dart';
+import 'commands/list_command.dart';
+import 'commands/rollback_command.dart';
+import 'commands/update_command.dart';
+import 'config.dart';
+import 'installer.dart';
+import 'platform.dart';
+import 'source.dart';
+import 'store.dart';
+
+/// The `bentos` coreutil's command runner — the installer that is also the
+/// updater, and the only client we write against the release registry.
+///
+/// Everything the machine-facing half needs is injected: config, host
+/// platform, HTTP client, streams. A test drives the same runner against a
+/// fixture directory under its own temp root and never touches the operator's
+/// machine.
+final class BentosRunner {
+  BentosRunner({
+    StringSink? out,
+    StringSink? err,
+    BentosConfig? config,
+    HostPlatform? host,
+    http.Client? client,
+    Map<String, String>? environment,
+  })  : out = out ?? io.stdout,
+        err = err ?? io.stderr,
+        config = config ?? BentosConfig.load(environment: environment),
+        _host = host,
+        _client = client,
+        _environment = environment {
+    _runner = CommandRunner<void>(
+      'bentos',
+      'The installer that is also the updater — puts the userland on a machine that has nothing.',
+    )
+      ..addCommand(InstallCommand(this))
+      ..addCommand(ListCommand(this))
+      ..addCommand(UpdateCommand(this))
+      ..addCommand(RollbackCommand(this))
+      ..addCommand(SelfUpdateCommand(this));
+  }
+
+  final StringSink out;
+  final StringSink err;
+  final BentosConfig config;
+  final HostPlatform? _host;
+  final http.Client? _client;
+  final Map<String, String>? _environment;
+
+  late final CommandRunner<void> _runner;
+  int exitCode = 0;
+
+  /// The stream a command acts on when none is named.
+  static const defaultStream = 'bentos-userland';
+
+  /// This binary's own name in the release — what `self-update` installs.
+  static const selfName = 'bentos';
+
+  VersionStore get store => VersionStore(home: config.home, prefix: config.prefix);
+
+  Installer get installer => Installer(
+        config: config,
+        store: store,
+        host: _host,
+        client: _client,
+        environment: _environment,
+      );
+
+  HostPlatform get host => _host ?? HostPlatform.detect();
+
+  Future<void> run(List<String> args) async {
+    try {
+      await _runner.run(args);
+    } on UsageException catch (e) {
+      err.writeln(e);
+      exitCode = 64;
+    } on SourceException catch (e) {
+      err.writeln('bentos: $e');
+      exitCode = 1;
+    } on IntegrityException catch (e) {
+      err.writeln('bentos: $e');
+      exitCode = 1;
+    }
+  }
+
+  /// The one place an install is reported, so every verb that installs reads
+  /// the same on the terminal.
+  void report(InstallReport report) {
+    out.writeln('${report.stream} ${report.version}  →  ${config.prefix}');
+    if (report.installed.isNotEmpty) {
+      out.writeln('  installed : ${report.installed.join(" ")}');
+    }
+    if (report.unchanged.isNotEmpty) {
+      out.writeln('  unchanged : ${report.unchanged.join(" ")}');
+    }
+    if (report.unavailable.isNotEmpty) {
+      err.writeln(
+        '  no $host build: ${report.unavailable.join(" ")}',
+      );
+    }
+  }
+}
