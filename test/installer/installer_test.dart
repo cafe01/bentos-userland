@@ -85,6 +85,11 @@ void main() {
 
   String pathEntry(String name) => p.join(prefix, name);
 
+  /// The bytes at a name in the prefix, as a hash — the witness every report
+  /// gate below is judged against, taken before and after the command.
+  String bytesAt(String name) =>
+      sha256.convert(File(pathEntry(name)).readAsBytesSync()).toString();
+
   test('installs a release: the name on the PATH is the binary itself', () async {
     publish('0.2.0', ['mem', 'place']);
 
@@ -346,6 +351,182 @@ void main() {
       expect(code, 0);
       expect(RegExp(r'installed\s+:.*\bmem\b').hasMatch(out), isTrue);
       expect(out, isNot(contains('unchanged')));
+    });
+  });
+
+  /// Updating onto a version whose artifacts are already materialized — the
+  /// machine of someone who went up, did not like it, rolled back, and is going
+  /// up again. Nothing is fetched there, so every word in the report comes from
+  /// what activation did to the prefix and from nothing else.
+  ///
+  /// The pair is disjoint on the axis that produced the defect: artifacts held
+  /// against a machine that has to download them. Both are driven through the
+  /// same verb and witnessed by hashing the bytes at the name before and after.
+  group('update over a version already held', () {
+    /// The bytes at each name, which is the only witness allowed here: the
+    /// version store holds every artifact in both cases of the pair, so a gate
+    /// reading the store agrees with a report that is lying.
+    Map<String, String> bytesInPrefix(List<String> names) =>
+        {for (final name in names) name: bytesAt(name)};
+
+    List<String> movedBetween(Map<String, String> before, Map<String, String> after) =>
+        [for (final name in before.keys) if (before[name] != after[name]) name];
+
+    const names = ['bentos', 'mem', 'place'];
+
+    test('every name whose bytes moved is named, and the cause is the move', () async {
+      publish('0.2.0', names);
+      await run(['install']);
+      publish('0.3.0', names);
+      await run(['install']);
+      await run(['rollback']);
+
+      final before = bytesInPrefix(names);
+      final (code, out, _) = await run(['update']);
+      final after = bytesInPrefix(names);
+
+      expect(code, 0);
+      expect(movedBetween(before, after), unorderedEquals(names),
+          reason: 'the premise of this gate: all three binaries were rewritten');
+
+      // The defect this pins: a command that rewrote every binary on the PATH
+      // and printed `unchanged` over it. Each name that moved is named, and no
+      // name that moved is called untouched.
+      for (final name in names) {
+        expect(RegExp('restored\\s+:.*\\b$name\\b').hasMatch(out), isTrue,
+            reason: '$name was rewritten and the report has to say so');
+        expect(RegExp('unchanged\\s+:.*\\b$name\\b').hasMatch(out), isFalse);
+      }
+
+      // And the cause is true: nothing had drifted — the machine moved from a
+      // version it was legitimately on.
+      expect(out, contains('(replacing 0.2.0)'));
+      expect(out, isNot(contains('had drifted')));
+    });
+
+    test('a virgin machine downloads, and says installed — the same verb', () async {
+      // The other half of the pair, disjoint by construction: nothing is
+      // materialized, so the same command reaches the network and every word
+      // comes from a fetch. Both halves have to be green for either to mean
+      // anything.
+      publish('0.3.0', names);
+
+      final (code, out, _) = await run(['update']);
+
+      expect(code, 0);
+      for (final name in names) {
+        expect(File(pathEntry(name)).existsSync(), isTrue);
+        expect(RegExp('installed\\s+:.*\\b$name\\b').hasMatch(out), isTrue);
+      }
+      expect(out, isNot(contains('unchanged')));
+      expect(out, isNot(contains('restored')));
+    });
+
+    test('one command, one report — never two boxes contradicting each other', () async {
+      // `update` installs itself and then the set. Two reports meant the same
+      // name read `restored` in the first box and `unchanged` in the second,
+      // and a caller cannot be told both about one command.
+      publish('0.2.0', names);
+      await run(['install']);
+      publish('0.3.0', names);
+
+      final (code, out, _) = await run(['update']);
+
+      expect(code, 0);
+      expect('unchanged'.allMatches(out).length, lessThanOrEqualTo(1));
+      expect(RegExp(r'→').allMatches(out).length, 1,
+          reason: 'one act, one headline');
+    });
+
+    test('the caller is told their own bentos was replaced', () async {
+      // The most delicate thing this program does, and it used to happen in
+      // silence: the next `bentos` the person types is a different binary.
+      publish('0.2.0', names);
+      await run(['install']);
+      publish('0.3.0', names);
+
+      final before = bytesInPrefix(names);
+      final (_, out, _) = await run(['update']);
+      final after = bytesInPrefix(names);
+
+      expect(movedBetween(before, after), contains('bentos'));
+      expect(out, contains('bentos replaced itself'));
+      expect(out, contains('0.3.0'));
+    });
+
+    test('a first install replaced nothing, and does not claim to', () async {
+      // Found by running the real binary on a machine with nothing: every name
+      // is written, so the notice fired over a `bentos` that had never existed.
+      // The claim is about displacing something the caller may be running, and
+      // on a virgin machine there is nothing to displace.
+      publish('0.2.0', names);
+
+      final (_, out, _) = await run(['update']);
+
+      expect(RegExp(r'installed\s+:.*\bbentos\b').hasMatch(out), isTrue);
+      expect(out, isNot(contains('replaced itself')));
+    });
+
+    test('a command that leaves bentos alone says nothing about it', () async {
+      // Disjoint: same machine, the notice's condition absent. Re-running an
+      // update that has nothing to do rewrites no binary, and the line that
+      // announces a replacement must not appear over one that never happened.
+      publish('0.2.0', names);
+      await run(['install']);
+
+      final before = bytesInPrefix(names);
+      final (_, out, _) = await run(['update']);
+      final after = bytesInPrefix(names);
+
+      expect(movedBetween(before, after), isEmpty);
+      expect(out, isNot(contains('replaced itself')));
+    });
+  });
+
+  /// Rollback moves as many binaries as an update does, including the caller's
+  /// own, and reported it in one line naming no name.
+  group('rollback reports what it did, in the words an install uses', () {
+    const names = ['bentos', 'mem', 'place'];
+
+    test('the names that went back are named, and so is the swap of bentos', () async {
+      publish('0.2.0', names);
+      await run(['install']);
+      publish('0.3.0', names);
+      await run(['install']);
+
+      final before = {for (final n in names) n: bytesAt(n)};
+      final (code, out, _) = await run(['rollback']);
+      final moved = [for (final n in names) if (before[n] != bytesAt(n)) n];
+
+      expect(code, 0);
+      expect(moved, unorderedEquals(names));
+      for (final name in names) {
+        expect(RegExp('restored\\s+:.*\\b$name\\b').hasMatch(out), isTrue);
+      }
+      expect(out, contains('rolled back from 0.3.0'));
+      expect(out, contains('bentos replaced itself'));
+      expect(out, contains('the next `bentos` you run is 0.2.0'));
+      // Nothing was fetched to do it, and nothing may claim otherwise.
+      expect(out, isNot(contains('installed')));
+    });
+
+    test('a rollback with nowhere to go moves nothing and announces nothing', () async {
+      // Disjoint: the same verb on a machine with one version. Nothing is
+      // written, so no name may be named and the replacement notice — which is
+      // the line a caller will act on — must not be printed over a swap that
+      // never happened.
+      publish('0.2.0', names);
+      await run(['install']);
+
+      final before = {for (final n in names) n: bytesAt(n)};
+      final (code, out, err) = await run(['rollback']);
+
+      expect(code, 1);
+      expect(err, contains('no previous version'));
+      expect(out, isEmpty);
+      for (final n in names) {
+        expect(bytesAt(n), before[n]);
+      }
     });
   });
 

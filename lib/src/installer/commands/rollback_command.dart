@@ -27,13 +27,16 @@ final class RollbackCommand extends Command<void> {
   @override
   Future<void> run() async {
     final stream = argResults!['stream'] as String;
-    final store = bentos.store;
-    final restored = store.rollback(stream);
-    if (restored == null) {
+    final report = bentos.installer.rollback(stream);
+    if (report == null) {
       bentos.err.writeln('bentos: "$stream" has no previous version to roll back to');
       bentos.exitCode = 1;
       return;
     }
-    bentos.out.writeln('$stream  →  $restored');
+    bentos.report(
+      report,
+      headline: '$stream ${report.version}  →  ${bentos.config.prefix}  '
+          '(rolled back from ${report.replaced})',
+    );
   }
 }

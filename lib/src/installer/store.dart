@@ -108,6 +108,17 @@ final class VersionStore {
     ]..sort();
   }
 
+  /// Which of [names] the prefix already holds a file for. Read before an
+  /// activation, it is what tells a first install from a replacement — the two
+  /// write the same bytes and only one of them displaces something the caller
+  /// may already be running.
+  Set<String> namesInPrefix(Iterable<String> names) => {
+        for (final name in names)
+          if (io.FileSystemEntity.typeSync(p.join(prefix, name), followLinks: false) !=
+              io.FileSystemEntityType.notFound)
+            name,
+      };
+
   /// True when this exact artifact is already materialized — same version,
   /// same hash. Re-installing is then a rename and no download.
   bool holds(String stream, String version, String name, String expectedSha256) {
@@ -181,15 +192,24 @@ final class VersionStore {
 
   /// Return a stream to its previous version, substituting the binaries back.
   /// Nothing is fetched: the artifacts of the earlier version were never
-  /// deleted. Returns the version now live, or null when there is none.
-  String? rollback(String stream) {
+  /// deleted. Returns what it did — the version now live, the one it came from,
+  /// and the names whose bytes in the prefix actually changed — or null when
+  /// there is no previous version.
+  ///
+  /// The changed names come back for the same reason [activate]'s do: a report
+  /// about this machine may be built from nothing else.
+  RollbackOutcome? rollback(String stream) {
+    final from = currentVersion(stream);
     final back = previousVersion(stream);
     if (back == null) return null;
+    final changed = <String>{};
     for (final name in namesIn(stream, back)) {
-      substitute(stream: stream, version: back, name: name);
+      if (substitute(stream: stream, version: back, name: name)) {
+        changed.add(name);
+      }
     }
     InstallState.read(home).rollback(stream);
-    return back;
+    return RollbackOutcome(version: back, from: from, changed: changed);
   }
 
   /// Write one artifact over its name in the prefix. Returns whether the bytes
@@ -302,6 +322,24 @@ final class VersionStore {
     if (io.Platform.isWindows) return;
     io.Process.runSync('chmod', ['+x', path]);
   }
+}
+
+/// What a rollback did to the prefix.
+final class RollbackOutcome {
+  const RollbackOutcome({
+    required this.version,
+    required this.from,
+    required this.changed,
+  });
+
+  /// The version now live.
+  final String version;
+
+  /// The version it was rolled back from.
+  final String? from;
+
+  /// The names whose bytes in the prefix changed.
+  final Set<String> changed;
 }
 
 final class IntegrityException implements Exception {

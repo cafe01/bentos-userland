@@ -23,10 +23,21 @@ final class InstallReport {
     required this.unchanged,
     required this.unavailable,
     required this.linked,
+    this.replaced,
+    this.preexisting = const {},
   });
 
   final String stream;
   final String version;
+
+  /// The version that was live when this act began, when it was another one.
+  ///
+  /// It is what tells the two disjoint causes of [restored] apart: bytes
+  /// rewritten because the machine moved to another version, and bytes
+  /// rewritten because what sat at that name had drifted from the version that
+  /// was already live. Null when nothing moved — the target was already the
+  /// live one, or there was no live one at all.
+  final String? replaced;
 
   /// Fetched from the release and written into the prefix.
   final List<String> installed;
@@ -41,6 +52,46 @@ final class InstallReport {
   /// Names the release declares but publishes no artifact of for this host.
   final List<String> unavailable;
   final List<String> linked;
+
+  /// The names the prefix already held when this act began.
+  final Set<String> preexisting;
+
+  /// Whether this act rewrote a `bentos` the caller already had. The next one
+  /// they type is then a different binary, which nothing else on the terminal
+  /// would say — but a first install replaces nothing, and saying so there
+  /// would be the same class of untruth one word smaller.
+  bool replacedSelf(String selfName) =>
+      preexisting.contains(selfName) &&
+      (installed.contains(selfName) || restored.contains(selfName));
+
+  /// One command, one report. `update` installs twice — itself, then the set —
+  /// and two boxes for one act read as a contradiction the moment a name is
+  /// rewritten by the first pass and found in place by the second: `restored`
+  /// above, `unchanged` below, both true of their own pass and neither true of
+  /// the command. What the caller asked is what happened to the bytes while
+  /// this command ran, so the strongest thing that happened to each name wins.
+  InstallReport then(InstallReport next) {
+    final installedNames = {...installed, ...next.installed};
+    final restoredNames = {...restored, ...next.restored}..removeAll(installedNames);
+    final order = [...linked, ...next.linked.where((n) => !linked.contains(n))];
+    return InstallReport(
+      stream: next.stream,
+      version: next.version,
+      replaced: replaced ?? next.replaced,
+      installed: [for (final n in order) if (installedNames.contains(n)) n],
+      restored: [for (final n in order) if (restoredNames.contains(n)) n],
+      unchanged: [
+        for (final n in order)
+          if (!installedNames.contains(n) && !restoredNames.contains(n)) n,
+      ],
+      unavailable: {...unavailable, ...next.unavailable}.toList(),
+      linked: order,
+      // The first pass's reading: by the second, a name this command just
+      // created is already there, and the machine would look like it had it
+      // all along.
+      preexisting: preexisting,
+    );
+  }
 }
 
 /// `bentos`'s one act: read a stream's manifest, fetch what the host needs,
@@ -116,6 +167,11 @@ final class Installer {
     // a failure above leaves the previous version live and untouched.
     final linked = store.namesIn(stream, manifest.version);
 
+    // Read before the pointer moves: afterwards there is no way to tell a move
+    // between versions from a drift cure, and the two are said differently.
+    final live = store.currentVersion(stream);
+    final preexisting = store.namesInPrefix(linked);
+
     // The classification is read off what activation actually did to the
     // prefix, which is the only source that knows the difference between a name
     // nothing happened to and a name whose drift was just cured.
@@ -124,6 +180,7 @@ final class Installer {
     return InstallReport(
       stream: stream,
       version: manifest.version,
+      replaced: live == manifest.version ? null : live,
       installed: [for (final n in linked) if (fetched.contains(n)) n],
       restored: [
         for (final n in linked)
@@ -135,6 +192,34 @@ final class Installer {
       ],
       unavailable: unavailable,
       linked: linked,
+      preexisting: preexisting,
+    );
+  }
+
+  /// Put a stream's previous version back, and say what it did to the prefix in
+  /// the same words an install uses.
+  ///
+  /// Rollback moves as many binaries as an update does, including the caller's
+  /// own — it was reported in one line naming no name, which is the lighter
+  /// report for the heavier act. Nothing is fetched, so `installed` is always
+  /// empty and every name that moved is `restored`.
+  InstallReport? rollback(String stream) {
+    final back = store.previousVersion(stream);
+    final held = back == null ? const <String>[] : store.namesIn(stream, back);
+    final preexisting = store.namesInPrefix(held);
+    final outcome = store.rollback(stream);
+    if (outcome == null) return null;
+    final names = store.namesIn(stream, outcome.version);
+    return InstallReport(
+      stream: stream,
+      version: outcome.version,
+      replaced: outcome.from,
+      installed: const [],
+      restored: [for (final n in names) if (outcome.changed.contains(n)) n],
+      unchanged: [for (final n in names) if (!outcome.changed.contains(n)) n],
+      unavailable: const [],
+      linked: names,
+      preexisting: preexisting,
     );
   }
 }

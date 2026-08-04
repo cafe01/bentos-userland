@@ -1,6 +1,7 @@
 import 'package:args/command_runner.dart';
 
 import '../bentos_runner.dart';
+import '../installer.dart';
 
 /// `bentos update` — install the latest release of a stream.
 ///
@@ -32,14 +33,19 @@ final class UpdateCommand extends Command<void> {
     final source = installer.sourceFor(stream);
     final manifest = await source.manifest();
 
+    // Itself first, then the set — but one act, so one report. The two passes
+    // are an ordering of the work and not two things that happened to the
+    // caller's machine.
+    InstallReport? self;
     if (manifest.names.contains(BentosRunner.selfName)) {
-      bentos.report(await installer.install(
+      self = await installer.install(
         stream: stream,
         names: const [BentosRunner.selfName],
         from: source,
-      ));
+      );
     }
-    bentos.report(await installer.install(stream: stream, from: source));
+    final all = await installer.install(stream: stream, from: source);
+    bentos.report(self == null ? all : self.then(all));
   }
 }
 

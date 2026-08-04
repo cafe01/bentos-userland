@@ -160,15 +160,25 @@ final class BentosRunner {
 
   /// The one place an install is reported, so every verb that installs reads
   /// the same on the terminal.
-  void report(InstallReport report) {
-    out.writeln('${report.stream} ${report.version}  →  ${config.prefix}');
+  ///
+  /// [headline] is what the act calls itself; the block under it is the same
+  /// three words in every verb, because they classify the same thing — what
+  /// happened to the bytes at each name in the prefix.
+  void report(InstallReport report, {String? headline}) {
+    out.writeln(headline ?? '${report.stream} ${report.version}  →  ${config.prefix}');
     if (report.installed.isNotEmpty) {
       out.writeln('  installed : ${report.installed.join(" ")}');
     }
     if (report.restored.isNotEmpty) {
-      out.writeln(
-        '  restored  : ${report.restored.join(" ")}  (had drifted from ${report.version})',
-      );
+      // The same rewritten bytes have two disjoint causes, and the line used to
+      // assert one of them always: a machine moving forward from a version it
+      // held was told its binaries "had drifted", which is a claim about damage
+      // where there was none. The cause is read from what was live, not guessed
+      // from the fact that something was written.
+      final because = report.replaced == null
+          ? '(had drifted from ${report.version})'
+          : '(replacing ${report.replaced})';
+      out.writeln('  restored  : ${report.restored.join(" ")}  $because');
     }
     if (report.unchanged.isNotEmpty) {
       out.writeln('  unchanged : ${report.unchanged.join(" ")}');
@@ -176,6 +186,15 @@ final class BentosRunner {
     if (report.unavailable.isNotEmpty) {
       err.writeln(
         '  no $host build: ${report.unavailable.join(" ")}',
+      );
+    }
+    if (report.replacedSelf(selfName)) {
+      // The most delicate thing this program does, and the only one that
+      // happened in silence: `bentos` replaced the binary the caller is inside
+      // of, so the next `bentos` they type is a different program. It is said
+      // out loud whether the swap moved forward or back.
+      out.writeln(
+        '  note      : $selfName replaced itself — the next `$selfName` you run is ${report.version}',
       );
     }
   }
