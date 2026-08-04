@@ -6,6 +6,8 @@ import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
+import 'fixture_binary.dart';
+
 /// The installer driven against a local fixture stream: a directory laid out
 /// like a release, holding a manifest and its assets. It proves the mechanism —
 /// verify, materialize, substitute the binary on the PATH — with no network and
@@ -28,19 +30,21 @@ void main() {
 
   tearDown(() => root.deleteSync(recursive: true));
 
-  /// One fixture release: each executable is a shell script that prints its own
-  /// name and version, so "installed" can be proven by running the thing.
+  /// One fixture release: each executable is a real compiled binary that
+  /// prints its own name and version, so "installed" can be proven by running
+  /// the thing — on every platform the suite runs on, not just the ones whose
+  /// shell reads a shebang.
   String publish(String version, List<String> names, {Map<String, String>? corruptHash}) {
     final artifacts = <Map<String, Object?>>[];
     for (final name in names) {
-      final body = '#!/bin/sh\necho "$name $version"\n';
+      final body = FixtureBinaries.bytesFor('$name $version');
       final asset = '$name-$host';
-      File(p.join(streamDir, asset)).writeAsStringSync(body);
+      File(p.join(streamDir, asset)).writeAsBytesSync(body);
       artifacts.add({
         'name': name,
         'platform': '$host',
         'asset': asset,
-        'sha256': corruptHash?[name] ?? sha256.convert(utf8.encode(body)).toString(),
+        'sha256': corruptHash?[name] ?? sha256.convert(body).toString(),
         'size': body.length,
       });
     }
@@ -64,7 +68,7 @@ void main() {
         out: out,
         err: err,
         host: host,
-        environment: {'PATH': (path ?? [prefix]).join(':')},
+        environment: {'PATH': (path ?? [prefix]).join(Platform.isWindows ? ';' : ':')},
         config: BentosConfig(
           home: home,
           prefix: prefix,
@@ -83,7 +87,8 @@ void main() {
     return (runner.exitCode, out.toString(), err.toString());
   }
 
-  String pathEntry(String name) => p.join(prefix, name);
+  String pathEntry(String name) =>
+      p.join(prefix, Platform.isWindows ? '$name.exe' : name);
 
   /// The bytes at a name in the prefix, as a hash — the witness every report
   /// gate below is judged against, taken before and after the command.

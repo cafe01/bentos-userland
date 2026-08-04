@@ -4,6 +4,8 @@ import 'package:bentos_userland/installer.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
+import 'fixture_binary.dart';
+
 /// The machine that already ran the released installer, met by the one that
 /// replaced it.
 ///
@@ -28,13 +30,27 @@ void main() {
 
   tearDown(() => root.deleteSync(recursive: true));
 
+  /// Same law as [VersionStore.prefixName], read here from the real host
+  /// because these tests run [layoutOf] and [PathShadows] with no semantics
+  /// injected, exactly as the shipped binary does.
+  String exeName(String name) => Platform.isWindows ? '$name.exe' : name;
+
+  final pathSep = Platform.isWindows ? ';' : ':';
+
+  /// The name as it actually sits in the new prefix.
+  String pathEntry(String name) => p.join(prefix, exeName(name));
+
   String script(String text) => '#!/bin/sh\n$text\n';
 
+  /// A materialized version, each name a real compiled binary that prints
+  /// [bodies]'s value when run — the shim built on top of it is later
+  /// executed for real, so it needs a witness the OS can actually run.
   void hold(String version, Map<String, String> bodies) {
     final dir = Directory(p.join(home, 'versions', stream, version, 'bin'))
       ..createSync(recursive: true);
     for (final entry in bodies.entries) {
-      final file = File(p.join(dir.path, entry.key))..writeAsStringSync(entry.value);
+      final file = File(p.join(dir.path, entry.key))
+        ..writeAsBytesSync(FixtureBinaries.bytesFor(entry.value));
       Process.runSync('chmod', ['+x', file.path]);
     }
   }
@@ -65,8 +81,8 @@ void main() {
 
   group('adoption', () {
     test('a machine on the old layout is brought into the store', () {
-      hold('0.1.0', {'mem': script('echo "mem 0.1.0"'), 'place': script('echo "place"')});
-      hold('0.0.9', {'mem': script('echo "mem 0.0.9"')});
+      hold('0.1.0', {'mem': 'mem 0.1.0', 'place': 'place'});
+      hold('0.0.9', {'mem': 'mem 0.0.9'});
       mountOldLayout(current: '0.1.0', previous: '0.0.9');
 
       final reports = layoutOf().adopt(const [stream]);
@@ -81,12 +97,13 @@ void main() {
       expect(store.previousVersion(stream), '0.0.9',
           reason: 'both ends of the old pointer are adopted, so rollback survives');
       for (final name in ['mem', 'place']) {
-        final onPath = p.join(prefix, name);
+        final onPath = pathEntry(name);
         expect(FileSystemEntity.typeSync(onPath, followLinks: false),
             FileSystemEntityType.file,
             reason: '$name on the new prefix must be the binary itself');
       }
-      expect(File(p.join(prefix, 'mem')).readAsStringSync(), contains('mem 0.1.0'));
+      expect(Process.runSync(pathEntry('mem'), const []).stdout,
+          contains('mem 0.1.0'));
 
       // The dead mechanism's pointer is gone.
       expect(
@@ -104,7 +121,7 @@ void main() {
       // names the old prefix and nothing we do can change that, so the names
       // there have to keep answering — through a link that is compatibility,
       // never the activation mechanism, which resolves through nothing.
-      hold('0.1.0', {'mem': script('echo "mem 0.1.0"')});
+      hold('0.1.0', {'mem': 'mem 0.1.0'});
       mountOldLayout(current: '0.1.0');
 
       expect(layoutOf().adopt(const [stream]).single.shimmed, ['mem']);
@@ -112,7 +129,7 @@ void main() {
       final shim = p.join(legacyPrefix, 'mem');
       expect(FileSystemEntity.typeSync(shim, followLinks: false),
           FileSystemEntityType.link);
-      expect(Link(shim).targetSync(), p.join(prefix, 'mem'));
+      expect(Link(shim).targetSync(), pathEntry('mem'));
       // Not merely a link: the name still runs, which is the whole claim.
       final ran = Process.runSync(shim, const []);
       expect(ran.stdout, contains('mem 0.1.0'));
@@ -124,9 +141,9 @@ void main() {
       // nothing gets re-aimed anyway — there is no binary of ours to aim it at,
       // and that miss would rescue an installer with no ownership check in it.
       hold('0.1.0', {
-        'mem': script('echo "mem 0.1.0"'),
-        'place': script('echo "place 0.1.0"'),
-        'llm': script('echo "llm 0.1.0"'),
+        'mem': 'mem 0.1.0',
+        'place': 'place 0.1.0',
+        'llm': 'llm 0.1.0',
       });
       mountOldLayout(current: '0.1.0');
 
@@ -156,7 +173,7 @@ void main() {
     });
 
     test('adoption is idempotent — the second pass finds nothing to do', () {
-      hold('0.1.0', {'mem': script('echo "mem 0.1.0"')});
+      hold('0.1.0', {'mem': 'mem 0.1.0'});
       mountOldLayout(current: '0.1.0');
 
       expect(layoutOf().adopt(const [stream]), hasLength(1));
@@ -168,7 +185,7 @@ void main() {
     test('a machine with no old layout is left alone', () {
       // The disjoint half. A clean machine — and any machine already on this
       // store — must pass through adoption having written nothing at all.
-      hold('0.2.0', {'mem': script('echo "mem 0.2.0"')});
+      hold('0.2.0', {'mem': 'mem 0.2.0'});
       final store = VersionStore(home: home, prefix: prefix);
       store.activate(stream, '0.2.0');
       final before = File(p.join(home, 'state.json')).readAsStringSync();
@@ -190,7 +207,7 @@ void main() {
       // The law lives in VersionStore.prefixName; the shim has to ask it
       // rather than build the bare name itself, or the link points at a file
       // substitute() never wrote.
-      hold('0.1.0', {'mem': script('echo "mem 0.1.0"')});
+      hold('0.1.0', {'mem': 'mem 0.1.0'});
       mountOldLayout(current: '0.1.0');
 
       final store = VersionStore(home: home, prefix: prefix, windowsSemantics: true);
@@ -224,7 +241,7 @@ void main() {
         );
 
     test('`list` adopts the machine before it reports on it', () async {
-      hold('0.1.0', {'mem': script('echo "mem 0.1.0"')});
+      hold('0.1.0', {'mem': 'mem 0.1.0'});
       mountOldLayout(current: '0.1.0');
 
       final out = StringBuffer();
@@ -237,42 +254,42 @@ void main() {
     });
 
     test('`list` says out loud when something answers our name first', () async {
-      hold('0.1.0', {'mem': script('echo "mem 0.1.0"')});
+      hold('0.1.0', {'mem': 'mem 0.1.0'});
       mountOldLayout(current: '0.1.0');
 
       final ahead = p.join(root.path, 'ahead');
       Directory(ahead).createSync();
-      File(p.join(ahead, 'mem')).writeAsStringSync(script('echo "someone else"'));
+      File(p.join(ahead, exeName('mem'))).writeAsStringSync(script('echo "someone else"'));
 
       final out = StringBuffer();
       final err = StringBuffer();
-      await runner(out, err, path: '$ahead:$prefix').run(['list']);
+      await runner(out, err, path: [ahead, prefix].join(pathSep)).run(['list']);
 
       // On stdout with the listing: it is a finding about the machine, and on
       // stderr it disappeared under `bentos list > file`.
       expect(out.toString(), contains('shadowed'));
-      expect(out.toString(), contains(p.join(ahead, 'mem')));
+      expect(out.toString(), contains(p.join(ahead, exeName('mem'))));
     });
 
     test('and stays quiet when nothing does', () async {
-      hold('0.1.0', {'mem': script('echo "mem 0.1.0"')});
+      hold('0.1.0', {'mem': 'mem 0.1.0'});
       mountOldLayout(current: '0.1.0');
 
       final out = StringBuffer();
       final err = StringBuffer();
-      await runner(out, err, path: '$prefix:/usr/bin').run(['list']);
+      await runner(out, err, path: [prefix, '/usr/bin'].join(pathSep)).run(['list']);
 
       expect(out.toString(), isNot(contains('shadowed')));
       expect(out.toString(), isNot(contains('not on your PATH')));
     });
 
     test('a prefix nobody can reach is said plainly', () async {
-      hold('0.1.0', {'mem': script('echo "mem 0.1.0"')});
+      hold('0.1.0', {'mem': 'mem 0.1.0'});
       mountOldLayout(current: '0.1.0');
 
       final out = StringBuffer();
       final err = StringBuffer();
-      await runner(out, err, path: '/usr/bin:/bin').run(['list']);
+      await runner(out, err, path: ['/usr/bin', '/bin'].join(pathSep)).run(['list']);
 
       expect(out.toString(), contains('is not on your PATH'));
     });
@@ -280,32 +297,32 @@ void main() {
 
   group('shadow on the PATH', () {
     test('a name answered earlier by something else lights up', () {
-      hold('0.2.0', {'mem': script('echo "mem 0.2.0"')});
+      hold('0.2.0', {'mem': 'mem 0.2.0'});
       final store = VersionStore(home: home, prefix: prefix);
       store.activate(stream, '0.2.0');
 
       final ahead = p.join(root.path, 'ahead');
       Directory(ahead).createSync();
-      File(p.join(ahead, 'mem')).writeAsStringSync(script('echo "someone else"'));
+      File(p.join(ahead, exeName('mem'))).writeAsStringSync(script('echo "someone else"'));
 
       final shadows = PathShadows(prefix: prefix, pathDirs: [ahead, prefix]);
       final finding = shadows.ahead('mem',
           ourArtifact: store.artifactPath(stream, '0.2.0', 'mem'));
 
       expect(finding, isNotNull);
-      expect(finding!.path, p.join(ahead, 'mem'));
+      expect(finding!.path, p.join(ahead, exeName('mem')));
       expect(finding.isOurs, isFalse);
       expect(shadows.prefixIsUnreachable, isFalse);
     });
 
     test('no shadow, no word', () {
-      hold('0.2.0', {'mem': script('echo "mem 0.2.0"')});
+      hold('0.2.0', {'mem': 'mem 0.2.0'});
       final store = VersionStore(home: home, prefix: prefix);
       store.activate(stream, '0.2.0');
 
       final behind = p.join(root.path, 'behind');
       Directory(behind).createSync();
-      File(p.join(behind, 'mem')).writeAsStringSync(script('echo "later"'));
+      File(p.join(behind, exeName('mem'))).writeAsStringSync(script('echo "later"'));
 
       // The same file, on the other side of our prefix: order is the whole
       // difference between a finding and a non-event.
@@ -320,13 +337,13 @@ void main() {
       // What the shim itself looks like from here: the old prefix answers
       // first, and what it answers with is the binary we installed. Reporting
       // that as a stranger would cry wolf on every adopted machine.
-      hold('0.2.0', {'mem': script('echo "mem 0.2.0"')});
+      hold('0.2.0', {'mem': 'mem 0.2.0'});
       final store = VersionStore(home: home, prefix: prefix);
       store.activate(stream, '0.2.0');
 
       final ahead = p.join(root.path, 'ahead');
       Directory(ahead).createSync();
-      Link(p.join(ahead, 'mem')).createSync(p.join(prefix, 'mem'));
+      Link(p.join(ahead, exeName('mem'))).createSync(pathEntry('mem'));
 
       final finding = PathShadows(prefix: prefix, pathDirs: [ahead, prefix])
           .ahead('mem', ourArtifact: store.artifactPath(stream, '0.2.0', 'mem'));
@@ -347,7 +364,7 @@ void main() {
       // Same law as VersionStore.prefixName, checked from the other side: a
       // bare "mem" ahead of us on the PATH is not what a Windows shell would
       // resolve to "mem" at all, so the finding has to look for "mem.exe".
-      hold('0.2.0', {'mem': script('echo "mem 0.2.0"')});
+      hold('0.2.0', {'mem': 'mem 0.2.0'});
       final store = VersionStore(home: home, prefix: prefix, windowsSemantics: true);
       store.activate(stream, '0.2.0');
 
