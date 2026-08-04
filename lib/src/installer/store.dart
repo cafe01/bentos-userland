@@ -84,6 +84,14 @@ final class VersionStore {
   String streamDir(String stream) => p.join(home, 'versions', stream);
   String versionDir(String stream, String version) => p.join(streamDir(stream), version);
 
+  /// A manifest name as it must sit on the PATH. Platform-agnostic everywhere
+  /// but here: the manifest, the version store's own artifact directories and
+  /// the downloaded bytes all speak the bare name — this is the one seam where
+  /// Windows needs `.exe` to be found by that name at all, since shell name
+  /// resolution there goes through `PATHEXT` and a file with no recognized
+  /// extension is invisible to a bare invocation.
+  String _prefixName(String name) => _windows ? '$name.exe' : name;
+
   /// Where a file waits to be renamed into place. Inside [home] by construction:
   /// see the note on cross-device renames above.
   String get stagingDir => p.join(home, 'staging');
@@ -114,7 +122,7 @@ final class VersionStore {
   /// may already be running.
   Set<String> namesInPrefix(Iterable<String> names) => {
         for (final name in names)
-          if (io.FileSystemEntity.typeSync(p.join(prefix, name), followLinks: false) !=
+          if (io.FileSystemEntity.typeSync(p.join(prefix, _prefixName(name)), followLinks: false) !=
               io.FileSystemEntityType.notFound)
             name,
       };
@@ -251,7 +259,7 @@ final class VersionStore {
     staged.writeAsBytesSync(source.readAsBytesSync(), flush: true);
     _makeExecutable(staged.path);
 
-    final destination = p.join(prefix, name);
+    final destination = p.join(prefix, _prefixName(name));
     _displaceRunningExecutable(destination);
     _rename(staged.path, destination);
     return true;
@@ -259,7 +267,7 @@ final class VersionStore {
 
   /// Whether the name in the prefix is already, byte for byte, [source].
   bool _prefixHolds(String name, io.File source) {
-    final destination = io.File(p.join(prefix, name));
+    final destination = io.File(p.join(prefix, _prefixName(name)));
     if (io.FileSystemEntity.typeSync(destination.path, followLinks: false) !=
         io.FileSystemEntityType.file) {
       return false;
@@ -313,7 +321,7 @@ final class VersionStore {
     // whether anyone reaches it is the shadow reading's question, and saying
     // "on the PATH" here is how this check came to describe a machine it had
     // not looked at.
-    final inPrefix = io.File(p.join(prefix, name));
+    final inPrefix = io.File(p.join(prefix, _prefixName(name)));
     if (io.FileSystemEntity.typeSync(inPrefix.path, followLinks: false) ==
         io.FileSystemEntityType.notFound) {
       return DriftState.missing;

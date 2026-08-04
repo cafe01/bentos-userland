@@ -115,16 +115,16 @@ void main() {
     store.activate(stream, '0.2.0');
     store.activate(stream, '0.3.0');
 
-    final displaced = File(p.join(prefix, 'bentos.old'));
+    final displaced = File(p.join(prefix, 'bentos.exe.old'));
     expect(displaced.existsSync(), isTrue);
     expect(displaced.readAsStringSync(), contains('bentos 0.2.0'));
-    expect(File(p.join(prefix, 'bentos')).readAsStringSync(), contains('bentos 0.3.0'));
+    expect(File(p.join(prefix, 'bentos.exe')).readAsStringSync(), contains('bentos 0.3.0'));
 
     // A third replacement clears the previous leftover rather than accreting.
     hold('0.4.0', {'bentos': script('echo "bentos 0.4.0"')});
     store.activate(stream, '0.4.0');
     expect(displaced.readAsStringSync(), contains('bentos 0.3.0'));
-    expect(File(p.join(prefix, 'bentos')).readAsStringSync(), contains('bentos 0.4.0'));
+    expect(File(p.join(prefix, 'bentos.exe')).readAsStringSync(), contains('bentos 0.4.0'));
   });
 
   test('POSIX displaces nothing — there is no .old on a host that does not need one', () {
@@ -136,5 +136,27 @@ void main() {
     store.activate(stream, '0.3.0');
 
     expect(File(p.join(prefix, 'bentos.old')).existsSync(), isFalse);
+  });
+
+  test('under Windows semantics the prefix name carries .exe, and every reader agrees', () {
+    // The seam this test exists to prove: namesInPrefix, drift and substitute
+    // all resolve the same on-disk name. Broken on purpose once (dropping
+    // _prefixName from namesInPrefix alone) to see this fail before trusting
+    // it — with the fix in place, a name materialized as "bentos" lands on the
+    // PATH as "bentos.exe" and every one of the three agrees it is there.
+    hold('0.2.0', {'bentos': script('echo "bentos 0.2.0"')});
+
+    final store = VersionStore(home: home, prefix: prefix, windowsSemantics: true);
+    store.activate(stream, '0.2.0');
+
+    expect(File(p.join(prefix, 'bentos.exe')).existsSync(), isTrue,
+        reason: 'substitute must write the .exe name on Windows');
+    expect(File(p.join(prefix, 'bentos')).existsSync(), isFalse,
+        reason: 'nothing should be written under the bare name on Windows');
+    expect(store.namesInPrefix(['bentos']), {'bentos'},
+        reason: 'namesInPrefix must find the .exe file it just wrote');
+    expect(store.drift(stream).single.state, DriftState.installed,
+        reason: 'drift must compare against the same .exe name substitute wrote, '
+            'never report a fresh install as drifted');
   });
 }
