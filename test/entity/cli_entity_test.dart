@@ -152,6 +152,36 @@ void main() {
       final r = await cli.run(['invoke', 't.chat', 'prompt']);
       expect(r.code, EntityRunner.usageCode);
     });
+
+    test('is the document, one line per key, no key repeated', () async {
+      // The law is "info prints this file". A manifest that declares every
+      // field the type knows, `name` and `cardinality` included, is the one
+      // fixture that can catch a field printed twice — once typed, once
+      // through the raw dump — because the field-only assertions above never
+      // looked at the output as a whole.
+      await cli.run(['create', 't.chat']);
+      _declare(
+        site,
+        't.chat',
+        'name: t.chat\ntype: conversation\nactions: [prompt]\n'
+            'cardinality: singular\n',
+      );
+
+      final r = await cli.run(['info', 't.chat']);
+      expect(r.code, 0);
+      // `action` and `event` are legitimately one line per vocabulary member,
+      // so they repeat by design — every other key stands for one fact and
+      // must appear exactly once.
+      final keys = [
+        for (final line in r.out.trim().split('\n'))
+          if (!line.startsWith('action\t') && !line.startsWith('event\t'))
+            line.split('\t').first,
+      ];
+      expect(keys.toSet().length, keys.length,
+          reason: 'a repeated key means the document leaked twice: '
+              'got $keys');
+      expect(keys, containsAll(['name', 'genesis', 'type', 'cardinality']));
+    });
   });
 
   group('entity publish and remotes', () {

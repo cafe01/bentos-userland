@@ -113,7 +113,7 @@ final class InfoCommand extends EntityCommand {
 
     cli.out.writeln('type\t${declared.type}');
     for (final key in declared.fields.keys) {
-      if (key == 'type' || key == 'actions') continue;
+      if (key == 'name' || key == 'type' || key == 'actions') continue;
       cli.out.writeln('$key\t${declared.fields[key]}');
     }
     for (final action in declared.actions) {
