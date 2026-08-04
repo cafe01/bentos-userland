@@ -221,8 +221,7 @@ jobs:
   # prevent is a proof that only one of the two can perform.
   #
   # Linux only, deliberately. macOS was proved by hand and has no runner budget
-  # here; Windows has no installation at all, and a matrix row for it would be
-  # red with no mechanism behind it — a declared gap, not a fabricated verdict.
+  # here.
   smoke:
     needs: assemble
     runs-on: ubuntu-latest
@@ -236,3 +235,24 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash script/smoke-test.sh
+
+  # The Windows seam, declared red on purpose: this job runs after the release
+  # is published, so its own verdict never gates Linux and macOS, and it fails
+  # today by naming exactly what is missing — there is no bootstrap.ps1 in the
+  # release yet. It turns green by itself, with nothing here to edit, the day
+  # that script lands. Until then it is a standing, honest red rather than a
+  # silent gap the matrix does not mention.
+  smoke-windows:
+    needs: assemble
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Smoke — install, self-update, update and rollback the published line, on Windows
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: script/smoke-test.ps1
