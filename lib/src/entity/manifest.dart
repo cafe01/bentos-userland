@@ -35,11 +35,19 @@ enum Cardinality {
 
 final class Manifest {
   const Manifest({
+    required this.name,
     required this.type,
     required this.actions,
     required this.cardinality,
     required this.fields,
   });
+
+  /// The dotted identity the entity was authored under, stated by the entity
+  /// itself. **Blank when undeclared, never a throw** — a freshly authored
+  /// entity has no manifest at all, which is the ordinary condition
+  /// [Entity.install] must fall through rather than choke on; absence here is
+  /// what lets its name precedence reach the source-derived fallback.
+  final String name;
 
   /// What the entity claims to be — a brain, a conversation, an inference
   /// session. **The declaration is what a type is**: nothing validates the
@@ -72,7 +80,7 @@ final class Manifest {
   final Map<String, Object?> fields;
 
   /// The path the manifest stands at in the genesis tree.
-  static const String path = 'manifest.yaml';
+  static const String path = 'entity.yaml';
 
   /// Parses a manifest document. Construction's body; the shape it must
   /// produce is this class.
@@ -83,6 +91,7 @@ final class Manifest {
         for (final entry in document.entries) '${entry.key}': _plain(entry.value),
     };
     return Manifest(
+      name: '${fields['name'] ?? ''}',
       type: '${fields['type'] ?? ''}',
       actions: [
         if (fields['actions'] case final List<Object?> declared)

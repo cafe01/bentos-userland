@@ -23,6 +23,19 @@ void main() {
   });
   tearDown(() => site.dispose());
 
+  group('the manifest', () {
+    test('stands at entity.yaml, in the genesis tree', () {
+      expect(Manifest.path, 'entity.yaml');
+    });
+
+    test('parses the declared name; blank when absent, never a throw', () {
+      expect(Manifest.parse('name: t.declared\ntype: conversation\n').name,
+          't.declared');
+      expect(Manifest.parse('type: conversation\n').name, isEmpty);
+      expect(Manifest.parse('').name, isEmpty);
+    });
+  });
+
   group('entity create', () {
     test('authors one here and prints its genesis', () async {
       final r = await cli.run(['create', 't.smoke']);
@@ -298,6 +311,48 @@ void main() {
       expect(r.out.trim(), 't.mine');
       expect((await cli.run(['which', 't.mine'])).code, 0);
       expect((await cli.run(['which', 't.smoke'])).code,
+          EntityRunner.notFoundCode);
+    });
+
+    test('the manifest names the install when --as is silent', () async {
+      final origin = Site('origin', site.git);
+      addTearDown(origin.dispose);
+      final source = repositoryOf(origin.root.path, 't.origin');
+      await Cli(origin).run(['create', 't.origin']);
+      _declare(origin, 't.origin', 'name: t.declared\n');
+
+      final r = await cli.run(['install', source]);
+      expect(r.code, 0);
+      expect(r.out.trim(), 't.declared');
+      expect((await cli.run(['which', 't.declared'])).code, 0);
+    });
+
+    test('--as overrides a name the manifest declares', () async {
+      final origin = Site('origin', site.git);
+      addTearDown(origin.dispose);
+      final source = repositoryOf(origin.root.path, 't.origin');
+      await Cli(origin).run(['create', 't.origin']);
+      _declare(origin, 't.origin', 'name: t.declared\n');
+
+      final r = await cli.run(['install', source, '--as', 't.mine']);
+      expect(r.code, 0);
+      expect(r.out.trim(), 't.mine');
+      expect((await cli.run(['which', 't.declared'])).code,
+          EntityRunner.notFoundCode);
+    });
+
+    test('a bare name is an invalid source, never something to discover',
+        () async {
+      // No scheme, no path separator: exactly the shape a discovery layer
+      // would want to intercept. It must reach the port as a literal source
+      // and fail there — never resolve to an installed entity.
+      final r = await cli.run(['install', 't.mystery']);
+
+      expect(r.code, isNot(0));
+      expect(r.out, isEmpty,
+          reason: 'a printed name here would mean the bare word was resolved '
+              'rather than rejected as a source');
+      expect((await cli.run(['which', 't.mystery'])).code,
           EntityRunner.notFoundCode);
     });
   });

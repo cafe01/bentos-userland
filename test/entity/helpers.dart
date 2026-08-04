@@ -26,7 +26,10 @@ String repositoryOf(String placePath, String name) => p.join(
 /// files by definition and the port's own verbs write them. What is faked is
 /// the one thing `IOOverrides` cannot reach — the subprocess.
 final class Site {
-  Site([String label = 'site']) {
+  /// [git] defaults to a private port; passed explicitly it lets two sites
+  /// share one substrate, the way a source and its installer share one disk.
+  Site([String label = 'site', FakeGit? git])
+      : git = git ?? FakeGit() {
     // Resolved: a place answers with its canonical root, and the system temp is
     // reached through a link on some machines. A site that kept the link's
     // spelling would have its assertions comparing two vocabularies of one path.
@@ -38,7 +41,7 @@ final class Site {
   }
 
   late final Directory root;
-  final FakeGit git = FakeGit();
+  final FakeGit git;
 
   /// Runs [body] with this site's port installed as the ambient one.
   R run<R>(R Function() body) => runWithGit(git, body);

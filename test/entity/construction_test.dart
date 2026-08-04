@@ -662,7 +662,7 @@ void main() {
 
   group('acceptance', () {
     // The lab's `bash test/gates.sh` walks the whole vocabulary of
-    // `bentos.llm` — six gates, twenty-nine assertions, no API key.
+    // `bentos.llm` — six gates, thirty-three assertions, no API key.
     // Construction promotes it: the same gates, driven through the `entity`
     // coreutil instead of the hand-spelled Git the PoC ran on, is the
     // acceptance proof that the primitive absorbed the PoC without losing a
@@ -712,7 +712,7 @@ void main() {
         0,
         reason: 'the gates did not pass:\n${ran.stdout}\n${ran.stderr}',
       );
-      expect('${ran.stdout}', contains('All 29 gates green.'));
+      expect('${ran.stdout}', contains('All 33 gates green.'));
     }, timeout: const Timeout(Duration(minutes: 10)));
   });
 }

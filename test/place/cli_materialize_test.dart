@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:bentos_userland/src/entity/entity.dart';
+import 'package:bentos_userland/src/entity/manifest.dart';
 import 'package:bentos_userland/src/git/process_git.dart';
 import 'package:bentos_userland/src/place/place.dart';
 import 'package:bentos_userland/src/place/place_runner.dart';
@@ -68,7 +69,7 @@ void main() {
 
     final genesis = manifest == null
         ? git.revParse(gitDir, Entity.genesisRef)!.sha
-        : commitWith(gitDir, {'manifest.yaml': manifest});
+        : commitWith(gitDir, {Manifest.path: manifest});
     if (manifest != null) {
       Process.runSync('git', ['--git-dir=$gitDir', 'update-ref', Entity.genesisRef, genesis]);
     }
@@ -112,7 +113,8 @@ void main() {
       final r = await runPlace(['materialize'], cwd: campus);
       expect(r.code, 0, reason: r.err);
       expect(r.out.trim(), 'bentos.chat\t$campus/bentos.chat\t${shas.genesis}');
-      expect(File('$campus/bentos.chat/manifest.yaml').existsSync(), isTrue);
+      expect(
+          File('$campus/bentos.chat/${Manifest.path}').existsSync(), isTrue);
       expect(
         File('$campus/bentos.chat/state.txt').existsSync(),
         isFalse,

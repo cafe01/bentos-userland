@@ -158,11 +158,42 @@ final class Entity {
   /// performed when someone means to look.
   ///
   /// Asynchronous: it crosses the network.
+  ///
+  /// **`source` is a fetch address and never a name to resolve** — a local
+  /// path, a host, a forge, exactly as Git accepts it, taken to
+  /// [ambientGit.clone] verbatim. Nothing here turns a bare name into a
+  /// lookup: the precedence below only ever *names what already arrived*.
+  ///
+  /// **Naming has a precedence, and the manifest sits in the middle of it.**
+  /// `as` overrides; absent that, the freshly cloned entity's own
+  /// [Manifest.name] answers, since a thing that says its own name deserves
+  /// to be believed over a guess; only when neither speaks does the source
+  /// URL's own basename stand in. Reading the manifest needs bytes already on
+  /// disk, so a name that depends on it cannot share the clone's final
+  /// address with a name that doesn't — hence the stage: cloned once to a
+  /// disposable directory, read there, then cloned again — locally, cheaply —
+  /// into the place at the name now decided. `--as` skips the stage
+  /// entirely, since nothing about its name depends on the content.
   static Future<Entity> install(String source, {String? at, String? as}) async {
     final place = Place(at ?? Directory.current.path);
-    final name = as ?? _nameFromSource(source);
-    final gitDir = p.join(place.plot(plotNamespace).path, name, repositoryDirName);
-    await ambientGit.clone(source, gitDir);
+    final String name;
+    final String gitDir;
+    if (as != null) {
+      name = as;
+      gitDir = p.join(place.plot(plotNamespace).path, name, repositoryDirName);
+      await ambientGit.clone(source, gitDir);
+    } else {
+      final staging = Directory.systemTemp.createTempSync('entity-install-');
+      final stagingGitDir = p.join(staging.path, repositoryDirName);
+      try {
+        await ambientGit.clone(source, stagingGitDir);
+        name = _declaredName(stagingGitDir) ?? _nameFromSource(source);
+        gitDir = p.join(place.plot(plotNamespace).path, name, repositoryDirName);
+        await ambientGit.clone(stagingGitDir, gitDir);
+      } finally {
+        if (staging.existsSync()) staging.deleteSync(recursive: true);
+      }
+    }
     place.register(
       name,
       url: source,
@@ -173,6 +204,23 @@ final class Entity {
     // Nothing is checked out: a site that only reacts holds no worktree at all,
     // and bringing the tree down is the place's own recursive verb.
     return Entity(name, from: place.root.path);
+  }
+
+  /// The name a just-cloned entity declares of itself, or `null` when it
+  /// declares nothing — a freshly authored entity's ordinary condition, and
+  /// never a throw: tolerant of there being nothing there yet, exactly as a
+  /// reader displaying a manifest must be.
+  static String? _declaredName(String gitDir) {
+    final at = ambientGit.revParse(gitDir, genesisRef);
+    if (at == null) return null;
+    try {
+      final manifest = Manifest.parse(
+        String.fromCharCodes(ambientGit.catFile(gitDir, '${at.sha}:${Manifest.path}')),
+      );
+      return manifest.name.isEmpty ? null : manifest.name;
+    } on Object {
+      return null;
+    }
   }
 
   /// The name a source implies when none is given: the repository's own, minus
