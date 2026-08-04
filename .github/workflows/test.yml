@@ -1,0 +1,41 @@
+# Runs the test suite on every push and pull request, on Linux and Windows.
+#
+# The release workflow only exercises the suite on a `v*` tag, so
+# platform-specific code — VersionStore's `.exe` handling under
+# windowsSemantics, for one — can land on main with no witness until a
+# release is cut. This closes that gap without touching the release
+# mechanism: it never builds, never publishes, never runs the smoke tests.
+
+name: test
+
+on:
+  push:
+  pull_request:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.12.0
+
+      - name: Reach the public siblings over HTTPS
+        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
+
+      - name: Resolve dependencies
+        run: dart pub get
+
+      - name: Run the test suite
+        run: dart test --concurrency 1
