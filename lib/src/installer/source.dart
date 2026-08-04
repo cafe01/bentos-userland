@@ -69,12 +69,11 @@ final class LocalReleaseSource implements ReleaseSource {
 /// that is the one path that serves a private asset with a token *and* a public
 /// asset without one — so the flip to public changes no code here.
 ///
-/// **A release is found by tag prefix, never by `latest`.** One repository
-/// publishes several products — the campus carries the userland and the kernel
-/// — and `latest` answers *what was released here most recently*, which is the
-/// neighbour's product the day the neighbour ships. The stream is the prefix,
-/// `userland-v`, and the newest release carrying it is the one this stream
-/// means.
+/// **A release is found by tag prefix, never by `latest`.** One repo is one
+/// product, so the prefix is a plain `v` and the newest release carrying it is
+/// what the stream means — and the prefix stays the mechanism because `latest`
+/// answers *what was released here most recently*, which a pre-release or a
+/// re-cut of an older line would win.
 final class GithubReleaseSource implements ReleaseSource {
   GithubReleaseSource(
     this.stream,

@@ -15,14 +15,14 @@
 # Env:
 #   PREFIX            where the binary lands        (default: $HOME/.local/bin)
 #   GH_TOKEN          token, if the repo is private (also honours GITHUB_TOKEN)
-#   BENTOS_REPO       stream to install from        (default: cafe01/bentos-workspace)
-#   BENTOS_TAG_PREFIX release series in that repo   (default: userland-v)
+#   BENTOS_REPO       stream to install from        (default: cafe01/bentos-userland)
+#   BENTOS_TAG_PREFIX release series in that repo   (default: v)
 
 set -eu
 
 EXEC_NAME="bentos"
-REPO="${BENTOS_REPO:-cafe01/bentos-workspace}"
-TAG_PREFIX="${BENTOS_TAG_PREFIX:-userland-v}"
+REPO="${BENTOS_REPO:-cafe01/bentos-userland}"
+TAG_PREFIX="${BENTOS_TAG_PREFIX:-v}"
 PREFIX="${PREFIX:-$HOME/.local/bin}"
 TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
 API="https://api.github.com/repos/$REPO"

@@ -28,16 +28,13 @@ final class BentosConfig {
   /// The compiled-in default, so a machine holding nothing but this binary
   /// already knows where the userland is.
   ///
-  /// The producing repo is the **campus**, not the userland: the userland
-  /// depends by path on sibling directories of the campus that are not its own
-  /// submodules, so it is not buildable alone and the artifact's producer is
-  /// the repo that holds all of them. The tag prefix follows from the same
-  /// fact — one repo, several products, each hanging its own releases.
+  /// One repo is one product, so the producing repo is the userland's own and
+  /// the tag needs no prefix to say which product it belongs to.
   static const defaultStreams = <String, StreamConfig>{
     'bentos-userland': StreamConfig(
       name: 'bentos-userland',
-      repo: 'cafe01/bentos-workspace',
-      tagPrefix: 'userland-v',
+      repo: 'cafe01/bentos-userland',
+      tagPrefix: 'v',
     ),
   };
 
