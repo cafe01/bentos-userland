@@ -60,11 +60,22 @@ esac
 PLATFORM="${os}-${arch}"
 
 # name<TAB>entrypoint, one per line, for this platform.
-mapfile -t EXECUTABLES < <(dart tool/manifest.dart plan "$PLATFORM")
-if [[ ${#EXECUTABLES[@]} -eq 0 ]]; then
+#
+# Read into the array by hand rather than with `mapfile`: macOS ships bash 3.2,
+# where that builtin does not exist — and the failure is doubly opaque, since
+# the reader dying mid-pipe surfaces as a Dart stack trace from the writer.
+# Everything here stays inside what 3.2 understands, including `${arr[*]-}` for
+# emptiness, because an empty array under `set -u` is an unbound variable there.
+PLAN="$(dart tool/manifest.dart plan "$PLATFORM")"
+if [[ -z "$PLAN" ]]; then
   echo "error: $MANIFEST declares nothing for $PLATFORM" >&2
   exit 2
 fi
+
+EXECUTABLES=()
+while IFS= read -r line; do
+  [[ -n "$line" ]] && EXECUTABLES+=("$line")
+done <<< "$PLAN"
 
 # Selective install: any args are the exec names to install. With no args the
 # whole registry builds. Unknown names abort before any compile, so a typo
@@ -92,7 +103,7 @@ if [[ $# -gt 0 ]]; then
     fi
   done
 
-  if [[ ${#unknown[@]} -gt 0 ]]; then
+  if [[ -n "${unknown[*]-}" ]]; then
     echo "error: not declared for $PLATFORM in $MANIFEST: ${unknown[*]}" >&2
     echo "declared: ${known_names[*]}" >&2
     exit 2
@@ -138,15 +149,15 @@ done
 echo ""
 echo "── install report ──────────────────────────────────"
 echo "  manifest  : $MANIFEST v$(dart tool/manifest.dart version) · $PLATFORM"
-if [[ ${#installed[@]} -gt 0 ]]; then
+if [[ -n "${installed[*]-}" ]]; then
   echo "  installed : ${installed[*]}"
 fi
-if [[ ${#failed_expected[@]} -gt 0 ]]; then
+if [[ -n "${failed_expected[*]-}" ]]; then
   echo "  FAILED (expected, $EXPECTED_FAIL_REASON): ${failed_expected[*]}"
 fi
-if [[ ${#failed[@]} -gt 0 ]]; then
+if [[ -n "${failed[*]-}" ]]; then
   echo "  FAILED (unexpected): ${failed[*]}"
 fi
 echo "────────────────────────────────────────────────────"
 
-[[ ${#failed[@]} -eq 0 ]]
+[[ -z "${failed[*]-}" ]]
