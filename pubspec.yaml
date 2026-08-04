@@ -38,24 +38,24 @@ dependencies:
   # convenience returns as pubspec_overrides.yaml, which git ignores.
   bentos_abi:
     git:
-      url: git@github.com:cafe01/bentos-abi.git
-      ref: a27254b8711df9760b116b75a395aa1d1cde51e6
+      url: https://github.com/cafe01/bentos-abi.git
+      ref: 5805b8a9e4e238ebc3d8978d4f34ead4cb28b1d6
   bentos_driver_sdk:
     git:
-      url: git@github.com:cafe01/bentos-driver-sdk-dart.git
+      url: https://github.com/cafe01/bentos-driver-sdk-dart.git
       ref: 1dc9212b7895a7063ba78b12cb6b42ea7610d192
   chat_inference:
     git:
-      url: git@github.com:cafe01/chat-inference-dart.git
-      ref: 1fb84fe37c95ea3da0252f9fc694e4ec7ddfbfd1
+      url: https://github.com/cafe01/chat-inference-dart.git
+      ref: 64b2abd3c3b268948fa2b669cff5bc6a9e200042
   stt_inference:
     git:
-      url: git@github.com:cafe01/stt-inference-dart.git
-      ref: 1472f41814ecd110ca2799918386203ca171f35f
+      url: https://github.com/cafe01/stt-inference-dart.git
+      ref: 0a60fd8e9ff5f20e61fc0f4995984dc61cb2d1c2
   tts_inference:
     git:
-      url: git@github.com:cafe01/tts-inference-dart.git
-      ref: a728764f99a357a6bec1fc3b4f284e608d029657
+      url: https://github.com/cafe01/tts-inference-dart.git
+      ref: ec46bfc863aed7db836033e059b1df5fd5d9f68a
   fixnum: ^1.1.0
   stream_channel: ^2.1.0
   # coreutil libs — exposed via bin/ shells
@@ -67,29 +67,29 @@ dependencies:
   # distribution imports the one file that knows the vendors.
   anthropic_chat_driver:
     git:
-      url: git@github.com:cafe01/anthropic-chat-driver.git
-      ref: c96be32db87d1a72bb412c1f379f7acce0c5127e
+      url: https://github.com/cafe01/anthropic-chat-driver.git
+      ref: 8789071ef15d091fd73281c37939a23dffb2a291
   openai_chat_driver:
     git:
-      url: git@github.com:cafe01/openai-chat-driver.git
-      ref: f6c3de32a24d81ef7cb57941cc275b90f6624cba
+      url: https://github.com/cafe01/openai-chat-driver.git
+      ref: 9101096b027001de80eca05b298c0ed9959c9a3b
   openai_stt_driver:
     git:
-      url: git@github.com:cafe01/openai-stt-driver.git
-      ref: 50f98df131a20ff207c95031de0f9e803c381da8
+      url: https://github.com/cafe01/openai-stt-driver.git
+      ref: 8b1259026887a3e8ce6a4aa71ae09772e0194a6e
   openai_live_stt_driver:
     git:
-      url: git@github.com:cafe01/openai-live-stt-driver.git
-      ref: 0ba15b760728a8c2d1eba115389b169eb2068487
+      url: https://github.com/cafe01/openai-live-stt-driver.git
+      ref: e4b0cb4d13a332400bd1dc93dd085c1b4771534f
   openai_tts_driver:
     git:
-      url: git@github.com:cafe01/openai-tts-driver.git
-      ref: 65b3f6227a9af23cd159bf53c099a31243f35b7d
+      url: https://github.com/cafe01/openai-tts-driver.git
+      ref: 635e6beaba441a47b17d8b7042af84ecfffee0ac
 
 dev_dependencies:
   bentos_kernel:
     git:
-      url: git@github.com:cafe01/bentos-kernel.git
-      ref: 12d89c07861d66f4477eb158a7fbc91b23f0c437
+      url: https://github.com/cafe01/bentos-kernel.git
+      ref: 6b07f04944b4e8ab77a4e7eac96d941ec9de9cc5
   lints: ^6.0.0
   test: ^1.24.0
