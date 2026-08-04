@@ -47,8 +47,9 @@ fi
 # is built here: an executable not declared for this platform is not our
 # business today, even though the source sits in bin/.
 case "$(uname -s)" in
-  Linux)  os="linux" ;;
-  Darwin) os="macos" ;;
+  Linux)                       os="linux" ;;
+  Darwin)                      os="macos" ;;
+  MINGW*|MSYS*|CYGWIN*)        os="windows" ;;
   *)      echo "error: unsupported OS: $(uname -s)" >&2; exit 2 ;;
 esac
 case "$(uname -m)" in
@@ -100,11 +101,12 @@ if [[ $# -gt 0 ]]; then
   EXECUTABLES=("${selected[@]}")
 fi
 
-# Known-broken binaries and the reason each is blocked. `bentos` is declared in
-# the manifest before its source exists, deliberately: a true registry with a
-# red build beats a registry that hides what the product owes.
-EXPECTED_FAIL="bentos"
-EXPECTED_FAIL_REASON="source not landed yet — the installer is being built"
+# Known-broken binaries and the reason each is blocked. Empty today: `bentos`
+# was the one entry, declared in the manifest before its source existed, and it
+# now compiles. A name left here after it builds is a registry that hides its
+# own failure, which is the defect this file exists to prevent.
+EXPECTED_FAIL=""
+EXPECTED_FAIL_REASON=""
 
 installed=()
 failed=()
