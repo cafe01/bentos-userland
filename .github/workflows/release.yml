@@ -177,6 +177,7 @@ jobs:
           gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber \
             "${{ runner.temp }}/bentos-release.json" \
             script/bootstrap.sh \
+            script/bootstrap.ps1 \
             "${{ runner.temp }}"/dist/*
 
       # The witness is what the world received, fetched back over the network —
