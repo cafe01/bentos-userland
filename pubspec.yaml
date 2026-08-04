@@ -47,15 +47,15 @@ dependencies:
   chat_inference:
     git:
       url: git@github.com:cafe01/chat-inference-dart.git
-      ref: 731107ecb91e4316379c2b8a8405faf8abb8df1b
+      ref: 1fb84fe37c95ea3da0252f9fc694e4ec7ddfbfd1
   stt_inference:
     git:
       url: git@github.com:cafe01/stt-inference-dart.git
-      ref: 73f11b1a38aea3efb8059031bcf35eaac30af90a
+      ref: 1472f41814ecd110ca2799918386203ca171f35f
   tts_inference:
     git:
       url: git@github.com:cafe01/tts-inference-dart.git
-      ref: 309585ba473d5f6a06eb8b90f5d78ed1ace83dce
+      ref: a728764f99a357a6bec1fc3b4f284e608d029657
   fixnum: ^1.1.0
   stream_channel: ^2.1.0
   # coreutil libs — exposed via bin/ shells
@@ -68,28 +68,28 @@ dependencies:
   anthropic_chat_driver:
     git:
       url: git@github.com:cafe01/anthropic-chat-driver.git
-      ref: adb2c64105a2558bd34dc5bab91ee0c67764e3b7
+      ref: c96be32db87d1a72bb412c1f379f7acce0c5127e
   openai_chat_driver:
     git:
       url: git@github.com:cafe01/openai-chat-driver.git
-      ref: 18a4e422a7f6eeb62381bfaa26e818965acc14c4
+      ref: f6c3de32a24d81ef7cb57941cc275b90f6624cba
   openai_stt_driver:
     git:
       url: git@github.com:cafe01/openai-stt-driver.git
-      ref: 68aa6c8c41267c757819f797fbf0e6b0cf88fa7b
+      ref: 50f98df131a20ff207c95031de0f9e803c381da8
   openai_live_stt_driver:
     git:
       url: git@github.com:cafe01/openai-live-stt-driver.git
-      ref: b3bd6238e629bfd1d80aae21fdd788c7e316468f
+      ref: 0ba15b760728a8c2d1eba115389b169eb2068487
   openai_tts_driver:
     git:
       url: git@github.com:cafe01/openai-tts-driver.git
-      ref: 6f3691919719838e6ee3d26f36a356fa55de3cf5
+      ref: 65b3f6227a9af23cd159bf53c099a31243f35b7d
 
 dev_dependencies:
   bentos_kernel:
     git:
       url: git@github.com:cafe01/bentos-kernel.git
-      ref: 41d03548d3787d277ff856b9c0c2d7f7578860ea
+      ref: 12d89c07861d66f4477eb158a7fbc91b23f0c437
   lints: ^6.0.0
   test: ^1.24.0
