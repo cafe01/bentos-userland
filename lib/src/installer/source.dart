@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' as io;
 import 'dart:typed_data';
@@ -82,10 +83,12 @@ final class GithubReleaseSource implements ReleaseSource {
     http.Client? client,
     Map<String, String>? environment,
     String? Function()? keyringToken,
+    Future<void> Function(Duration)? sleep,
     this.tag,
   })  : _client = client ?? http.Client(),
         _env = environment ?? io.Platform.environment,
-        _keyringToken = keyringToken ?? _ghAuthToken;
+        _keyringToken = keyringToken ?? _ghAuthToken,
+        _sleep = sleep ?? _wait;
 
   @override
   final String stream;
@@ -102,8 +105,16 @@ final class GithubReleaseSource implements ReleaseSource {
   final http.Client _client;
   final Map<String, String> _env;
   final String? Function() _keyringToken;
+  final Future<void> Function(Duration) _sleep;
 
   static const api = 'https://api.github.com';
+
+  /// How a transient failure is ridden out: three attempts, doubling from a
+  /// second. Injected as a function so a test proves the policy without
+  /// spending seven seconds sleeping.
+  static const backoff = [Duration(seconds: 1), Duration(seconds: 2), Duration(seconds: 4)];
+
+  static Future<void> _wait(Duration d) => Future<void>.delayed(d);
 
   Map<String, Object?>? _release;
 
@@ -169,9 +180,44 @@ final class GithubReleaseSource implements ReleaseSource {
       ? decoded
       : throw SourceException('stream "$stream": unreadable release document from $repo');
 
+  /// One request, ridden out across [backoff] while the failure is transient.
+  ///
+  /// **A refusal is an answer and is never retried.** 401, 403 and 404 are the
+  /// registry saying what it holds and who may have it; repeating them turns a
+  /// clear no into a confused wait, and the caller learns the same thing seven
+  /// seconds later. What is worth another attempt is the network dropping and
+  /// the server saying *not now* — a socket failure, a timeout, 429, and 5xx.
   Future<http.Response> _get(String url, {required String accept}) async {
+    for (var attempt = 0;; attempt++) {
+      try {
+        final response = await _attempt(url, accept: accept);
+        if (_transient(response.statusCode) && attempt < backoff.length) {
+          await _sleep(backoff[attempt]);
+          continue;
+        }
+        return _judge(response);
+      } on io.SocketException catch (e) {
+        if (attempt >= backoff.length) throw SourceException(_unreachable(e.message));
+        await _sleep(backoff[attempt]);
+      } on http.ClientException catch (e) {
+        if (attempt >= backoff.length) throw SourceException(_unreachable(e.message));
+        await _sleep(backoff[attempt]);
+      } on TimeoutException {
+        if (attempt >= backoff.length) throw SourceException(_unreachable('timed out'));
+        await _sleep(backoff[attempt]);
+      }
+    }
+  }
+
+  static bool _transient(int status) => status == 429 || status >= 500;
+
+  String _unreachable(String detail) =>
+      'stream "$stream": could not reach ${Uri.parse(api).host} after '
+      '${backoff.length + 1} attempts — $detail. Check the network and run the same command again.';
+
+  Future<http.Response> _attempt(String url, {required String accept}) {
     final token = _token();
-    final response = await _client.get(
+    return _client.get(
       Uri.parse(url),
       headers: {
         'Accept': accept,
@@ -179,6 +225,10 @@ final class GithubReleaseSource implements ReleaseSource {
         if (token != null) 'Authorization': 'Bearer $token',
       },
     );
+  }
+
+  http.Response _judge(http.Response response) {
+    final token = _token();
     if (response.statusCode == 404) {
       throw SourceException(
         token == null

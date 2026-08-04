@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' as io;
 
 import 'package:args/command_runner.dart';
@@ -85,8 +86,26 @@ final class BentosRunner {
     } on IntegrityException catch (e) {
       err.writeln('bentos: $e');
       exitCode = 1;
+    } on io.SocketException catch (e) {
+      err.writeln('bentos: ${_offline(e.message)}');
+      exitCode = 1;
+    } on io.HandshakeException catch (e) {
+      err.writeln('bentos: ${_offline(e.message)}');
+      exitCode = 1;
+    } on http.ClientException catch (e) {
+      err.writeln('bentos: ${_offline(e.message)}');
+      exitCode = 1;
+    } on TimeoutException {
+      err.writeln('bentos: ${_offline("timed out")}');
+      exitCode = 1;
     }
   }
+
+  /// A network failure the source did not already dress: the last net between
+  /// a broken machine and a stack trace on someone else's terminal. The line
+  /// says what failed and what to do, and never how it was thrown.
+  static String _offline(String detail) =>
+      'could not reach the network — $detail. Check the connection and run the same command again.';
 
   /// The one place an install is reported, so every verb that installs reads
   /// the same on the terminal.

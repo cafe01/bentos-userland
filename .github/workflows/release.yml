@@ -1,0 +1,112 @@
+# Publishes bentos-userland as a release: one asset per executable, named
+# <name>-<platform>, plus the enriched bentos-release.json and the bootstrap
+# that installs it.
+#
+# It lives here because this repository is the producer. The campus is a private
+# workspace that produces nothing, and a release cut from it would be an
+# artifact with no public origin — so the workflow follows the repo whose name
+# the product carries, and a checkout of this repo alone must be able to build
+# it.
+#
+# The matrix is one platform. macOS and Windows are declared in the manifest as
+# intent; nobody has compiled or run them, and a green tick over an untested
+# target would be an assertion rather than a proof. `bentos` reports "no
+# linux-x64 build" honestly for a name it cannot serve, so the debt is visible
+# rather than made up.
+
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish (created if absent)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform: linux-x64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.12.0
+
+      # The seam with the front opening the sibling repositories. This package
+      # resolves bentos-abi, bentos-kernel and the inference drivers as git
+      # dependencies; while those repos are private, an unauthenticated runner
+      # cannot fetch them and this step is red — by name, so nobody mistakes the
+      # seam for a defect. It turns green by itself the day they are public,
+      # with nothing edited here.
+      - name: Resolve dependencies
+        run: |
+          if ! dart pub get; then
+            echo "::error::pub get failed — the sibling git dependencies (bentos-abi, bentos-kernel, stt-inference-dart, tts-inference-dart) do not resolve for an unauthenticated runner. This is the declared seam: it clears when those repositories are public."
+            exit 1
+          fi
+
+      # The same script a developer runs by hand, pointed at a staging directory
+      # instead of ~/.local/bin. Using it rather than a compile loop of its own
+      # is the point: CI and the hand build the same set, by the same registry,
+      # or they are two registries again.
+      - name: Compile the declared set
+        run: PREFIX="${{ runner.temp }}/stage" bash script/install.sh
+
+      - name: Enrich the manifest
+        run: dart tool/manifest.dart enrich ${{ matrix.platform }} "${{ runner.temp }}/stage" "${{ runner.temp }}/bentos-release.json"
+
+      - name: Stage assets under their asset names
+        run: |
+          mkdir -p "${{ runner.temp }}/dist"
+          while IFS=$'\t' read -r name _; do
+            if [ -f "${{ runner.temp }}/stage/$name" ]; then
+              cp "${{ runner.temp }}/stage/$name" "${{ runner.temp }}/dist/$name-${{ matrix.platform }}"
+            fi
+          done < <(dart tool/manifest.dart plan ${{ matrix.platform }})
+          ls -l "${{ runner.temp }}/dist"
+
+      # The bootstrap travels in the same release as the artifacts it fetches:
+      # the URL a clean machine curls and what it downloads next are one thing.
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          version=$(dart tool/manifest.dart version)
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$tag" --repo "$GITHUB_REPOSITORY" \
+                 --target "$GITHUB_SHA" \
+                 --title "bentos-userland $version (${{ matrix.platform }})" \
+                 --notes "Built by CI from $GITHUB_SHA. One asset per executable; bentos-release.json carries the sha256 of each — verify before linking."
+          gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber \
+            "${{ runner.temp }}/bentos-release.json" \
+            script/bootstrap.sh \
+            "${{ runner.temp }}"/dist/*
+
+      # Last, and deliberately after publishing: what built is released, and the
+      # job still goes red for whatever did not. A workflow that hid the
+      # executable it could not build would be the bash array's defect wearing
+      # different clothes.
+      - name: Gate — every declared executable produced an artifact
+        run: |
+          missing=$(dart tool/manifest.dart missing ${{ matrix.platform }} "${{ runner.temp }}/bentos-release.json")
+          if [ -n "$missing" ]; then
+            echo "::error::declared but not built for ${{ matrix.platform }}: $(echo $missing)"
+            exit 1
+          fi
+          echo "all declared executables produced an artifact"
