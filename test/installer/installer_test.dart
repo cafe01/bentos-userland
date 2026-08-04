@@ -56,10 +56,15 @@ void main() {
     return version;
   }
 
-  BentosRunner runnerWith(StringBuffer out, StringBuffer err) => BentosRunner(
+  /// The PATH the runner sees. Injected rather than inherited: the shadow
+  /// reading is about the caller's PATH, and a gate that let the operator's own
+  /// through would be asserting against whatever is installed on the machine
+  /// running the suite.
+  BentosRunner runnerWith(StringBuffer out, StringBuffer err, {List<String>? path}) => BentosRunner(
         out: out,
         err: err,
         host: host,
+        environment: {'PATH': (path ?? [prefix]).join(':')},
         config: BentosConfig(
           home: home,
           prefix: prefix,
@@ -70,10 +75,10 @@ void main() {
         ),
       );
 
-  Future<(int, String, String)> run(List<String> args) async {
+  Future<(int, String, String)> run(List<String> args, {List<String>? path}) async {
     final out = StringBuffer();
     final err = StringBuffer();
-    final runner = runnerWith(out, err);
+    final runner = runnerWith(out, err, path: path);
     await runner.run(args);
     return (runner.exitCode, out.toString(), err.toString());
   }
@@ -280,6 +285,118 @@ void main() {
       final (code, out, _) = await run(['list']);
       expect(code, 0);
       expect(out, isNot(contains('drifted')));
+    });
+  });
+
+  /// The report is about the prefix, and these gates witness the prefix.
+  ///
+  /// Asserting against what the version store holds is exactly the reading that
+  /// was wrong: the store held every artifact in both the cured and the
+  /// untouched case, so a gate built on it agrees with the defect. What each
+  /// test pins is the printed word against what happened to the *bytes at the
+  /// name*, read before and after the command.
+  group('install reports what happened to the prefix', () {
+    setUp(() async {
+      publish('0.2.0', ['mem', 'place']);
+      await run(['install']);
+    });
+
+    test('a cured name is restored, and the bytes say so', () async {
+      final intact = File(pathEntry('mem')).readAsBytesSync();
+      File(pathEntry('mem')).writeAsStringSync('#!/bin/sh\necho foreign\n');
+      final drifted = File(pathEntry('mem')).readAsBytesSync();
+      expect(drifted, isNot(intact));
+
+      final (code, out, _) = await run(['install']);
+
+      expect(code, 0);
+      expect(File(pathEntry('mem')).readAsBytesSync(), intact,
+          reason: 'the bytes were put back');
+      expect(out, contains('restored'));
+      expect(RegExp(r'restored\s+:.*\bmem\b').hasMatch(out), isTrue,
+          reason: 'the name whose bytes changed is the one reported restored');
+      expect(RegExp(r'unchanged\s+:.*\bmem\b').hasMatch(out), isFalse,
+          reason: 'a machine that was just repaired is never called unchanged');
+      // Disjoint in the same reading: the name nobody touched keeps its word.
+      expect(RegExp(r'unchanged\s+:.*\bplace\b').hasMatch(out), isTrue);
+    });
+
+    test('an untouched name is unchanged, and its bytes never move', () async {
+      final before = {
+        for (final name in ['mem', 'place'])
+          name: File(pathEntry(name)).statSync().modified,
+      };
+
+      final (code, out, _) = await run(['install']);
+
+      expect(code, 0);
+      expect(out, contains('unchanged'));
+      expect(out, isNot(contains('restored')),
+          reason: 'nothing was cured, so nothing may claim to have been');
+      for (final name in ['mem', 'place']) {
+        expect(File(pathEntry(name)).statSync().modified, before[name],
+            reason: '$name was not rewritten');
+      }
+    });
+
+    test('a first install is installed and never unchanged', () async {
+      publish('0.3.0', ['mem', 'place']);
+      final (code, out, _) = await run(['install']);
+
+      expect(code, 0);
+      expect(RegExp(r'installed\s+:.*\bmem\b').hasMatch(out), isTrue);
+      expect(out, isNot(contains('unchanged')));
+    });
+  });
+
+  /// A finding is a finding, whichever of the three it is — and it is content
+  /// of the report, not diagnostics of the run. The pairs are disjoint: the same
+  /// machine, one condition present and then absent.
+  group('every finding raises the code and lands on stdout', () {
+    late String ahead;
+
+    setUp(() async {
+      publish('0.2.0', ['mem', 'place']);
+      await run(['install']);
+      ahead = p.join(root.path, 'ahead');
+      Directory(ahead).createSync(recursive: true);
+    });
+
+    test('a shadowed name is a finding, in stdout, exit 2', () async {
+      File(p.join(ahead, 'mem')).writeAsStringSync('#!/bin/sh\necho someone else\n');
+
+      final (code, out, _) = await run(['list'], path: [ahead, prefix]);
+
+      expect(code, 2, reason: 'you run none of what was installed at that name');
+      expect(out, contains('shadowed'),
+          reason: 'stdout, so `bentos list > file` cannot fabricate health');
+      expect(out, contains(p.join(ahead, 'mem')));
+    });
+
+    test('no shadow, no finding — same machine, exit 0', () async {
+      final (code, out, _) = await run(['list'], path: [ahead, prefix]);
+
+      expect(code, 0);
+      expect(out, isNot(contains('shadowed')));
+    });
+
+    test('a prefix off the PATH is a finding, in stdout, exit 2', () async {
+      final (code, out, _) = await run(['list'], path: [ahead]);
+
+      expect(code, 2, reason: 'nothing installed here is what anyone runs');
+      expect(out, contains('is not on your PATH'));
+    });
+
+    test('the same name ahead of us, but ours, is no finding', () async {
+      // A shim: the bytes ahead are the artifact we installed, so the person
+      // does run what we put there and there is nothing to say.
+      File(p.join(ahead, 'mem'))
+          .writeAsBytesSync(File(pathEntry('mem')).readAsBytesSync());
+
+      final (code, out, _) = await run(['list'], path: [ahead, prefix]);
+
+      expect(code, 0);
+      expect(out, isNot(contains('shadowed')));
     });
   });
 }

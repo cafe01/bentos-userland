@@ -63,16 +63,23 @@ final class BentosRunner {
   /// **The exit codes of `bentos`, and this is where they are declared.**
   ///
   /// ```
-  /// 0   the command did what it says
+  /// 0   the command did what it says, and there is nothing to know
   /// 1   it could not — no such stream, bad hash, network down
-  /// 2   a finding, not a failure: something on the PATH has drifted
+  /// 2   a finding, not a failure: something about this machine needs saying
   /// 64  the command line itself was wrong
   /// ```
   ///
   /// 2 rather than 3 because 3 already means *refused* across our surfaces, and
-  /// a report of drift refuses nothing. A caller that only wants to know
-  /// whether the machine is intact reads the code and never the text.
-  static const driftExit = 2;
+  /// a report of a finding refuses nothing.
+  ///
+  /// **The code carries the worst condition the command can see, never the one
+  /// easiest to detect.** Drift was graded here first, and for a while it was
+  /// graded alone — so a machine whose every name was shadowed, or whose prefix
+  /// no PATH entry even reaches, exited 0 while the strictly worse thing was
+  /// true: with drift you run something altered, with a shadow you run none of
+  /// what was installed. A caller asking "is there anything I should know?"
+  /// must get its answer from the code and never from the text.
+  static const findingExit = 2;
 
   /// This binary's own name in the release — what `self-update` installs.
   static const selfName = 'bentos';
@@ -157,6 +164,11 @@ final class BentosRunner {
     out.writeln('${report.stream} ${report.version}  →  ${config.prefix}');
     if (report.installed.isNotEmpty) {
       out.writeln('  installed : ${report.installed.join(" ")}');
+    }
+    if (report.restored.isNotEmpty) {
+      out.writeln(
+        '  restored  : ${report.restored.join(" ")}  (had drifted from ${report.version})',
+      );
     }
     if (report.unchanged.isNotEmpty) {
       out.writeln('  unchanged : ${report.unchanged.join(" ")}');

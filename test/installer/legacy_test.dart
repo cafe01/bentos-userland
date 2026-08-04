@@ -229,8 +229,10 @@ void main() {
       final err = StringBuffer();
       await runner(out, err, path: '$ahead:$prefix').run(['list']);
 
-      expect(err.toString(), contains('shadowed'));
-      expect(err.toString(), contains(p.join(ahead, 'mem')));
+      // On stdout with the listing: it is a finding about the machine, and on
+      // stderr it disappeared under `bentos list > file`.
+      expect(out.toString(), contains('shadowed'));
+      expect(out.toString(), contains(p.join(ahead, 'mem')));
     });
 
     test('and stays quiet when nothing does', () async {
@@ -241,8 +243,8 @@ void main() {
       final err = StringBuffer();
       await runner(out, err, path: '$prefix:/usr/bin').run(['list']);
 
-      expect(err.toString(), isNot(contains('shadowed')));
-      expect(err.toString(), isNot(contains('not on your PATH')));
+      expect(out.toString(), isNot(contains('shadowed')));
+      expect(out.toString(), isNot(contains('not on your PATH')));
     });
 
     test('a prefix nobody can reach is said plainly', () async {
@@ -253,7 +255,7 @@ void main() {
       final err = StringBuffer();
       await runner(out, err, path: '/usr/bin:/bin').run(['list']);
 
-      expect(err.toString(), contains('is not on your PATH'));
+      expect(out.toString(), contains('is not on your PATH'));
     });
   });
 

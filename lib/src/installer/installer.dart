@@ -5,13 +5,21 @@ import 'platform.dart';
 import 'source.dart';
 import 'store.dart';
 
-/// The installation of one release: what was fetched, what was already held,
-/// and the version now live.
+/// The installation of one release, told about the machine the caller will run
+/// — never about the version store behind it.
+///
+/// The three words are disjoint and are decided by what happened to the bytes
+/// in the prefix: [installed] was fetched and put there, [restored] was already
+/// held and had to be written again because what sat at that name was not it,
+/// [unchanged] is the name nothing happened to. A report that classified by
+/// what the store holds would call a machine it had just cured untouched, and
+/// the person who ran the command to fix drift would have no word for it.
 final class InstallReport {
   InstallReport({
     required this.stream,
     required this.version,
     required this.installed,
+    required this.restored,
     required this.unchanged,
     required this.unavailable,
     required this.linked,
@@ -19,7 +27,15 @@ final class InstallReport {
 
   final String stream;
   final String version;
+
+  /// Fetched from the release and written into the prefix.
   final List<String> installed;
+
+  /// Already materialized, and written into the prefix because the file there
+  /// had drifted from it — drift cured, which is news of its own.
+  final List<String> restored;
+
+  /// The prefix already held exactly this artifact; nothing was written.
   final List<String> unchanged;
 
   /// Names the release declares but publishes no artifact of for this host.
@@ -73,8 +89,7 @@ final class Installer {
       );
     }
 
-    final installed = <String>[];
-    final unchanged = <String>[];
+    final fetched = <String>[];
     final unavailable = <String>[];
 
     for (final name in wanted) {
@@ -84,7 +99,6 @@ final class Installer {
         continue;
       }
       if (store.holds(stream, manifest.version, name, artifact.sha256)) {
-        unchanged.add(name);
         continue;
       }
       final bytes = await source.asset(artifact.asset);
@@ -95,19 +109,30 @@ final class Installer {
         bytes: bytes,
         expectedSha256: artifact.sha256,
       );
-      installed.add(name);
+      fetched.add(name);
     }
 
-    // Nothing reaches the PATH until every artifact of this pass is on disk: a
-    // failure above leaves the previous version live and untouched.
+    // Nothing reaches the prefix until every artifact of this pass is on disk:
+    // a failure above leaves the previous version live and untouched.
     final linked = store.namesIn(stream, manifest.version);
-    store.activate(stream, manifest.version);
+
+    // The classification is read off what activation actually did to the
+    // prefix, which is the only source that knows the difference between a name
+    // nothing happened to and a name whose drift was just cured.
+    final changed = store.activate(stream, manifest.version);
 
     return InstallReport(
       stream: stream,
       version: manifest.version,
-      installed: installed,
-      unchanged: unchanged,
+      installed: [for (final n in linked) if (fetched.contains(n)) n],
+      restored: [
+        for (final n in linked)
+          if (!fetched.contains(n) && changed.contains(n)) n,
+      ],
+      unchanged: [
+        for (final n in linked)
+          if (!fetched.contains(n) && !changed.contains(n)) n,
+      ],
       unavailable: unavailable,
       linked: linked,
     );

@@ -161,16 +161,22 @@ final class VersionStore {
   }
 
   /// Put [version] on the PATH: every name it holds is written over the name on
-  /// the PATH, and the pointer is moved last.
+  /// the PATH, and the pointer is moved last. Returns the names whose bytes in
+  /// the prefix actually changed — which is the only reading any report about
+  /// this machine may be built from.
   ///
   /// The pointer going last is what makes an interrupted activation safe to
   /// repeat — a run that dies halfway leaves `state.json` still naming the old
   /// version, and running the same command again finishes the substitution.
-  void activate(String stream, String version) {
+  Set<String> activate(String stream, String version) {
+    final changed = <String>{};
     for (final name in namesIn(stream, version)) {
-      substitute(stream: stream, version: version, name: name);
+      if (substitute(stream: stream, version: version, name: name)) {
+        changed.add(name);
+      }
     }
     InstallState.read(home).activate(stream, version);
+    return changed;
   }
 
   /// Return a stream to its previous version, substituting the binaries back.
@@ -186,12 +192,19 @@ final class VersionStore {
     return back;
   }
 
-  /// Write one artifact over its name on the PATH.
+  /// Write one artifact over its name in the prefix. Returns whether the bytes
+  /// at the destination changed — false when the prefix already held exactly
+  /// this artifact, in which case nothing is written at all.
+  ///
+  /// The answer is read from the destination's own bytes and never from what
+  /// the version store holds, because the two are exactly what drift makes
+  /// disagree: a report built from the store would call a cured machine
+  /// untouched.
   ///
   /// The bytes are staged inside [home] and renamed into place, so the file at
   /// the destination is either the whole old binary or the whole new one and
   /// never a half-written thing that a shell could pick up between the two.
-  void substitute({
+  bool substitute({
     required String stream,
     required String version,
     required String name,
@@ -202,6 +215,7 @@ final class VersionStore {
         '$name: version $version of "$stream" does not hold it',
       );
     }
+    if (_prefixHolds(name, source)) return false;
     io.Directory(stagingDir).createSync(recursive: true);
     io.Directory(prefix).createSync(recursive: true);
 
@@ -213,6 +227,18 @@ final class VersionStore {
     final destination = p.join(prefix, name);
     _displaceRunningExecutable(destination);
     _rename(staged.path, destination);
+    return true;
+  }
+
+  /// Whether the name in the prefix is already, byte for byte, [source].
+  bool _prefixHolds(String name, io.File source) {
+    final destination = io.File(p.join(prefix, name));
+    if (io.FileSystemEntity.typeSync(destination.path, followLinks: false) !=
+        io.FileSystemEntityType.file) {
+      return false;
+    }
+    return sha256.convert(destination.readAsBytesSync()) ==
+        sha256.convert(source.readAsBytesSync());
   }
 
   /// A host that refuses to rename over a running executable is given the file
@@ -256,14 +282,18 @@ final class VersionStore {
   }
 
   DriftState _driftOf(String stream, String version, String name) {
-    final onPath = io.File(p.join(prefix, name));
-    if (io.FileSystemEntity.typeSync(onPath.path, followLinks: false) ==
+    // The prefix's own file, which is not necessarily what the PATH answers:
+    // whether anyone reaches it is the shadow reading's question, and saying
+    // "on the PATH" here is how this check came to describe a machine it had
+    // not looked at.
+    final inPrefix = io.File(p.join(prefix, name));
+    if (io.FileSystemEntity.typeSync(inPrefix.path, followLinks: false) ==
         io.FileSystemEntityType.notFound) {
       return DriftState.missing;
     }
     final held = io.File(p.join(versionDir(stream, version), 'bin', name));
     if (!held.existsSync()) return DriftState.drifted;
-    final installed = sha256.convert(onPath.readAsBytesSync()).toString();
+    final installed = sha256.convert(inPrefix.readAsBytesSync()).toString();
     final expected = sha256.convert(held.readAsBytesSync()).toString();
     return installed == expected ? DriftState.installed : DriftState.drifted;
   }
