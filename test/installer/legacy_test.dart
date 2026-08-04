@@ -1,0 +1,325 @@
+import 'dart:io';
+
+import 'package:bentos_userland/installer.dart';
+import 'package:path/path.dart' as p;
+import 'package:test/test.dart';
+
+/// The machine that already ran the released installer, met by the one that
+/// replaced it.
+///
+/// Every fixture here is the OLD layout built by hand — links through
+/// `current`, no `state.json` — because that is the only shape the assertion
+/// can be made against: a store that writes the fixture cannot testify about a
+/// store that has to read it.
+void main() {
+  late Directory root;
+  late String home;
+  late String prefix;
+  late String legacyPrefix;
+
+  const stream = 'bentos-userland';
+
+  setUp(() {
+    root = Directory.systemTemp.createTempSync('bentos-legacy-');
+    home = p.join(root.path, 'bentos-home');
+    prefix = p.join(home, 'bin');
+    legacyPrefix = p.join(root.path, 'local-bin');
+  });
+
+  tearDown(() => root.deleteSync(recursive: true));
+
+  String script(String text) => '#!/bin/sh\n$text\n';
+
+  void hold(String version, Map<String, String> bodies) {
+    final dir = Directory(p.join(home, 'versions', stream, version, 'bin'))
+      ..createSync(recursive: true);
+    for (final entry in bodies.entries) {
+      final file = File(p.join(dir.path, entry.key))..writeAsStringSync(entry.value);
+      Process.runSync('chmod', ['+x', file.path]);
+    }
+  }
+
+  /// The released layout, exactly as the version before substitution left it:
+  /// `current` and `previous` as links, and the PATH entries pointing *through*
+  /// `current` rather than at any version.
+  void mountOldLayout({required String current, String? previous}) {
+    final streamDir = p.join(home, 'versions', stream);
+    Link(p.join(streamDir, 'current')).createSync(p.join(streamDir, current));
+    if (previous != null) {
+      Link(p.join(streamDir, 'previous')).createSync(p.join(streamDir, previous));
+    }
+    Directory(legacyPrefix).createSync(recursive: true);
+    for (final name in Directory(p.join(streamDir, current, 'bin'))
+        .listSync()
+        .map((e) => p.basename(e.path))) {
+      Link(p.join(legacyPrefix, name))
+          .createSync(p.join(streamDir, 'current', 'bin', name));
+    }
+  }
+
+  LegacyLayout layoutOf() => LegacyLayout(
+        home: home,
+        legacyPrefix: legacyPrefix,
+        store: VersionStore(home: home, prefix: prefix),
+      );
+
+  group('adoption', () {
+    test('a machine on the old layout is brought into the store', () {
+      hold('0.1.0', {'mem': script('echo "mem 0.1.0"'), 'place': script('echo "place"')});
+      hold('0.0.9', {'mem': script('echo "mem 0.0.9"')});
+      mountOldLayout(current: '0.1.0', previous: '0.0.9');
+
+      final reports = layoutOf().adopt(const [stream]);
+
+      expect(reports, hasLength(1));
+      expect(reports.single.version, '0.1.0');
+      expect(reports.single.previous, '0.0.9');
+
+      // The names on the PATH are binaries now, not links through anything.
+      final store = VersionStore(home: home, prefix: prefix);
+      expect(store.currentVersion(stream), '0.1.0');
+      expect(store.previousVersion(stream), '0.0.9',
+          reason: 'both ends of the old pointer are adopted, so rollback survives');
+      for (final name in ['mem', 'place']) {
+        final onPath = p.join(prefix, name);
+        expect(FileSystemEntity.typeSync(onPath, followLinks: false),
+            FileSystemEntityType.file,
+            reason: '$name on the new prefix must be the binary itself');
+      }
+      expect(File(p.join(prefix, 'mem')).readAsStringSync(), contains('mem 0.1.0'));
+
+      // The dead mechanism's pointer is gone.
+      expect(
+          FileSystemEntity.typeSync(p.join(home, 'versions', stream, 'current'),
+              followLinks: false),
+          FileSystemEntityType.notFound);
+      expect(
+          FileSystemEntity.typeSync(p.join(home, 'versions', stream, 'previous'),
+              followLinks: false),
+          FileSystemEntityType.notFound);
+    });
+
+    test('the old prefix keeps working — every name forwards to the real binary', () {
+      // The half that decides whether a live machine breaks. The person's PATH
+      // names the old prefix and nothing we do can change that, so the names
+      // there have to keep answering — through a link that is compatibility,
+      // never the activation mechanism, which resolves through nothing.
+      hold('0.1.0', {'mem': script('echo "mem 0.1.0"')});
+      mountOldLayout(current: '0.1.0');
+
+      expect(layoutOf().adopt(const [stream]).single.shimmed, ['mem']);
+
+      final shim = p.join(legacyPrefix, 'mem');
+      expect(FileSystemEntity.typeSync(shim, followLinks: false),
+          FileSystemEntityType.link);
+      expect(Link(shim).targetSync(), p.join(prefix, 'mem'));
+      // Not merely a link: the name still runs, which is the whole claim.
+      final ran = Process.runSync(shim, const []);
+      expect(ran.stdout, contains('mem 0.1.0'));
+    });
+
+    test('what is not provably ours is not touched, even under our own names', () {
+      // The foreign entries here carry names this release also ships, which is
+      // the only fixture that tests ownership at all: where the names differ,
+      // nothing gets re-aimed anyway — there is no binary of ours to aim it at,
+      // and that miss would rescue an installer with no ownership check in it.
+      hold('0.1.0', {
+        'mem': script('echo "mem 0.1.0"'),
+        'place': script('echo "place 0.1.0"'),
+        'llm': script('echo "llm 0.1.0"'),
+      });
+      mountOldLayout(current: '0.1.0');
+
+      // Somebody else's `place`, reached by a link out of our home.
+      final outsider = p.join(root.path, 'elsewhere');
+      Directory(outsider).createSync();
+      File(p.join(outsider, 'place')).writeAsStringSync(script('echo "theirs"'));
+      Link(p.join(legacyPrefix, 'place')).deleteSync();
+      Link(p.join(legacyPrefix, 'place')).createSync(p.join(outsider, 'place'));
+
+      // And somebody else's `llm`, a real binary sitting on the PATH — what a
+      // developer install leaves behind.
+      Link(p.join(legacyPrefix, 'llm')).deleteSync();
+      final foreign = File(p.join(legacyPrefix, 'llm'))
+        ..writeAsStringSync(script('echo "not ours"'));
+
+      expect(layoutOf().adopt(const [stream]).single.shimmed, ['mem'],
+          reason: 'only the entry we can prove we created is re-aimed');
+
+      expect(Link(p.join(legacyPrefix, 'place')).targetSync(),
+          p.join(outsider, 'place'),
+          reason: 'a link out of our home is not ours to re-aim');
+      expect(FileSystemEntity.typeSync(foreign.path, followLinks: false),
+          FileSystemEntityType.file);
+      expect(foreign.readAsStringSync(), contains('not ours'),
+          reason: 'a real file under our own name is still somebody else\'s');
+    });
+
+    test('adoption is idempotent — the second pass finds nothing to do', () {
+      hold('0.1.0', {'mem': script('echo "mem 0.1.0"')});
+      mountOldLayout(current: '0.1.0');
+
+      expect(layoutOf().adopt(const [stream]), hasLength(1));
+      expect(layoutOf().adopt(const [stream]), isEmpty,
+          reason: 'the marker it detects is the pointer it removes');
+      expect(VersionStore(home: home, prefix: prefix).currentVersion(stream), '0.1.0');
+    });
+
+    test('a machine with no old layout is left alone', () {
+      // The disjoint half. A clean machine — and any machine already on this
+      // store — must pass through adoption having written nothing at all.
+      hold('0.2.0', {'mem': script('echo "mem 0.2.0"')});
+      final store = VersionStore(home: home, prefix: prefix);
+      store.activate(stream, '0.2.0');
+      final before = File(p.join(home, 'state.json')).readAsStringSync();
+
+      expect(layoutOf().adopt(const [stream]), isEmpty);
+
+      expect(File(p.join(home, 'state.json')).readAsStringSync(), before);
+      expect(store.currentVersion(stream), '0.2.0');
+      expect(Directory(legacyPrefix).existsSync(), isFalse,
+          reason: 'adoption must not create the directory it looks for');
+    });
+
+    test('nothing at all on the machine is not an error', () {
+      expect(layoutOf().adopt(const [stream]), isEmpty);
+      expect(Directory(home).existsSync(), isFalse);
+    });
+  });
+
+  group('through the command', () {
+    /// The wiring, which is half the design: adoption that has to be typed is a
+    /// hole with a name on it, so it rides the top of the ordinary verbs.
+    BentosRunner runner(StringBuffer out, StringBuffer err, {String? path}) =>
+        BentosRunner(
+          out: out,
+          err: err,
+          host: const HostPlatform('linux', 'x64'),
+          environment: {if (path != null) 'PATH': path},
+          config: BentosConfig(
+            home: home,
+            prefix: prefix,
+            legacyPrefix: legacyPrefix,
+            streams: const {'bentos-userland': StreamConfig(name: 'bentos-userland')},
+          ),
+        );
+
+    test('`list` adopts the machine before it reports on it', () async {
+      hold('0.1.0', {'mem': script('echo "mem 0.1.0"')});
+      mountOldLayout(current: '0.1.0');
+
+      final out = StringBuffer();
+      final err = StringBuffer();
+      await runner(out, err, path: prefix).run(['list']);
+
+      expect(out.toString(), contains('adopted bentos-userland 0.1.0'));
+      expect(out.toString(), contains('bentos-userland  0.1.0'));
+      expect(VersionStore(home: home, prefix: prefix).currentVersion(stream), '0.1.0');
+    });
+
+    test('`list` says out loud when something answers our name first', () async {
+      hold('0.1.0', {'mem': script('echo "mem 0.1.0"')});
+      mountOldLayout(current: '0.1.0');
+
+      final ahead = p.join(root.path, 'ahead');
+      Directory(ahead).createSync();
+      File(p.join(ahead, 'mem')).writeAsStringSync(script('echo "someone else"'));
+
+      final out = StringBuffer();
+      final err = StringBuffer();
+      await runner(out, err, path: '$ahead:$prefix').run(['list']);
+
+      expect(err.toString(), contains('shadowed'));
+      expect(err.toString(), contains(p.join(ahead, 'mem')));
+    });
+
+    test('and stays quiet when nothing does', () async {
+      hold('0.1.0', {'mem': script('echo "mem 0.1.0"')});
+      mountOldLayout(current: '0.1.0');
+
+      final out = StringBuffer();
+      final err = StringBuffer();
+      await runner(out, err, path: '$prefix:/usr/bin').run(['list']);
+
+      expect(err.toString(), isNot(contains('shadowed')));
+      expect(err.toString(), isNot(contains('not on your PATH')));
+    });
+
+    test('a prefix nobody can reach is said plainly', () async {
+      hold('0.1.0', {'mem': script('echo "mem 0.1.0"')});
+      mountOldLayout(current: '0.1.0');
+
+      final out = StringBuffer();
+      final err = StringBuffer();
+      await runner(out, err, path: '/usr/bin:/bin').run(['list']);
+
+      expect(err.toString(), contains('is not on your PATH'));
+    });
+  });
+
+  group('shadow on the PATH', () {
+    test('a name answered earlier by something else lights up', () {
+      hold('0.2.0', {'mem': script('echo "mem 0.2.0"')});
+      final store = VersionStore(home: home, prefix: prefix);
+      store.activate(stream, '0.2.0');
+
+      final ahead = p.join(root.path, 'ahead');
+      Directory(ahead).createSync();
+      File(p.join(ahead, 'mem')).writeAsStringSync(script('echo "someone else"'));
+
+      final shadows = PathShadows(prefix: prefix, pathDirs: [ahead, prefix]);
+      final finding = shadows.ahead('mem',
+          ourArtifact: store.artifactPath(stream, '0.2.0', 'mem'));
+
+      expect(finding, isNotNull);
+      expect(finding!.path, p.join(ahead, 'mem'));
+      expect(finding.isOurs, isFalse);
+      expect(shadows.prefixIsUnreachable, isFalse);
+    });
+
+    test('no shadow, no word', () {
+      hold('0.2.0', {'mem': script('echo "mem 0.2.0"')});
+      final store = VersionStore(home: home, prefix: prefix);
+      store.activate(stream, '0.2.0');
+
+      final behind = p.join(root.path, 'behind');
+      Directory(behind).createSync();
+      File(p.join(behind, 'mem')).writeAsStringSync(script('echo "later"'));
+
+      // The same file, on the other side of our prefix: order is the whole
+      // difference between a finding and a non-event.
+      final shadows = PathShadows(prefix: prefix, pathDirs: [prefix, behind]);
+      expect(
+          shadows.ahead('mem',
+              ourArtifact: store.artifactPath(stream, '0.2.0', 'mem')),
+          isNull);
+    });
+
+    test('our own bytes ahead of us are ours, not a stranger', () {
+      // What the shim itself looks like from here: the old prefix answers
+      // first, and what it answers with is the binary we installed. Reporting
+      // that as a stranger would cry wolf on every adopted machine.
+      hold('0.2.0', {'mem': script('echo "mem 0.2.0"')});
+      final store = VersionStore(home: home, prefix: prefix);
+      store.activate(stream, '0.2.0');
+
+      final ahead = p.join(root.path, 'ahead');
+      Directory(ahead).createSync();
+      Link(p.join(ahead, 'mem')).createSync(p.join(prefix, 'mem'));
+
+      final finding = PathShadows(prefix: prefix, pathDirs: [ahead, prefix])
+          .ahead('mem', ourArtifact: store.artifactPath(stream, '0.2.0', 'mem'));
+
+      expect(finding, isNotNull);
+      expect(finding!.isOurs, isTrue);
+    });
+
+    test('a prefix that is on nobody\'s PATH is unreachable, and says so', () {
+      expect(
+        PathShadows(prefix: prefix, pathDirs: ['/usr/bin', '/bin'])
+            .prefixIsUnreachable,
+        isTrue,
+      );
+    });
+  });
+}

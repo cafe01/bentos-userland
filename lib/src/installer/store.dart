@@ -93,6 +93,11 @@ final class VersionStore {
   String? currentVersion(String stream) => state[stream]?.current;
   String? previousVersion(String stream) => state[stream]?.previous;
 
+  /// Where a materialized version keeps one name — the bytes any claim about
+  /// what is installed is judged against.
+  String artifactPath(String stream, String version, String name) =>
+      p.join(versionDir(stream, version), 'bin', name);
+
   /// The executables held by a materialized version.
   List<String> namesIn(String stream, String version) {
     final dir = io.Directory(p.join(versionDir(stream, version), 'bin'));

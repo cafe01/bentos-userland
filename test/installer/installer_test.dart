@@ -63,6 +63,9 @@ void main() {
         config: BentosConfig(
           home: home,
           prefix: prefix,
+          // Under this test's own root: the runner now looks at the old prefix
+          // on every verb, and no gate may look at the operator's `~/.local/bin`.
+          legacyPrefix: p.join(root.path, 'legacy-bin'),
           streams: {'bentos-userland': StreamConfig(name: 'bentos-userland', dir: streamDir)},
         ),
       );

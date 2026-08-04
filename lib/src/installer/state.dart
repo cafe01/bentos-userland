@@ -54,6 +54,15 @@ final class InstallState {
     _write();
   }
 
+  /// Record a pointer read from somewhere else — the links the layout before
+  /// substitution carried. Both ends are taken as given rather than derived
+  /// from what is here, because nothing is here: this is the first write this
+  /// file gets on a machine that predates it.
+  void adopt(String stream, {required String current, String? previous}) {
+    _streams[stream] = StreamState(current: current, previous: previous);
+    _write();
+  }
+
   /// Trade current and previous. Returns the version now live, or null when
   /// there is nothing to go back to.
   String? rollback(String stream) {

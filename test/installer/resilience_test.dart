@@ -131,6 +131,7 @@ void main() {
       config: BentosConfig(
         home: p.join(root.path, 'home'),
         prefix: p.join(root.path, 'bin'),
+        legacyPrefix: p.join(root.path, 'legacy-bin'),
         streams: BentosConfig.defaultStreams,
       ),
     );

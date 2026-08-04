@@ -28,8 +28,10 @@ final class ListCommand extends Command<void> {
 
   @override
   Future<void> run() async {
+    bentos.adoptLegacyLayout();
     final store = bentos.store;
     final out = bentos.out;
+    final shadows = bentos.shadows;
     var drifted = false;
     out.writeln('prefix: ${bentos.config.prefix}   host: ${bentos.host}');
     for (final stream in bentos.config.streams.keys) {
@@ -42,8 +44,25 @@ final class ListCommand extends Command<void> {
       out.writeln('$stream  $version${previous == null ? '' : '   (previous: $previous)'}');
       for (final entry in store.drift(stream)) {
         drifted = drifted || entry.isDrift;
+        final shadow = shadows.ahead(
+          entry.name,
+          ourArtifact: store.artifactPath(stream, version, entry.name),
+        );
         out.writeln('  ${_mark(entry.state)} ${entry.name}${_note(entry.state)}');
+        if (shadow != null && !shadow.isOurs) {
+          bentos.err.writeln(
+            '    shadowed — ${shadow.path} answers "${entry.name}" before this '
+            'prefix does, and it is not what I installed',
+          );
+        }
       }
+    }
+    if (shadows.prefixIsUnreachable) {
+      bentos.err.writeln(
+        'bentos: ${bentos.config.prefix} is not on your PATH — nothing installed '
+        'here is what you run. Add it with:\n'
+        '        export PATH="${bentos.config.prefix}:\$PATH"',
+      );
     }
     if (drifted) bentos.exitCode = BentosRunner.driftExit;
   }
