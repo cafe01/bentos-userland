@@ -50,6 +50,11 @@ defaults:
 
 jobs:
   build:
+    # The sibling packages are declared by SSH URL, which a runner has no key
+    # for. The repositories are public, so the same clone over HTTPS succeeds
+    # with no credential at all — rewritten here rather than in the pubspecs
+    # because that edit spans eleven repositories and belongs to a pass of its
+    # own. Declared debt, not a workaround: a developer keeps their SSH remotes.
     strategy:
       # Every platform gets its verdict. One falling must not cancel the three
       # that would have succeeded — that is the difference between a matrix that
@@ -74,6 +79,9 @@ jobs:
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: 3.12.0
+
+      - name: Reach the public siblings over HTTPS
+        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
 
       - name: Resolve dependencies
         run: dart pub get
@@ -106,6 +114,9 @@ jobs:
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: 3.12.0
+
+      - name: Reach the public siblings over HTTPS
+        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
 
       - name: Resolve dependencies
         run: dart pub get
