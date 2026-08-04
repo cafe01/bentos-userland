@@ -101,10 +101,10 @@ final class InfoCommand extends EntityCommand {
     final named = positional('name');
     final entity = cli.entityNamed(named, place: placeOption);
     cli.out.writeln('name\t${entity.name}');
-    cli.out.writeln('genesis\t${entity.genesis.sha}');
 
     final Manifest declared;
     try {
+      cli.out.writeln('genesis\t${entity.genesis.sha}');
       declared = entity.manifest;
     } on Object {
       cli.err.writeln('entity info: ${entity.name} declares no manifest');

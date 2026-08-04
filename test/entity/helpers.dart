@@ -19,6 +19,46 @@ String repositoryOf(String placePath, String name) => p.join(
       Entity.repositoryDirName,
     );
 
+/// A repository this system never authored — no `genesis` branch, no identity
+/// trailer, one ordinary commit on `main` with an `entity.yaml` at its root
+/// declaring [declaredName]. The disjoint fixture the install portal needs:
+/// every other repository in this suite passes through [Entity.create], and a
+/// gate that only ever meets its own hand cannot tell a real one from a copy
+/// of itself.
+///
+/// [declaredName] is deliberately free to differ from [dirName] — the one
+/// shape that actually exercises the manifest's precedence over the source's
+/// own basename, rather than the two coinciding by naming accident.
+///
+/// Returns the bare `gitDir`, installable as a `source` — a local path is a
+/// URL Git accepts natively, so no network is needed to prove this.
+String foreignRepository(
+  Git git,
+  String rootPath, {
+  required String dirName,
+  required String declaredName,
+}) {
+  final gitDir = p.join(rootPath, dirName);
+  git.init(gitDir, bare: true);
+  final work = Directory.systemTemp.createTempSync('entity_foreign-');
+  try {
+    File(p.join(work.path, 'entity.yaml'))
+        .writeAsStringSync('name: $declaredName\ntype: bentos.mem\n');
+    final tree = git.writeTree(gitDir, workTree: work.path);
+    final sha = git.commitTree(
+      gitDir,
+      tree: tree,
+      parents: const [],
+      message: 'initial\n',
+    );
+    git.updateRef(gitDir, ref: 'refs/heads/main', newCommit: Commit(sha), expected: null);
+    git.updateRef(gitDir, ref: 'HEAD', newCommit: Commit(sha), expected: null);
+  } finally {
+    work.deleteSync(recursive: true);
+  }
+  return gitDir;
+}
+
 /// A hermetic site: a real directory marked as a place, with a [FakeGit]
 /// standing in for the substrate.
 ///

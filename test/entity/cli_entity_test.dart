@@ -341,6 +341,34 @@ void main() {
           EntityRunner.notFoundCode);
     });
 
+    test('a repository this system never authored installs, genesis and all',
+        () async {
+      // The disjoint witness: no create(), no genesis branch, no identity
+      // trailer — an ordinary repository as any forge hands one out. Every
+      // other fixture in this suite passes through Entity.create and cannot
+      // tell a real clone from a mirror of itself; this one can.
+      final origin = Site('origin', site.git);
+      addTearDown(origin.dispose);
+      final source = foreignRepository(
+        site.git,
+        origin.root.path,
+        dirName: 't.foreign',
+        declaredName: 't.imported',
+      );
+
+      final r = await cli.run(['install', source]);
+      expect(r.code, 0);
+      expect(r.out.trim(), 't.imported',
+          reason: 'the manifest, never the source basename — the two differ '
+              'here on purpose, so a name that matched by coincidence in '
+              "every other fixture can't hide a precedence that never ran");
+
+      final info = await cli.run(['info', 't.imported']);
+      expect(info.code, 0);
+      expect(info.out, contains('genesis\t'));
+      expect(info.out, contains('type\tbentos.mem'));
+    });
+
     test('a bare name is an invalid source, never something to discover',
         () async {
       // No scheme, no path separator: exactly the shape a discovery layer

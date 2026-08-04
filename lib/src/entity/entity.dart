@@ -182,14 +182,17 @@ final class Entity {
       name = as;
       gitDir = p.join(place.plot(plotNamespace).path, name, repositoryDirName);
       await ambientGit.clone(source, gitDir);
+      _ensureGenesis(gitDir);
     } else {
       final staging = Directory.systemTemp.createTempSync('entity-install-');
       final stagingGitDir = p.join(staging.path, repositoryDirName);
       try {
         await ambientGit.clone(source, stagingGitDir);
+        _ensureGenesis(stagingGitDir);
         name = _declaredName(stagingGitDir) ?? _nameFromSource(source);
         gitDir = p.join(place.plot(plotNamespace).path, name, repositoryDirName);
         await ambientGit.clone(stagingGitDir, gitDir);
+        _ensureGenesis(gitDir);
       } finally {
         if (staging.existsSync()) staging.deleteSync(recursive: true);
       }
@@ -204,6 +207,26 @@ final class Entity {
     // Nothing is checked out: a site that only reacts holds no worktree at all,
     // and bringing the tree down is the place's own recursive verb.
     return Entity(name, from: place.root.path);
+  }
+
+  /// **A clone brings history, never a class born here** — a foreign
+  /// repository owes no `genesis` branch, only the ordinary root its own
+  /// history already has. Where no genesis ref exists yet, this names one:
+  /// the commit `HEAD`'s first-parent line ends at, the one honest answer to
+  /// *where did this line come from*. Idempotent — an existing genesis, own
+  /// or already carried over by a prior clone in this same install, is left
+  /// exactly as it stands.
+  static void _ensureGenesis(String gitDir) {
+    if (ambientGit.revParse(gitDir, genesisRef) != null) return;
+    if (ambientGit.revParse(gitDir, 'HEAD') == null) return;
+    final history = ambientGit.log(gitDir, ref: 'HEAD');
+    if (history.isEmpty) return;
+    ambientGit.updateRef(
+      gitDir,
+      ref: genesisRef,
+      newCommit: Commit(history.last.sha),
+      expected: null,
+    );
   }
 
   /// The name a just-cloned entity declares of itself, or `null` when it

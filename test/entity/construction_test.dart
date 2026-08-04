@@ -660,6 +660,38 @@ void main() {
     });
   });
 
+  group('install of a repository this system never authored', () {
+    // Real git, a real clone, and a source with no genesis branch — the
+    // disjoint witness against the actual substrate, not the fake standing in
+    // for it. Every install elsewhere in this file clones something born of
+    // Entity.create, which already carries the ref install has to invent here.
+    test('establishes genesis from the clone\'s own root, and the manifest '
+        'names it', () async {
+      const git = ProcessGit();
+      final origin = _place('entity_foreign_origin_');
+      final there = _place('entity_foreign_there_');
+      addTearDown(() {
+        for (final dir in [origin, there]) {
+          if (dir.existsSync()) dir.deleteSync(recursive: true);
+        }
+      });
+      final source = foreignRepository(
+        git,
+        origin.path,
+        dirName: 't.foreign',
+        declaredName: 't.imported',
+      );
+
+      final installed = await Entity.install(source, at: there.path);
+
+      expect(installed.name, 't.imported',
+          reason: 'the manifest, read off a clone that never had a genesis '
+              'ref until install made one');
+      expect(installed.genesis.sha, isNotEmpty);
+      expect(installed.manifest.type, 'bentos.mem');
+    });
+  });
+
   group('acceptance', () {
     // The lab's `bash test/gates.sh` walks the whole vocabulary of
     // `bentos.llm` — six gates, thirty-three assertions, no API key.
