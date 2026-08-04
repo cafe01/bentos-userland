@@ -19,6 +19,11 @@
 #
 # Target dir: $PREFIX (default: $HOME/.local/bin). Override by setting PREFIX.
 #
+# Deliberately NOT ~/.bentos/bin: that directory belongs to the `bentos`
+# installer, which substitutes released artifacts into it and reports anything
+# else there as drift. A developer build dropped in beside them would shadow an
+# installed release with something no release ever produced.
+#
 # Usage:  cd lib/bentos-userland && bash script/install.sh [name ...]
 #   no args   — compile and install every executable the manifest declares
 #   name ...  — install only the named ones (compiling the rest is skipped)

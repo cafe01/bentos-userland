@@ -4,8 +4,9 @@ import '../bentos_runner.dart';
 
 /// `bentos rollback` — put the previous version back.
 ///
-/// Installing is fetch, verify, move a link; rollback is moving the link back,
-/// and nothing is fetched or deleted to do it.
+/// Installing is fetch, verify, substitute; rollback is substituting back, and
+/// nothing is fetched or deleted to do it — the earlier version's artifacts
+/// were never removed.
 final class RollbackCommand extends Command<void> {
   RollbackCommand(this.bentos) {
     argParser.addOption(
@@ -33,7 +34,6 @@ final class RollbackCommand extends Command<void> {
       bentos.exitCode = 1;
       return;
     }
-    store.link(stream, store.namesIn(stream, restored));
     bentos.out.writeln('$stream  →  $restored');
   }
 }

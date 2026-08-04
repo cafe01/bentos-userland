@@ -59,6 +59,20 @@ final class BentosRunner {
   /// The stream a command acts on when none is named.
   static const defaultStream = 'bentos-userland';
 
+  /// **The exit codes of `bentos`, and this is where they are declared.**
+  ///
+  /// ```
+  /// 0   the command did what it says
+  /// 1   it could not — no such stream, bad hash, network down
+  /// 2   a finding, not a failure: something on the PATH has drifted
+  /// 64  the command line itself was wrong
+  /// ```
+  ///
+  /// 2 rather than 3 because 3 already means *refused* across our surfaces, and
+  /// a report of drift refuses nothing. A caller that only wants to know
+  /// whether the machine is intact reads the code and never the text.
+  static const driftExit = 2;
+
   /// This binary's own name in the release — what `self-update` installs.
   static const selfName = 'bentos';
 

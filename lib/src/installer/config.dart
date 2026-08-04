@@ -6,10 +6,14 @@ import 'package:toml/toml.dart';
 /// Where `bentos` keeps its state and which streams it watches.
 ///
 /// The defaults are compiled in, so a machine that has nothing but the binary
-/// already knows where the userland is; `~/.bentos/config.toml` overrides them
-/// and the environment overrides that. The prefix is a variable and not a
-/// constant on purpose: pointing the installer at the real `~/.local/bin` is
-/// then one line of config rather than a patch.
+/// already knows where the userland is; `~/.bentos/config.toml` overrides the
+/// streams.
+///
+/// **The prefix is not a choice.** The names on the PATH are the binaries
+/// themselves, so the directory holding them is the installer's own —
+/// `~/.bentos/bin`, inside the home it stages into, which is what keeps every
+/// rename on one filesystem. `BENTOS_PREFIX` exists so a gate can drive the
+/// installer under its own root and is not an installation option.
 final class BentosConfig {
   const BentosConfig({
     required this.home,
@@ -17,10 +21,11 @@ final class BentosConfig {
     required this.streams,
   });
 
-  /// `~/.bentos` — versions, current links, the config itself.
+  /// `~/.bentos` — versions, state, staging, the config itself.
   final String home;
 
-  /// Where the names on the PATH are linked.
+  /// `<home>/bin` — where the installed executables live, and the one directory
+  /// this product asks to be on the PATH.
   final String prefix;
 
   final Map<String, StreamConfig> streams;
@@ -54,16 +59,11 @@ final class BentosConfig {
     final userHome = homeDir ?? env['HOME'] ?? env['USERPROFILE'] ?? '.';
     final home = env['BENTOS_HOME'] ?? p.join(userHome, '.bentos');
 
-    var prefix = p.join(userHome, '.local', 'bin');
     final streams = <String, StreamConfig>{...defaultStreams};
 
     final file = io.File(p.join(home, 'config.toml'));
     if (file.existsSync()) {
       final doc = TomlDocument.parse(file.readAsStringSync()).toMap();
-      final declaredPrefix = doc['prefix'];
-      if (declaredPrefix is String && declaredPrefix.isNotEmpty) {
-        prefix = _expandUser(declaredPrefix, userHome);
-      }
       final declared = doc['streams'];
       if (declared is Map) {
         for (final entry in declared.entries) {
@@ -83,9 +83,9 @@ final class BentosConfig {
     }
 
     final envPrefix = env['BENTOS_PREFIX'];
-    if (envPrefix != null && envPrefix.isNotEmpty) {
-      prefix = _expandUser(envPrefix, userHome);
-    }
+    final prefix = envPrefix != null && envPrefix.isNotEmpty
+        ? _expandUser(envPrefix, userHome)
+        : p.join(home, 'bin');
 
     return BentosConfig(home: home, prefix: prefix, streams: streams);
   }

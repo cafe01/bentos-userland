@@ -28,8 +28,32 @@ void main() {
     final config = BentosConfig.load(environment: const {}, homeDir: root.path);
     expect(config.streams.keys, contains('bentos-userland'));
     expect(config.streams['bentos-userland']!.repo, 'cafe01/bentos-userland');
-    expect(config.prefix, p.join(root.path, '.local', 'bin'));
     expect(config.home, p.join(root.path, '.bentos'));
+    // The prefix is inside the home and not a choice: the binaries themselves
+    // sit there, and every rename that puts one there starts inside this root.
+    expect(config.prefix, p.join(root.path, '.bentos', 'bin'));
+  });
+
+  test('the config file cannot move the prefix — it is not an option', () {
+    final root = Directory.systemTemp.createTempSync('bentos-config-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    final home = p.join(root.path, '.bentos');
+    Directory(home).createSync(recursive: true);
+    File(p.join(home, 'config.toml')).writeAsStringSync('prefix = "~/bin"\n');
+
+    final config = BentosConfig.load(environment: {'HOME': root.path}, homeDir: root.path);
+    expect(config.prefix, p.join(home, 'bin'));
+  });
+
+  test('BENTOS_PREFIX moves it, which is how a gate drives the installer', () {
+    final root = Directory.systemTemp.createTempSync('bentos-config-');
+    addTearDown(() => root.deleteSync(recursive: true));
+
+    final config = BentosConfig.load(
+      environment: {'HOME': root.path, 'BENTOS_PREFIX': p.join(root.path, 'elsewhere')},
+      homeDir: root.path,
+    );
+    expect(config.prefix, p.join(root.path, 'elsewhere'));
   });
 
   test('a config file overrides the default without deleting it', () {
@@ -38,15 +62,12 @@ void main() {
     final home = p.join(root.path, '.bentos');
     Directory(home).createSync(recursive: true);
     File(p.join(home, 'config.toml')).writeAsStringSync('''
-prefix = "~/bin"
-
 [streams.bentos-kernel]
 repo = "cafe01/bentos-kernel"
 tag_prefix = "v"
 ''');
 
     final config = BentosConfig.load(environment: {'HOME': root.path}, homeDir: root.path);
-    expect(config.prefix, p.join(root.path, 'bin'));
     expect(config.streams['bentos-kernel']!.repo, 'cafe01/bentos-kernel');
     expect(config.streams['bentos-userland']!.repo, 'cafe01/bentos-userland');
   });

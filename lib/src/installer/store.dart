@@ -4,44 +4,94 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
-/// The on-disk half of the installer: where versions land, and the link swap
-/// that makes an install atomic and a rollback free.
+import 'state.dart';
+
+/// Rename one path onto another. The seam exists so a gate can make the rename
+/// fail the way a cross-device rename fails and watch the failure come out —
+/// the mechanism this store is built on is that a rename either happens whole
+/// or does not happen, and a fallback that copies instead would keep the store
+/// working while destroying that guarantee.
+typedef FileRenamer = void Function(String from, String to);
+
+void renameOnDisk(String from, String to) => io.File(from).renameSync(to);
+
+/// One executable on the PATH, judged against the version that is supposed to
+/// be live.
+final class DriftEntry {
+  const DriftEntry({required this.name, required this.state});
+
+  final String name;
+  final DriftState state;
+
+  bool get isDrift => state != DriftState.installed;
+}
+
+enum DriftState {
+  /// The file on the PATH is byte-for-byte the artifact of the live version.
+  installed,
+
+  /// The live version holds this name and the PATH does not.
+  missing,
+
+  /// Something else is on the PATH under our name.
+  drifted,
+}
+
+/// The on-disk half of the installer: where versions land, and the rename that
+/// puts one of them on the PATH.
 ///
 /// ```
 /// <home>/versions/<stream>/<version>/bin/<name>   the artifacts, immutable
-/// <home>/versions/<stream>/current -> <version>   one link, swapped by rename
-/// <home>/versions/<stream>/previous -> <version>  what rollback goes back to
-/// <prefix>/<name> -> ../versions/<stream>/current/bin/<name>
+/// <home>/state.json                               which version is live
+/// <home>/staging/                                 where a file waits to be renamed
+/// <home>/bin/<name>                               the PATH entry — the binary itself
 /// ```
 ///
-/// Nothing is ever overwritten in place. The names on the PATH point *through*
-/// `current`, so one rename moves a whole userland from one version to the next
-/// and a network failure mid-install cannot leave the machine holding half of
-/// one.
+/// **Activation is substitution.** The name on the PATH is a real executable,
+/// and moving to another version rewrites each of those files by renaming a
+/// staged copy over it. Nothing resolves through an indirection, so nothing on
+/// the PATH can be left pointing at a version that is being replaced.
+///
+/// The staging area is inside [home] on purpose: `rename(2)` across filesystems
+/// does not degrade to a copy, it fails with `EXDEV`, and a staging area under
+/// the machine's temp directory is a different filesystem on most hosts we run
+/// on. Everything that will be renamed is written next to where it is going.
+///
+/// What this store no longer buys is set atomicity — ten names move in ten
+/// renames, and an interrupted activation leaves some moved and some not. There
+/// is no consumer of the stronger guarantee: what a caller needs is that each
+/// binary is whole, which rename gives, and that an interrupted activation can
+/// be run again, which it can, because the artifacts are immutable and the
+/// pointer is written last.
 final class VersionStore {
-  const VersionStore({required this.home, required this.prefix});
+  VersionStore({
+    required this.home,
+    required this.prefix,
+    FileRenamer? rename,
+    bool? windowsSemantics,
+  })  : _rename = rename ?? renameOnDisk,
+        _windows = windowsSemantics ?? io.Platform.isWindows;
 
   final String home;
   final String prefix;
+  final FileRenamer _rename;
+
+  /// Whether the host refuses to rename over a file that is being executed.
+  /// Injected rather than read, so the path that exists for Windows is driven
+  /// by a gate on every host instead of only where it cannot be run.
+  final bool _windows;
 
   String streamDir(String stream) => p.join(home, 'versions', stream);
   String versionDir(String stream, String version) => p.join(streamDir(stream), version);
-  String currentLink(String stream) => p.join(streamDir(stream), 'current');
-  String previousLink(String stream) => p.join(streamDir(stream), 'previous');
 
-  /// The version `current` resolves to, or null when the stream was never
-  /// installed. Read as the link's own target, never by walking the directory.
-  String? currentVersion(String stream) {
-    final link = io.Link(currentLink(stream));
-    if (!link.existsSync()) return null;
-    return p.basename(link.targetSync());
-  }
+  /// Where a file waits to be renamed into place. Inside [home] by construction:
+  /// see the note on cross-device renames above.
+  String get stagingDir => p.join(home, 'staging');
 
-  String? previousVersion(String stream) {
-    final link = io.Link(previousLink(stream));
-    if (!link.existsSync()) return null;
-    return p.basename(link.targetSync());
-  }
+  InstallState get state => InstallState.read(home);
+
+  String? currentVersion(String stream) => state[stream]?.current;
+  String? previousVersion(String stream) => state[stream]?.previous;
 
   /// The executables held by a materialized version.
   List<String> namesIn(String stream, String version) {
@@ -54,8 +104,7 @@ final class VersionStore {
   }
 
   /// True when this exact artifact is already materialized — same version,
-  /// same hash. Re-installing is then a link swap and no download, which is
-  /// what makes `update` cheap when only one binary moved.
+  /// same hash. Re-installing is then a rename and no download.
   bool holds(String stream, String version, String name, String expectedSha256) {
     final file = io.File(p.join(versionDir(stream, version), 'bin', name));
     if (!file.existsSync()) return false;
@@ -63,10 +112,10 @@ final class VersionStore {
         expectedSha256.toLowerCase();
   }
 
-  /// Open a version for writing, seeded with everything the current version
+  /// Open a version for writing, seeded with everything the live version
   /// already holds. Carrying forward is what keeps a surgical
-  /// `bentos install mem` from leaving the other names unlinked: `current`
-  /// always resolves to a complete set.
+  /// `bentos install mem` from leaving the other names behind: the version that
+  /// gets activated always holds a complete set.
   String openVersion(String stream, String version) {
     final target = p.join(versionDir(stream, version), 'bin');
     io.Directory(target).createSync(recursive: true);
@@ -103,66 +152,115 @@ final class VersionStore {
     final staged = io.File(p.join(dir, '.$name.incoming'));
     staged.writeAsBytesSync(bytes, flush: true);
     _makeExecutable(staged.path);
-    staged.renameSync(p.join(dir, name));
+    _rename(staged.path, p.join(dir, name));
   }
 
-  /// Point `current` at [version], remembering what it pointed at before.
-  /// The swap is a rename over a staged link, which is atomic on every
-  /// filesystem we run on — there is no window in which `current` is absent.
+  /// Put [version] on the PATH: every name it holds is written over the name on
+  /// the PATH, and the pointer is moved last.
+  ///
+  /// The pointer going last is what makes an interrupted activation safe to
+  /// repeat — a run that dies halfway leaves `state.json` still naming the old
+  /// version, and running the same command again finishes the substitution.
   void activate(String stream, String version) {
-    final live = currentVersion(stream);
-    if (live != null && live != version) {
-      _swapLink(previousLink(stream), live);
+    for (final name in namesIn(stream, version)) {
+      substitute(stream: stream, version: version, name: name);
     }
-    _swapLink(currentLink(stream), version);
+    InstallState.read(home).activate(stream, version);
   }
 
-  /// Trade `current` and `previous`. Returns the version now live, or null
-  /// when the stream has no earlier version to go back to.
+  /// Return a stream to its previous version, substituting the binaries back.
+  /// Nothing is fetched: the artifacts of the earlier version were never
+  /// deleted. Returns the version now live, or null when there is none.
   String? rollback(String stream) {
-    final live = currentVersion(stream);
     final back = previousVersion(stream);
     if (back == null) return null;
-    _swapLink(currentLink(stream), back);
-    if (live != null) _swapLink(previousLink(stream), live);
+    for (final name in namesIn(stream, back)) {
+      substitute(stream: stream, version: back, name: name);
+    }
+    InstallState.read(home).rollback(stream);
     return back;
   }
 
-  /// Put [names] on the PATH, each pointing through `current` so that the next
-  /// activation moves them all without touching the prefix again.
-  void link(String stream, Iterable<String> names) {
+  /// Write one artifact over its name on the PATH.
+  ///
+  /// The bytes are staged inside [home] and renamed into place, so the file at
+  /// the destination is either the whole old binary or the whole new one and
+  /// never a half-written thing that a shell could pick up between the two.
+  void substitute({
+    required String stream,
+    required String version,
+    required String name,
+  }) {
+    final source = io.File(p.join(versionDir(stream, version), 'bin', name));
+    if (!source.existsSync()) {
+      throw IntegrityException(
+        '$name: version $version of "$stream" does not hold it',
+      );
+    }
+    io.Directory(stagingDir).createSync(recursive: true);
     io.Directory(prefix).createSync(recursive: true);
-    for (final name in names) {
-      final target = p.join(currentLink(stream), 'bin', name);
-      final path = p.join(prefix, name);
-      final staged = p.join(prefix, '.$name.incoming');
-      _removeAnything(staged);
-      io.Link(staged).createSync(target);
-      io.Link(staged).renameSync(path);
+
+    final staged = io.File(p.join(stagingDir, '$name.incoming'));
+    if (staged.existsSync()) staged.deleteSync();
+    staged.writeAsBytesSync(source.readAsBytesSync(), flush: true);
+    _makeExecutable(staged.path);
+
+    final destination = p.join(prefix, name);
+    _displaceRunningExecutable(destination);
+    _rename(staged.path, destination);
+  }
+
+  /// A host that refuses to rename over a running executable is given the file
+  /// out of the way first — which is how `bentos` replaces the very binary the
+  /// caller is inside of. On POSIX nothing is displaced: the rename unlinks the
+  /// old inode and the running process keeps executing it.
+  ///
+  /// Unproven on Windows itself: no gate has ever run there, and the slice that
+  /// makes Windows install owns that proof.
+  void _displaceRunningExecutable(String destination) {
+    if (!_windows) return;
+    if (io.FileSystemEntity.typeSync(destination) == io.FileSystemEntityType.notFound) {
+      return;
     }
+    final displaced = io.File('$destination.old');
+    if (displaced.existsSync()) {
+      // A previous replacement's leftover, still locked if that process lives.
+      try {
+        displaced.deleteSync();
+      } on io.FileSystemException {
+        return;
+      }
+    }
+    _rename(destination, displaced.path);
   }
 
-  /// True when [name] on the PATH is ours — a link into this store — rather
-  /// than a binary somebody else put there. Nothing is replaced without it.
-  bool ownsPathEntry(String name) {
-    final path = p.join(prefix, name);
-    final type = io.FileSystemEntity.typeSync(path, followLinks: false);
-    if (type != io.FileSystemEntityType.link) return false;
-    return p.isWithin(home, p.normalize(p.absolute(io.Link(path).targetSync())));
+  /// What the PATH actually holds against what the live version says it should:
+  /// every name of the live version, hashed on both sides.
+  ///
+  /// The comparison is against the materialized artifact and not against the
+  /// manifest, which is the same claim read offline — nothing reaches
+  /// `<home>/versions` without having been checked against the manifest's hash
+  /// at [materialize].
+  List<DriftEntry> drift(String stream) {
+    final version = currentVersion(stream);
+    if (version == null) return const [];
+    return [
+      for (final name in namesIn(stream, version))
+        DriftEntry(name: name, state: _driftOf(stream, version, name)),
+    ];
   }
 
-  void _swapLink(String path, String target) {
-    final staged = '$path.incoming';
-    _removeAnything(staged);
-    io.Link(staged).createSync(target);
-    io.Link(staged).renameSync(path);
-  }
-
-  void _removeAnything(String path) {
-    if (io.FileSystemEntity.typeSync(path, followLinks: false) !=
+  DriftState _driftOf(String stream, String version, String name) {
+    final onPath = io.File(p.join(prefix, name));
+    if (io.FileSystemEntity.typeSync(onPath.path, followLinks: false) ==
         io.FileSystemEntityType.notFound) {
-      io.Link(path).deleteSync();
+      return DriftState.missing;
     }
+    final held = io.File(p.join(versionDir(stream, version), 'bin', name));
+    if (!held.existsSync()) return DriftState.drifted;
+    final installed = sha256.convert(onPath.readAsBytesSync()).toString();
+    final expected = sha256.convert(held.readAsBytesSync()).toString();
+    return installed == expected ? DriftState.installed : DriftState.drifted;
   }
 
   void _makeExecutable(String path) {

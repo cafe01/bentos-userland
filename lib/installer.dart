@@ -10,4 +10,5 @@ export 'src/installer/installer.dart';
 export 'src/installer/manifest.dart';
 export 'src/installer/platform.dart';
 export 'src/installer/source.dart';
+export 'src/installer/state.dart';
 export 'src/installer/store.dart';

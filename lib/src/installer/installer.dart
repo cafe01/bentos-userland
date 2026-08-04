@@ -28,8 +28,8 @@ final class InstallReport {
 }
 
 /// `bentos`'s one act: read a stream's manifest, fetch what the host needs,
-/// verify it, and swap the link. Everything the commands do is this with a
-/// different set of names.
+/// verify it, and write it over the name on the PATH. Everything the commands
+/// do is this with a different set of names.
 final class Installer {
   Installer({
     required this.config,
@@ -98,11 +98,10 @@ final class Installer {
       installed.add(name);
     }
 
-    // Nothing is linked until every artifact of this pass is on disk: a
+    // Nothing reaches the PATH until every artifact of this pass is on disk: a
     // failure above leaves the previous version live and untouched.
-    store.activate(stream, manifest.version);
     final linked = store.namesIn(stream, manifest.version);
-    store.link(stream, linked);
+    store.activate(stream, manifest.version);
 
     return InstallReport(
       stream: stream,

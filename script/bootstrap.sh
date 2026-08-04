@@ -12,8 +12,13 @@
 # It works on both sides of the public seam: with a token while the repos are
 # private, anonymously once they open. Nothing else changes.
 #
+# Where it lands is not a choice: `$BENTOS_HOME/bin` is the directory the
+# installer owns and substitutes into, and staging happens inside the same home
+# so that every rename stays on one filesystem — `rename(2)` across filesystems
+# fails with EXDEV rather than degrading to a copy.
+#
 # Env:
-#   PREFIX            where the binary lands        (default: $HOME/.local/bin)
+#   BENTOS_HOME       the installer's own root      (default: $HOME/.bentos)
 #   GH_TOKEN          token, if the repo is private (also honours GITHUB_TOKEN)
 #   BENTOS_REPO       stream to install from        (default: cafe01/bentos-userland)
 #   BENTOS_TAG_PREFIX release series in that repo   (default: v)
@@ -23,7 +28,9 @@ set -eu
 EXEC_NAME="bentos"
 REPO="${BENTOS_REPO:-cafe01/bentos-userland}"
 TAG_PREFIX="${BENTOS_TAG_PREFIX:-v}"
-PREFIX="${PREFIX:-$HOME/.local/bin}"
+BENTOS_HOME="${BENTOS_HOME:-$HOME/.bentos}"
+PREFIX="$BENTOS_HOME/bin"
+STAGING="$BENTOS_HOME/staging"
 TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
 API="https://api.github.com/repos/$REPO"
 
@@ -101,7 +108,11 @@ fetch_asset() {
   fi
 }
 
-tmp=$(mktemp -d)
+# Staged inside the installer's own home and never in the machine's temp: the
+# last act of this script is a rename into $PREFIX, and $TMPDIR is a different
+# filesystem on most hosts, where that rename fails outright.
+mkdir -p "$STAGING"
+tmp=$(mktemp -d "$STAGING/bootstrap.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 
 # ── the manifest decides ────────────────────────────────────────────────────
@@ -130,8 +141,8 @@ WANT=$(echo "$entry" | cut -f4)
 echo "bentos: $TAG · $PLATFORM · $ASSET"
 fetch_asset "$ASSET" "$tmp/$EXEC_NAME" || die "release $TAG declares $ASSET and does not carry it"
 
-# ── verify, then link ───────────────────────────────────────────────────────
-# The hash is checked before anything is placed, and the move into PREFIX is
+# ── verify, then substitute ─────────────────────────────────────────────────
+# The hash is checked before anything is placed, and the rename into PREFIX is
 # the last act, so an interrupted run never leaves a half-written binary where
 # a working one was.
 if command -v sha256sum >/dev/null 2>&1; then
@@ -150,6 +161,7 @@ mv "$tmp/$EXEC_NAME" "$PREFIX/$EXEC_NAME"
 echo "bentos: installed $PREFIX/$EXEC_NAME"
 case ":$PATH:" in
   *":$PREFIX:"*) ;;
-  *) echo "bentos: $PREFIX is not on your PATH" >&2 ;;
+  *) echo "bentos: $PREFIX is not on your PATH — add it with:" >&2
+     echo "         export PATH=\"$PREFIX:\$PATH\"" >&2 ;;
 esac
 echo "bentos: next — bentos install"
