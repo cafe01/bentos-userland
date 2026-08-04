@@ -128,6 +128,13 @@ jobs:
       - name: Resolve dependencies
         run: dart pub get
 
+      # Pre-flight, and it blocks: the tag against the version of the commit it
+      # points at. The version has one home (the pubspec) and the manifest is
+      # stamped from it, so the only seam left is the one no build can read —
+      # the name the tag was cut under.
+      - name: Gate — the tag names the version being published
+        run: dart tool/manifest.dart check-tag "${{ github.event.inputs.tag || github.ref_name }}"
+
       - uses: actions/download-artifact@v4
         with:
           pattern: stage-*
@@ -171,6 +178,20 @@ jobs:
             "${{ runner.temp }}/bentos-release.json" \
             script/bootstrap.sh \
             "${{ runner.temp }}"/dist/*
+
+      # The witness is what the world received, fetched back over the network —
+      # never the file this job just wrote, which would agree with itself. The
+      # release stands and the job goes red, the same shape as the gate below.
+      - name: Gate — the published release announces the tag's version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          fetched="${{ runner.temp }}/published-bentos-release.json"
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
+            --pattern bentos-release.json --output "$fetched" --clobber
+          title=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json name --jq .name)
+          dart tool/manifest.dart check-published "$tag" "$fetched" "$title"
 
       # Last, and deliberately after publishing: what built is released, and the
       # job still goes red for whatever did not. A workflow that hid the

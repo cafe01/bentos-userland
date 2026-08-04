@@ -1,6 +1,5 @@
 {
   "product": "bentos-userland",
-  "version": "0.1.1",
   "executables": [
     { "name": "bentos", "entrypoint": "bin/bentos.dart", "platforms": ["linux-x64", "macos-arm64", "macos-x64", "windows-x64"] },
     { "name": "chat-codec", "entrypoint": "bin/chat_codec.dart", "platforms": ["linux-x64", "macos-arm64", "macos-x64", "windows-x64"] },
