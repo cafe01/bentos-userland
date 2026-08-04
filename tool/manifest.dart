@@ -65,6 +65,25 @@ void main(List<String> args) {
         }
       }
 
+    // The names declared for a platform that the enriched manifest has no
+    // artifact for — the gate over a build, and the one reading that says a
+    // declared executable silently failed to compile.
+    case 'missing':
+      if (args.length < 3) usage('missing <platform> <enriched-manifest>');
+      final platform = args[1];
+      final built = ((jsonDecode(File(args[2]).readAsStringSync())
+              as Map<String, dynamic>)['artifacts'] as List)
+          .cast<Map<String, dynamic>>()
+          .where((a) => a['platform'] == platform)
+          .map((a) => a['name'])
+          .toSet();
+      for (final e in executables) {
+        final platforms = (e['platforms'] as List).cast<String>();
+        if (platforms.contains(platform) && !built.contains(e['name'])) {
+          stdout.writeln(e['name']);
+        }
+      }
+
     case 'enrich':
       if (args.length < 4) usage('enrich <platform> <dir> <out>');
       enrich(doc, executables, args[1], args[2], File(args[3]));
