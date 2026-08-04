@@ -564,6 +564,9 @@ void main() {
   group('every finding raises the code and lands on stdout', () {
     late String ahead;
 
+    String pathAhead(String name) =>
+        p.join(ahead, Platform.isWindows ? '$name.exe' : name);
+
     setUp(() async {
       publish('0.2.0', ['mem', 'place']);
       await run(['install']);
@@ -572,14 +575,14 @@ void main() {
     });
 
     test('a shadowed name is a finding, in stdout, exit 2', () async {
-      File(p.join(ahead, 'mem')).writeAsStringSync('#!/bin/sh\necho someone else\n');
+      File(pathAhead('mem')).writeAsStringSync('#!/bin/sh\necho someone else\n');
 
       final (code, out, _) = await run(['list'], path: [ahead, prefix]);
 
       expect(code, 2, reason: 'you run none of what was installed at that name');
       expect(out, contains('shadowed'),
           reason: 'stdout, so `bentos list > file` cannot fabricate health');
-      expect(out, contains(p.join(ahead, 'mem')));
+      expect(out, contains(pathAhead('mem')));
     });
 
     test('no shadow, no finding — same machine, exit 0', () async {
@@ -599,7 +602,7 @@ void main() {
     test('the same name ahead of us, but ours, is no finding', () async {
       // A shim: the bytes ahead are the artifact we installed, so the person
       // does run what we put there and there is nothing to say.
-      File(p.join(ahead, 'mem'))
+      File(pathAhead('mem'))
           .writeAsBytesSync(File(pathEntry('mem')).readAsBytesSync());
 
       final (code, out, _) = await run(['list'], path: [ahead, prefix]);
