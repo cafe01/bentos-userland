@@ -66,11 +66,18 @@ jobs:
             platform: linux-x64
           - runner: macos-latest
             platform: macos-arm64
-          - runner: macos-13
+          - runner: macos-15-intel
             platform: macos-x64
           - runner: windows-latest
             platform: windows-x64
     runs-on: ${{ matrix.runner }}
+    # `fail-fast: false` reports a platform that FALLS; a platform that is never
+    # scheduled falls through it — and `assemble`, though it runs `if: always()`,
+    # still waits for every need to *complete*. One image without capacity
+    # therefore hangs the whole release forever, silently, which is how v0.1.1
+    # sat queued for an hour with three platforms built and nothing published.
+    # The ceiling converts that wait into a verdict the gate can name.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
