@@ -481,6 +481,29 @@ void main() {
       expect(movedBetween(before, after), isEmpty);
       expect(out, isNot(contains('replaced itself')));
     });
+
+    // `self-update` names must be an upper bound and not a suggestion:
+    // `openVersion` carries every name forward into the new version's
+    // directory regardless of what was asked for, so `activate` iterating that
+    // whole directory instead of the request is how a one-name ask moved the
+    // other nine. The witness is the same as the pair above: bytes at each
+    // name, before and after, never the version store's own bookkeeping.
+    test('self-update moves bentos and leaves every other name untouched', () async {
+      publish('0.2.0', names);
+      await run(['install']);
+      publish('0.3.0', names);
+
+      final before = bytesInPrefix(names);
+      final (code, out, _) = await run(['self-update']);
+      final after = bytesInPrefix(names);
+
+      expect(code, 0);
+      expect(movedBetween(before, after), ['bentos'],
+          reason: 'self-update asked for one name; only that name may move');
+      expect(RegExp(r'installed\s+:.*\bbentos\b').hasMatch(out), isTrue);
+      expect(RegExp(r'unchanged\s+:.*\bmem\b').hasMatch(out), isTrue);
+      expect(RegExp(r'unchanged\s+:.*\bplace\b').hasMatch(out), isTrue);
+    });
   });
 
   /// Rollback moves as many binaries as an update does, including the caller's

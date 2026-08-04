@@ -171,17 +171,24 @@ final class VersionStore {
     _rename(staged.path, p.join(dir, name));
   }
 
-  /// Put [version] on the PATH: every name it holds is written over the name on
-  /// the PATH, and the pointer is moved last. Returns the names whose bytes in
-  /// the prefix actually changed — which is the only reading any report about
-  /// this machine may be built from.
+  /// Put [version] on the PATH, at exactly the [names] given — every other
+  /// name it holds stays whatever the prefix already has. Returns the names
+  /// whose bytes in the prefix actually changed — which is the only reading
+  /// any report about this machine may be built from.
+  ///
+  /// [names] defaults to everything the version holds, which is what a whole
+  /// install or an update means; a scoped call — `self-update` asking for
+  /// just [names] `{bentos}` — is how the store keeps its promise that only
+  /// the requested name moves. `openVersion` carries every other name forward
+  /// unchanged into the new version's directory, so leaving one out of this
+  /// loop leaves it out of the prefix too.
   ///
   /// The pointer going last is what makes an interrupted activation safe to
   /// repeat — a run that dies halfway leaves `state.json` still naming the old
   /// version, and running the same command again finishes the substitution.
-  Set<String> activate(String stream, String version) {
+  Set<String> activate(String stream, String version, {Iterable<String>? names}) {
     final changed = <String>{};
-    for (final name in namesIn(stream, version)) {
+    for (final name in names ?? namesIn(stream, version)) {
       if (substitute(stream: stream, version: version, name: name)) {
         changed.add(name);
       }

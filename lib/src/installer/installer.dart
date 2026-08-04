@@ -174,8 +174,13 @@ final class Installer {
 
     // The classification is read off what activation actually did to the
     // prefix, which is the only source that knows the difference between a name
-    // nothing happened to and a name whose drift was just cured.
-    final changed = store.activate(stream, manifest.version);
+    // nothing happened to and a name whose drift was just cured. Scoped to
+    // `wanted` — self-update asking for `bentos` alone must not find the other
+    // nine moved on its behalf — intersected with `linked`, since `wanted` may
+    // name something this host has no build for at all, and that name was
+    // never materialized for `activate` to find.
+    final toActivate = linked.where(wanted.contains);
+    final changed = store.activate(stream, manifest.version, names: toActivate);
 
     return InstallReport(
       stream: stream,
