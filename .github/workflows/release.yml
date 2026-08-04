@@ -210,3 +210,29 @@ jobs:
             fi
           done
           [ -z "$failed" ]
+
+  # The only gate that touches the product the way a person does: the published
+  # release, fetched over the network by the line a stranger copies, installed
+  # into a HOME that did not exist a second ago. Everything above asserts about
+  # what CI built; this asserts about what the world can get.
+  #
+  # It lives in `script/smoke-test.sh` and not in these steps because the hand
+  # must be able to run exactly what CI runs — the whole defect it exists to
+  # prevent is a proof that only one of the two can perform.
+  #
+  # Linux only, deliberately. macOS was proved by hand and has no runner budget
+  # here; Windows has no installation at all, and a matrix row for it would be
+  # red with no mechanism behind it — a declared gap, not a fabricated verdict.
+  smoke:
+    needs: assemble
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Smoke — install, self-update, update and rollback the published line
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash script/smoke-test.sh
