@@ -1,5 +1,8 @@
 .dart_tool/
 pubspec.lock
+# The campus shortcut: sibling packages resolved from disk instead of from their
+# repositories. A property of one machine's layout, never of the package.
+pubspec_overrides.yaml
 # AOT-compiled binaries — built locally, not tracked
 coreutils/*/bin/*
 !coreutils/*/bin/*.dart
