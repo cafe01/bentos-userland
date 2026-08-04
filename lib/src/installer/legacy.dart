@@ -126,7 +126,7 @@ final class LegacyLayout {
       final isOursByLink =
           target != null && p.isWithin(home, p.normalize(p.absolute(target)));
       if (!isOursByLink) continue;
-      final destination = p.join(store.prefix, name);
+      final destination = p.join(store.prefix, store.prefixName(name));
       if (!io.File(destination).existsSync()) continue;
       final staged = p.join(legacyPrefix, '.$name.incoming');
       _unlink(staged);
@@ -175,19 +175,35 @@ final class ShadowFinding {
 /// thing. Saying so is the whole remedy here — nothing is moved, because what
 /// sits in front of us is not ours to move.
 final class PathShadows {
-  const PathShadows({required this.prefix, required this.pathDirs});
+  const PathShadows({
+    required this.prefix,
+    required this.pathDirs,
+    bool? windowsSemantics,
+  }) : _windows = windowsSemantics ?? io.Platform.isWindows;
 
-  factory PathShadows.of(String prefix, Map<String, String> environment) =>
-      PathShadows(
-        prefix: prefix,
-        pathDirs: (environment['PATH'] ?? '')
-            .split(io.Platform.isWindows ? ';' : ':')
-            .where((d) => d.isNotEmpty)
-            .toList(),
-      );
+  factory PathShadows.of(
+    String prefix,
+    Map<String, String> environment, {
+    bool? windowsSemantics,
+  }) {
+    final windows = windowsSemantics ?? io.Platform.isWindows;
+    return PathShadows(
+      prefix: prefix,
+      pathDirs: (environment['PATH'] ?? '')
+          .split(windows ? ';' : ':')
+          .where((d) => d.isNotEmpty)
+          .toList(),
+      windowsSemantics: windows,
+    );
+  }
 
   final String prefix;
   final List<String> pathDirs;
+
+  /// Same fact as [VersionStore.prefixName]: on Windows a bare name resolves
+  /// through `PATHEXT`, so what actually sits ahead of us on the PATH under
+  /// [name] carries `.exe`.
+  final bool _windows;
 
   /// True when our prefix is not on the PATH at all — in which case everything
   /// on it is ahead of us.
@@ -203,9 +219,10 @@ final class PathShadows {
   /// The first file ahead of our prefix answering [name], or null when ours
   /// wins the lookup.
   ShadowFinding? ahead(String name, {String? ourArtifact}) {
+    final fileName = _windows ? '$name.exe' : name;
     final until = _cutoff ?? pathDirs.length;
     for (var i = 0; i < until; i++) {
-      final candidate = p.join(pathDirs[i], name);
+      final candidate = p.join(pathDirs[i], fileName);
       if (io.FileSystemEntity.typeSync(candidate) != io.FileSystemEntityType.file) {
         continue;
       }

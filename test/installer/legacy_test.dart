@@ -185,6 +185,25 @@ void main() {
       expect(layoutOf().adopt(const [stream]), isEmpty);
       expect(Directory(home).existsSync(), isFalse);
     });
+
+    test('under Windows semantics the shim is aimed at the .exe the store actually wrote', () {
+      // The law lives in VersionStore.prefixName; the shim has to ask it
+      // rather than build the bare name itself, or the link points at a file
+      // substitute() never wrote.
+      hold('0.1.0', {'mem': script('echo "mem 0.1.0"')});
+      mountOldLayout(current: '0.1.0');
+
+      final store = VersionStore(home: home, prefix: prefix, windowsSemantics: true);
+      final layout = LegacyLayout(home: home, legacyPrefix: legacyPrefix, store: store);
+
+      expect(layout.adopt(const [stream]).single.shimmed, ['mem']);
+
+      expect(File(p.join(prefix, 'mem.exe')).existsSync(), isTrue,
+          reason: 'substitute must have written the .exe name');
+      final shim = p.join(legacyPrefix, 'mem');
+      expect(Link(shim).targetSync(), p.join(prefix, 'mem.exe'),
+          reason: 'the shim must forward to the name the store actually holds');
+    });
   });
 
   group('through the command', () {
@@ -322,6 +341,30 @@ void main() {
             .prefixIsUnreachable,
         isTrue,
       );
+    });
+
+    test('under Windows semantics the shadow is found by its .exe name', () {
+      // Same law as VersionStore.prefixName, checked from the other side: a
+      // bare "mem" ahead of us on the PATH is not what a Windows shell would
+      // resolve to "mem" at all, so the finding has to look for "mem.exe".
+      hold('0.2.0', {'mem': script('echo "mem 0.2.0"')});
+      final store = VersionStore(home: home, prefix: prefix, windowsSemantics: true);
+      store.activate(stream, '0.2.0');
+
+      final ahead = p.join(root.path, 'ahead');
+      Directory(ahead).createSync();
+      File(p.join(ahead, 'mem.exe')).writeAsStringSync(script('echo "someone else"'));
+
+      final shadows = PathShadows(
+        prefix: prefix,
+        pathDirs: [ahead, prefix],
+        windowsSemantics: true,
+      );
+      final finding = shadows.ahead('mem',
+          ourArtifact: store.artifactPath(stream, '0.2.0', 'mem'));
+
+      expect(finding, isNotNull);
+      expect(finding!.path, p.join(ahead, 'mem.exe'));
     });
   });
 }

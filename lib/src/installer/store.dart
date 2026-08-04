@@ -90,7 +90,7 @@ final class VersionStore {
   /// Windows needs `.exe` to be found by that name at all, since shell name
   /// resolution there goes through `PATHEXT` and a file with no recognized
   /// extension is invisible to a bare invocation.
-  String _prefixName(String name) => _windows ? '$name.exe' : name;
+  String prefixName(String name) => _windows ? '$name.exe' : name;
 
   /// Where a file waits to be renamed into place. Inside [home] by construction:
   /// see the note on cross-device renames above.
@@ -122,7 +122,7 @@ final class VersionStore {
   /// may already be running.
   Set<String> namesInPrefix(Iterable<String> names) => {
         for (final name in names)
-          if (io.FileSystemEntity.typeSync(p.join(prefix, _prefixName(name)), followLinks: false) !=
+          if (io.FileSystemEntity.typeSync(p.join(prefix, prefixName(name)), followLinks: false) !=
               io.FileSystemEntityType.notFound)
             name,
       };
@@ -259,7 +259,7 @@ final class VersionStore {
     staged.writeAsBytesSync(source.readAsBytesSync(), flush: true);
     _makeExecutable(staged.path);
 
-    final destination = p.join(prefix, _prefixName(name));
+    final destination = p.join(prefix, prefixName(name));
     _displaceRunningExecutable(destination);
     _rename(staged.path, destination);
     return true;
@@ -267,7 +267,7 @@ final class VersionStore {
 
   /// Whether the name in the prefix is already, byte for byte, [source].
   bool _prefixHolds(String name, io.File source) {
-    final destination = io.File(p.join(prefix, _prefixName(name)));
+    final destination = io.File(p.join(prefix, prefixName(name)));
     if (io.FileSystemEntity.typeSync(destination.path, followLinks: false) !=
         io.FileSystemEntityType.file) {
       return false;
@@ -321,7 +321,7 @@ final class VersionStore {
     // whether anyone reaches it is the shadow reading's question, and saying
     // "on the PATH" here is how this check came to describe a machine it had
     // not looked at.
-    final inPrefix = io.File(p.join(prefix, _prefixName(name)));
+    final inPrefix = io.File(p.join(prefix, prefixName(name)));
     if (io.FileSystemEntity.typeSync(inPrefix.path, followLinks: false) ==
         io.FileSystemEntityType.notFound) {
       return DriftState.missing;
