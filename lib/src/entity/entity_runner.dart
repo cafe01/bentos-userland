@@ -3,6 +3,7 @@ import 'dart:io' as io;
 import 'package:args/command_runner.dart';
 import 'package:path/path.dart' as p;
 
+import '../git/git.dart';
 import '../place/place.dart';
 import 'action.dart';
 import 'commands/acting_commands.dart';
@@ -193,6 +194,12 @@ final class EntityRunner {
     } on EntityNotInstalled catch (e) {
       err.writeln('$e');
       exitCode = notFoundCode;
+    } on WorktreeNotOurs catch (e) {
+      // Refusal and not a fault: the caller named a directory this repository
+      // does not hold, and the answer a script must be able to branch on is
+      // *I did not touch it* — which a zero could never say.
+      err.writeln('entity: refused — $e');
+      exitCode = refusedCode;
     } on BodyNotStartable catch (e) {
       // The body never started, so nothing was written and nothing landed —
       // the caller named something that is not there, which is the same answer

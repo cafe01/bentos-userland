@@ -161,6 +161,12 @@ abstract interface class Git {
 
   /// Discards the worktree at [path] and deregisters it. Leaving it registered
   /// is the leak the API exists to prevent.
+  ///
+  /// **This verb deletes a directory, so possession is checked before it acts**:
+  /// [path] must stand among the linked worktrees this repository has
+  /// registered, or [WorktreeNotOurs] is raised and nothing is touched. The
+  /// substrate's refusal is the last word — a directory Git declined to remove
+  /// is never removed by us afterwards.
   void worktreeRemove(String gitDir, {required String path});
 
   /// The repository a standing worktree belongs to — its **common** directory,
@@ -172,8 +178,14 @@ abstract interface class Git {
   /// materialization are handed to the shell as directories, and three separate
   /// processes cannot pass a handle between them.
   ///
-  /// Null when [path] is no worktree of anything, which is the ordinary answer
-  /// for a caller that released twice.
+  /// **Possession, never vicinity.** Every directory inside a repository can
+  /// name that repository, and a linked worktree of ours is a different fact
+  /// entirely: this answers only for the second. A repository's own main
+  /// working tree is not one of ours either — it is precisely the directory a
+  /// wrong path is likeliest to name, and it belongs to whoever works there.
+  ///
+  /// Null when [path] is no linked worktree, which is the ordinary answer for a
+  /// caller that released twice and the honest one for somebody else's disk.
   String? worktreeRepository(String path);
 
   /// The commit the worktree at [path] stands at — the other half of the
@@ -253,4 +265,25 @@ abstract interface class Git {
     required String remote,
     required String ref,
   });
+}
+
+/// A worktree verb was aimed at a path the repository does not hold as a linked
+/// worktree of its own — an ordinary directory, a foreign repository's tree, a
+/// repository's own main working tree.
+///
+/// It exists because the verb that raises it **deletes disk**. Every other
+/// mistake in this port costs an error message; this one costs whatever stood
+/// there, so the fault is a type a caller can catch rather than a silent
+/// success, and no path arrives at the deletion without having been claimed.
+final class WorktreeNotOurs implements Exception {
+  const WorktreeNotOurs(this.path, {this.repository});
+
+  final String path;
+
+  /// The repository asked, when there was one to ask.
+  final String? repository;
+
+  @override
+  String toString() => 'not a worktree of ours: $path'
+      '${repository == null ? '' : ' (asked of $repository)'}';
 }

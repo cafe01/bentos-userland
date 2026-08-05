@@ -248,7 +248,13 @@ final class FakeGit implements Git {
 
   @override
   void worktreeRemove(String gitDir, {required String path}) {
-    _repo(gitDir).worktrees.remove(path);
+    // The same claim the real port makes before it deletes anything. Modelled
+    // here because the fake is the only substrate most of this suite ever meets:
+    // a double that deletes what the machine refuses to is a green that says
+    // nothing about the machine.
+    if (_repo(gitDir).worktrees.remove(path) == null) {
+      throw WorktreeNotOurs(path, repository: gitDir);
+    }
     final dir = Directory(path);
     if (dir.existsSync()) dir.deleteSync(recursive: true);
   }

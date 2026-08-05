@@ -401,13 +401,49 @@ final class ProcessGit implements Git {
 
   @override
   void worktreeRemove(String gitDir, {required String path}) {
+    // Possession before deletion. Everything below this line destroys disk, and
+    // the only claim that authorizes it is the repository's own register.
+    if (!_linkedWorktrees(gitDir).contains(_canonical(path))) {
+      throw WorktreeNotOurs(path, repository: gitDir);
+    }
+    // `_git` and not `_run`: a refusal from the substrate is a fault of ours and
+    // must travel. Read and discarded, it became an instruction to delete by
+    // hand whatever Git had just declined to touch.
+    _git(gitDir, ['worktree', 'remove', '--force', path]);
     // Deregistering is the half that matters: a directory deleted behind Git's
     // back leaves the entry standing, which is precisely the leak the API
-    // exists to prevent.
-    _run(['--git-dir=$gitDir', 'worktree', 'remove', '--force', path]);
+    // exists to prevent. The residue below is reached only after Git removed a
+    // tree we own, and is a no-op in every ordinary case.
     final dir = Directory(path);
     if (dir.existsSync()) dir.deleteSync(recursive: true);
     _run(['--git-dir=$gitDir', 'worktree', 'prune']);
+  }
+
+  /// The **linked** worktrees this repository has registered, canonical and
+  /// absolute — its register of what it may discard.
+  ///
+  /// The first record `worktree list` prints is the repository's main working
+  /// tree (or the bare repository itself), and it is dropped: a repository's own
+  /// tree is not a tenancy of ours, and it is exactly the directory a wrong path
+  /// most often names.
+  Set<String> _linkedWorktrees(String gitDir) {
+    final result = _run(['--git-dir=$gitDir', 'worktree', 'list', '--porcelain']);
+    if (result.exitCode != 0) return const {};
+    final paths = [
+      for (final line in _text(result.stdout).split('\n'))
+        if (line.startsWith('worktree ')) line.substring('worktree '.length).trim(),
+    ];
+    return {for (final path in paths.skip(1)) _canonical(path)};
+  }
+
+  /// One spelling for one directory. The register answers in the substrate's
+  /// resolved spelling and a caller types whatever it holds; on a machine whose
+  /// temp is reached through a link the two differ, and a comparison between
+  /// vocabularies would refuse a real tenancy — or, before the claim existed,
+  /// admit somebody else's.
+  static String _canonical(String path) {
+    final dir = Directory(path);
+    return dir.existsSync() ? dir.resolveSymbolicLinksSync() : path;
   }
 
   @override
@@ -422,7 +458,11 @@ final class ProcessGit implements Git {
     );
     if (result.exitCode != 0) return null;
     final answer = _text(result.stdout).trim();
-    return answer.isEmpty ? null : answer;
+    if (answer.isEmpty) return null;
+    // The question Git answered is *which repository contains this directory*,
+    // which every ordinary subdirectory answers. Possession is the second
+    // question, and only the register answers it.
+    return _linkedWorktrees(answer).contains(_canonical(path)) ? answer : null;
   }
 
   @override

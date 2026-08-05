@@ -692,6 +692,95 @@ void main() {
     });
   });
 
+  group('release deletes disk, so possession is the whole question', () {
+    // The one family where a wrong answer costs a directory instead of an error
+    // message, and the only substrate that can be asked: the fake models
+    // possession honestly, so every green above this line is a green about the
+    // model. What the machine did was different — `git worktree remove` refused,
+    // the refusal was read and discarded, and the directory was deleted by hand
+    // afterwards. Both witnesses here are ordinary directories **made by the
+    // shell**, never a tree minted by the code under judgment: a fixture cut by
+    // the primitive is already a tenancy, which is the one case that cannot fail.
+
+    /// A repository with committed content, stood up by Git itself.
+    (String root, String plain) _byHand(String label) {
+      final root = Directory(
+          Directory.systemTemp.createTempSync(label).resolveSymbolicLinksSync());
+      addTearDown(() {
+        if (root.existsSync()) root.deleteSync(recursive: true);
+      });
+      final plain = Directory('${root.path}/plain')..createSync(recursive: true);
+      File('${plain.path}/precious.txt').writeAsStringSync('mine\n');
+      File('${root.path}/README.md').writeAsStringSync('top\n');
+      for (final args in [
+        ['init', '-q', root.path],
+        ['-C', root.path, 'add', '-A'],
+        ['-C', root.path, '-c', 'user.email=a@b', '-c', 'user.name=a',
+          'commit', '-qm', 'one'],
+      ]) {
+        final r = Process.runSync('git', args);
+        expect(r.exitCode, 0, reason: 'staging the witness: ${r.stderr}');
+      }
+      return (root.path, plain.path);
+    }
+
+    Future<({String err, int code})> release(String path, {String? from}) async {
+      final err = StringBuffer();
+      final runner = EntityRunner(
+        out: StringBuffer(),
+        err: err,
+        currentDirectory: from ?? path,
+      );
+      await runner.run(['release', path]);
+      return (err: err.toString(), code: runner.exitCode);
+    }
+
+    test('a directory that is no worktree of ours survives, and the refusal is '
+        'loud', () async {
+      final (root, plain) = _byHand('entity_bystander_');
+
+      final refused = await release(plain, from: root);
+
+      expect(File('$plain/precious.txt').readAsStringSync(), 'mine\n',
+          reason: 'the bystander is the assertion; everything else is how we '
+              'learn that it held');
+      expect(refused.code, EntityRunner.refusedCode,
+          reason: 'a silent zero over an untouched directory is the half of the '
+              'defect that survives fixing the deletion');
+      expect(refused.err, contains('refused'));
+
+      // The same claim about the repository's own working tree — the directory a
+      // wrong path names most often, and the one the incident actually cost.
+      final onItself = await release(root);
+      expect(onItself.code, EntityRunner.refusedCode);
+      expect(File('$root/README.md').existsSync(), isTrue);
+      expect(Directory('$root/.git').existsSync(), isTrue);
+    });
+
+    test('a materialization of ours is still discarded', () async {
+      final site = _place('entity_release_ours_');
+      addTearDown(() {
+        if (site.existsSync()) site.deleteSync(recursive: true);
+      });
+      final thing = Entity('t.thing', from: site.path).create();
+      final one = thing.instance('one').create();
+      final where = '${site.path}/face';
+      thing.materialize(one.tip!, path: where);
+      expect(Directory(where).existsSync(), isTrue);
+
+      final released = await release(where, from: site.path);
+
+      expect(released.code, 0, reason: released.err);
+      expect(Directory(where).existsSync(), isFalse);
+      // Deregistered and not merely deleted — the leak the verb exists to close.
+      final register = Process.runSync('git', [
+        '--git-dir=${repositoryOf(site.path, 't.thing')}',
+        'worktree', 'list', '--porcelain',
+      ]);
+      expect('${register.stdout}', isNot(contains(where)));
+    });
+  });
+
   group('acceptance', () {
     // The lab's `bash test/gates.sh` walks the whole vocabulary of
     // `bentos.llm` — six gates, thirty-three assertions, no API key.

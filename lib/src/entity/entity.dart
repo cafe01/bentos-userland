@@ -310,7 +310,10 @@ final class Entity {
   /// to delete, and the substrate's refusal travels.
   Materialization materialize(Commit at, {required String path}) {
     final gitDir = _gitDir;
-    if (ambientGit.worktreeRepository(path) != null) {
+    // Ours and not merely *somebody's*: the question is whether this repository
+    // holds a tree here, and a directory that answers with another repository —
+    // or with none — is not this verb's to discard.
+    if (ambientGit.worktreeRepository(path) == gitDir) {
       ambientGit.worktreeRemove(gitDir, path: path);
     }
     ambientGit.worktreeAdd(gitDir, path: path, at: at);

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import '../entity.dart';
 import '../entity_runner.dart';
+import '../../git/git.dart';
 import '../../git/git_ambient.dart';
 import '../../git/model/actor.dart';
 import '../../git/model/commit.dart';
@@ -192,7 +193,14 @@ final class ReleaseCommand extends EntityCommand {
     // deregistering is the half that matters — a directory deleted behind
     // Git's back leaves the entry standing.
     final repository = ambientGit.worktreeRepository(path);
-    if (repository == null) return;
+    if (repository == null) {
+      // **Absent and foreign are not one answer.** An empty path is a second
+      // release and costs nothing; a directory that exists and is not ours is a
+      // caller aiming at somebody else's disk, and answering that with a silent
+      // zero is how a mistyped path became a deletion nobody was told about.
+      if (Directory(path).existsSync()) throw WorktreeNotOurs(path);
+      return;
+    }
     ambientGit.worktreeRemove(repository, path: path);
   }
 }
