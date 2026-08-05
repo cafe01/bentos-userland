@@ -12,6 +12,7 @@ import 'commands/instance_commands.dart';
 import 'commands/coordinate.dart';
 import 'commands/plumbing_commands.dart';
 import 'commands/reacting_commands.dart';
+import 'commands/running_commands.dart';
 import 'entity.dart';
 import 'instance.dart';
 
@@ -32,6 +33,12 @@ import 'instance.dart';
 /// `info` prints the vocabulary a type declares, and that is reflection.
 /// **Invoke does not exist**: there is no verb asking an entity to do
 /// something, because acting is writing and the writer is the caller.
+///
+/// `run` is not that verb and does not become it. It resolves a name to a
+/// **file the entity ships** and executes it — the caller's own program,
+/// reached by the name its author gave it instead of by a layout the caller had
+/// to learn. Nothing about the entity's state moves because it ran, and a body
+/// that means to write takes an act like anybody else.
 ///
 /// # Two words the library gave up, the shell keeps
 ///
@@ -68,6 +75,7 @@ final class EntityRunner {
       ..addCommand(LogCommand(this))
       ..addCommand(ShowCommand(this))
       ..addCommand(ActCommand(this))
+      ..addCommand(RunCommand(this))
       ..addCommand(ReadCommand(this))
       ..addCommand(MaterializeCommand(this))
       ..addCommand(RefreshCommand(this))

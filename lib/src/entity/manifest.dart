@@ -39,6 +39,7 @@ final class Manifest {
     required this.type,
     required this.actions,
     required this.cardinality,
+    required this.functions,
     required this.fields,
   });
 
@@ -75,6 +76,20 @@ final class Manifest {
   /// the common behaviour, and it has to be the conservative one.
   final Cardinality cardinality;
 
+  /// What the entity ships, as `run` reads it: **the semantic name is the key
+  /// and the executable is the value**, which is the whole reason a caller can
+  /// name a verb and never a layout.
+  ///
+  /// Typed because it is the second thing a primitive outside the entity must
+  /// act on. Everything else a function row declares — what it deposits, what
+  /// it lands on — stays in [fields], because those are read by the floor and
+  /// by arming, and `run` is forbidden to have an opinion about either.
+  ///
+  /// **Null against a declared name that ships no executable.** Declared and
+  /// unrunnable is not the same absence as never declared, and collapsing the
+  /// two would make a manifest's own omission read as the caller's typo.
+  final Map<String, String?> functions;
+
   /// The document entire, as parsed. The escape hatch that keeps an unsettled
   /// schema from being frozen by this type.
   final Map<String, Object?> fields;
@@ -100,6 +115,15 @@ final class Manifest {
       cardinality: fields['cardinality'] == 'singular'
           ? Cardinality.singular
           : Cardinality.plural,
+      functions: {
+        if (fields['functions'] case final Map<String, Object?> declared)
+          for (final entry in declared.entries)
+            entry.key: switch (entry.value) {
+              final Map<String, Object?> row when row['exec'] != null =>
+                '${row['exec']}',
+              _ => null,
+            },
+      },
       fields: fields,
     );
   }

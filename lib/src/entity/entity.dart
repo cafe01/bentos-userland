@@ -107,6 +107,11 @@ final class Entity {
     // tree entry and no tenant writes there.
     place.register(name, url: '', path: name, sha: genesisSha.sha);
     ArmingTables(gitDir).ensureArmed();
+    // An authored entity's genesis is empty, and the stage is stood up all the
+    // same: what it buys is that the tree *exists and follows the ref* from the
+    // first moment, so the author who writes a manifest and lands it has a tree
+    // to bring forward rather than an absence with no verb pointed at it.
+    stageClass();
     return this;
   }
 
@@ -204,9 +209,14 @@ final class Entity {
       sha: ambientGit.revParse(gitDir, genesisRef)?.sha ?? '',
     );
     ArmingTables(gitDir).ensureArmed();
-    // Nothing is checked out: a site that only reacts holds no worktree at all,
-    // and bringing the tree down is the place's own recursive verb.
-    return Entity(name, from: place.root.path);
+    // No *instance* is checked out: a site that only reacts holds no instance
+    // worktree at all, and bringing one down is the place's own recursive verb.
+    // The class is the other half — its tree is where the executables the
+    // manifest names actually stand, and arming has just written lines that
+    // point at them.
+    final installed = Entity(name, from: place.root.path);
+    installed.stageClass();
+    return installed;
   }
 
   /// **A clone brings history, never a class born here** — a foreign
@@ -323,6 +333,51 @@ final class Entity {
       ref: null,
     );
   }
+
+  /// The directory the class's own tree stands in, beside the repository — the
+  /// **stage**, and the one place a caller looks for the executables the
+  /// manifest names.
+  static const String classDirName = 'genesis';
+
+  /// Puts **the class** on disk at the genesis this installation holds: the
+  /// half of installing that makes running possible at all, since an executable
+  /// needs a file and a bare repository has no files.
+  ///
+  /// **This is not the law it looks like it contradicts.** *Install does not
+  /// materialize* is about **instances** — a federated site that only reacts
+  /// holds no instance worktree, and still holds none after this. The class is
+  /// the opposite case: a site that only reacts is precisely the one whose
+  /// armed lines point at a body, so it needs the class's tree *more* than a
+  /// site that looks. Instance stays the looker's; class comes with the
+  /// installation.
+  ///
+  /// Idempotent by [materialize]'s own law — present means update, and a
+  /// directory that is not ours is refused rather than discarded.
+  ///
+  /// An entity with no genesis stages nothing: there is no tree to stand up,
+  /// and the ordinary condition of a repository cloned from a line that never
+  /// had one is not a fault to throw on.
+  Materialization stageClass() {
+    final at = ambientGit.revParse(_gitDir, genesisRef);
+    return at == null ? stagedClass : materialize(at, path: _stagePath);
+  }
+
+  /// The class's tree as it presently stands — **asked of the disk**, like every
+  /// materialization, so that *is this installation runnable* is a question
+  /// about the machine rather than about what some process remembered.
+  ///
+  /// **It follows [genesisRef], and that is the whole difference from a place's
+  /// pin.** The manifest is read at the ref; the executables must therefore come
+  /// from the same commit, or contract and bytes disagree with nothing to say
+  /// so. Following a ref is also what gives staleness a cure that already
+  /// exists — a tree that follows nothing can only be re-declared.
+  Materialization get stagedClass => Materialization(
+        directory: Directory(_stagePath),
+        gitDir: _gitDir,
+        ref: genesisRef,
+      );
+
+  String get _stagePath => p.join(p.dirname(_gitDir), classDirName);
 
   /// Arms a listener at this installation: when an act matching one of [events]
   /// occurs, [command] is run with the occurrence appended.
