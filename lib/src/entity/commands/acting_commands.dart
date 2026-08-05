@@ -49,11 +49,23 @@ final class ActCommand extends EntityCommand {
         // The body writes in the private area and nowhere else: it is handed
         // the directory as its own, which is what keeps two acting bodies from
         // corrupting each other one floor below the swap.
-        final ran = await Process.start(
-          written.first,
-          written.skip(1).toList(),
-          workingDirectory: workspace.directory.path,
-        );
+        final Process ran;
+        try {
+          ran = await Process.start(
+            written.first,
+            written.skip(1).toList(),
+            workingDirectory: workspace.directory.path,
+          );
+        } on ProcessException catch (e) {
+          // The body could not be started at all — almost always a relative
+          // path, which resolves against the private area and not against the
+          // directory the caller typed it in. That is the act's isolation
+          // working as designed, and the only thing wrong is that the caller
+          // was never told where their command was looked for. Told plainly it
+          // is one edit; left as a raw ProcessException it is a stack trace
+          // about a Dart library the reader did not open.
+          throw BodyNotStartable(written.first, workspace.directory.path, e);
+        }
         // Both of the body's streams are the operator's to read, and neither
         // is ours to publish: stdout here belongs to the landed sha, so that
         // `sha=$(entity act … -- …)` composes however loudly the body talks.
@@ -78,6 +90,38 @@ final class ActCommand extends EntityCommand {
 final class _BodyFailed implements Exception {
   const _BodyFailed(this.code);
   final int code;
+}
+
+/// The body could not be started: nothing ran, nothing landed.
+///
+/// Public because the runner reports it, and its message is the surface that
+/// teaches where an act's body runs — a place no `--help` mentions and every
+/// caller with a relative path discovers the hard way.
+final class BodyNotStartable implements Exception {
+  const BodyNotStartable(this.command, this.directory, this.cause);
+
+  /// The executable as the caller wrote it.
+  final String command;
+
+  /// The act's private area — where it was looked for.
+  final String directory;
+
+  final ProcessException cause;
+
+  /// True when the caller wrote a path that only means something relative to
+  /// where they stood, which is the case worth explaining.
+  bool get isRelative => command.contains('/') && !command.startsWith('/');
+
+  @override
+  String toString() => [
+        'entity: cannot run "$command": ${cause.message}',
+        "the act's body runs in the act's own private area ($directory), "
+            'never in the directory you typed the command in',
+        if (isRelative)
+          'a relative path is resolved there — give an absolute path'
+        else
+          'give an absolute path, or a name found on PATH',
+      ].join('\n  ');
 }
 
 /// `entity read <coord>:<path> [--as-of <sha>]` — bytes, without materializing.

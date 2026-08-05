@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:bentos_userland/entity.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'cli_harness.dart';
@@ -72,6 +75,52 @@ void main() {
 
       expect(r.code, EntityRunner.usageCode);
       expect(r.err, contains('-- <command>'));
+    });
+
+    test('a relative command that resolves against the place is armed',
+        () async {
+      File(p.join(site.root.path, 'reindex')).writeAsStringSync('#!/bin/sh\n');
+
+      final r = await cli.run(
+        ['on', 't.chat:*', 'prompt.landed', '--', './reindex'],
+        cwd: site.root.path,
+      );
+
+      expect(r.code, 0, reason: 'this one does fire, and must keep arming');
+      expect((await cli.run(['listeners', 't.chat:*'])).out, contains('r'));
+    });
+
+    test('a relative command armed from a subdirectory is refused, loudly',
+        () async {
+      // The silent failure this replaces: the line registered, the act landed,
+      // and the reaction never ran — with no error at arming, none at firing,
+      // and nobody left to read one. The anchor is the place, and the only
+      // moment the person who typed it can be told is now.
+      final sub = Directory(p.join(site.root.path, 'bin'))..createSync();
+      File(p.join(sub.path, 'probe')).writeAsStringSync('#!/bin/sh\n');
+
+      final r = await cli.run(
+        ['on', 't.chat:*', 'prompt.landed', '--', './probe'],
+        cwd: sub.path,
+      );
+
+      expect(r.code, EntityRunner.usageCode);
+      expect(r.err, contains('./probe'));
+      expect(r.err, contains('resolved against the place'));
+      expect(
+        (await cli.run(['listeners', 't.chat:*'])).out,
+        isEmpty,
+        reason: 'nothing that cannot fire may sit in the table looking armed',
+      );
+    });
+
+    test('a bare name is left to the substrate to resolve', () async {
+      // A name with no slash is PATH's business at firing time, and this
+      // process's PATH is not evidence about that one — refusing here would be
+      // guessing with a straight face.
+      final r = await cli.run(['on', 't.chat:*', 'prompt.landed', '--', 'notify']);
+
+      expect(r.code, 0);
     });
   });
 

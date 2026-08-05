@@ -1,3 +1,7 @@
+import 'dart:io';
+
+import 'package:path/path.dart' as p;
+
 import '../arming/arming.dart';
 import '../event.dart';
 import 'entity_command.dart';
@@ -55,6 +59,34 @@ abstract base class ArmingCommand extends EntityCommand {
   /// Whether the line removes itself when it fires.
   bool get spent;
 
+  /// Refuses a relative command that will not resolve when the line fires.
+  ///
+  /// **The anchor of an armed command is the place the entity is installed in,
+  /// never the directory the line was armed from.** A reaction is woken by the
+  /// substrate long after the arming shell is gone, so `./reindex` typed in a
+  /// subdirectory registers happily, lands nothing, and fires nothing — with no
+  /// error anywhere, because by then there is nobody to tell. The check runs
+  /// here for one reason: this is the last instant the person who typed it is
+  /// still standing there.
+  ///
+  /// Only a path is judged. A bare name is the substrate's PATH to resolve at
+  /// firing, and this process's PATH is not evidence about that one.
+  void _refuseUnresolvableCommand(String command, String entity) {
+    if (!command.contains('/') || command.startsWith('/')) return;
+
+    final root = cli.installedAt(entity, place: placeOption).path;
+    final resolved = p.normalize(p.join(root, command));
+    if (File(resolved).existsSync()) return;
+
+    usageException([
+      '$name: "$command" is not there when the line fires',
+      'an armed command is resolved against the place ($root), '
+          'never against the directory you armed it from',
+      'looked for: $resolved',
+      'give an absolute path, or a path relative to the place',
+    ].join('\n  '));
+  }
+
   @override
   Future<void> run() async {
     final rest = argResults!.rest;
@@ -73,6 +105,7 @@ abstract base class ArmingCommand extends EntityCommand {
 
     final coord = coordinate();
     final entity = cli.entityNamed(coord.entity, place: placeOption);
+    _refuseUnresolvableCommand(woken.first, coord.entity);
     // One line per pattern, and the id of each on its own line: `off` takes an
     // id, so arming three events and reporting one would leave two unreachable.
     for (final text in rest[1].split(',')) {

@@ -122,6 +122,36 @@ void main() {
       expect(r.err, contains('-- <command>'));
     });
 
+    test('a body that cannot start is a clean answer, not a crash', () async {
+      // The body runs in the act's private area, so `./x` never resolves
+      // against the caller's directory. That is the isolation working — and
+      // the caller has to be told, in their own vocabulary, or they go looking
+      // for a bug in their own script. A Dart stack trace tells them nothing
+      // and claims the coreutil broke.
+      final r = await cli.run(['act', 't.chat:c1', 'prompt', '--', './nope']);
+
+      expect(r.code, EntityRunner.notFoundCode);
+      expect(r.err, contains('./nope'));
+      expect(r.err, contains('private area'),
+          reason: 'the message must say WHERE the body was looked for');
+      expect(r.err, contains('absolute path'));
+
+      expect(r.err, isNot(contains('Unhandled exception')));
+      expect(r.err, isNot(contains('ProcessException')));
+      expect(r.err, isNot(contains('.dart')));
+
+      expect((await cli.run(['log', 't.chat:c1'])).out, isEmpty,
+          reason: 'nothing ran, so nothing may land');
+    });
+
+    test('a body missing from PATH is the same clean answer', () async {
+      final r = await cli.run(['act', 't.chat:c1', 'prompt', '--', 'no-such-p']);
+
+      expect(r.code, EntityRunner.notFoundCode);
+      expect(r.err, contains('no-such-p'));
+      expect(r.err, isNot(contains('ProcessException')));
+    });
+
     test('there is no verb that asks the entity to do something', () async {
       // `act` frames the caller's own write. The absence of an invoke verb is
       // the model, not an omission.

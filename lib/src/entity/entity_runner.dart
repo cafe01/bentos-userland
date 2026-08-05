@@ -193,6 +193,12 @@ final class EntityRunner {
     } on EntityNotInstalled catch (e) {
       err.writeln('$e');
       exitCode = notFoundCode;
+    } on BodyNotStartable catch (e) {
+      // The body never started, so nothing was written and nothing landed —
+      // the caller named something that is not there, which is the same answer
+      // as any other thing this coreutil could not find.
+      err.writeln('$e');
+      exitCode = notFoundCode;
     } on StateError catch (e) {
       // The two the API raises are *no genesis* and *not born* — both the
       // absence of a thing the caller named, which is the not-found answer and
