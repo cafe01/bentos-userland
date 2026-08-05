@@ -278,19 +278,45 @@ void main() {
       expect(File('$where/1.txt').readAsStringSync(), 'second');
     });
 
-    test('a directory nobody materialized is not found', () async {
-      final r = await cli.run(['refresh', 't.chat:c1', '${site.root.path}/nowhere']);
+    test('an absent directory is stood up, not refused', () async {
+      await cli.run(['act', 't.chat:c1', 'prompt', '--', ...writes('1.txt', 'first')]);
+      final where = '${site.root.path}/nowhere';
 
-      expect(r.code, EntityRunner.notFoundCode);
-      expect(r.err, contains('no worktree'));
+      // *Make this directory be the ref* is one act to whoever needs the files.
+      // The reader who arrives here was sent by a refusal elsewhere, holding a
+      // path that does not exist — and a verb that answered *nothing here* would
+      // leave them with the sentence they came with.
+      final r = await cli.run(['refresh', 't.chat:c1', where]);
+
+      expect(r.code, 0, reason: r.err);
+      expect(File('$where/1.txt').readAsStringSync(), 'first');
+      expect(r.out.trim(), (await cli.run(['tip', 't.chat:c1'])).out.trim());
     });
 
-    test('a released face is not found either', () async {
+    test('a released face is stood up again by the same verb', () async {
       final where = await face();
       await cli.run(['release', where]);
 
       final r = await cli.run(['refresh', 't.chat:c1', where]);
-      expect(r.code, EntityRunner.notFoundCode);
+      expect(r.code, 0, reason: r.err);
+      expect(File('$where/1.txt').readAsStringSync(), 'first');
+    });
+
+    test('content nobody registered is refused, and left exactly as it stands',
+        () async {
+      final where = '${site.root.path}/theirs';
+      Directory(where).createSync(recursive: true);
+      File('$where/theirs.txt').writeAsStringSync('not ours');
+
+      final r = await cli.run(['refresh', 't.chat:c1', where]);
+
+      // Refused and not found: the caller named a directory this repository does
+      // not hold, and the answer a script must be able to branch on is *I did
+      // not touch it*.
+      expect(r.code, EntityRunner.refusedCode);
+      expect(r.err, contains('not a worktree of ours'));
+      expect(File('$where/theirs.txt').readAsStringSync(), 'not ours',
+          reason: 'clearing the way for itself is how a verb deletes strangers');
     });
 
     test('without a path, it is a usage fault', () async {

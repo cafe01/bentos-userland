@@ -1,8 +1,6 @@
 import 'dart:io';
 
-import '../../git/git_ambient.dart';
 import '../../git/model/actor.dart';
-import '../entity_runner.dart';
 import 'entity_command.dart';
 
 /// `entity act <coord> <action> [--actor <a>] [--say <phrase>] -- <command>` —
@@ -199,6 +197,13 @@ final class MaterializeCommand extends EntityCommand {
 /// A tree already standing at the tip is left alone, and so is one that follows
 /// no ref at all: a place's materialization stands at a commit declared from
 /// outside, and moving it is the declarer's act.
+///
+/// **Absence is stood up, not refused.** *Make this directory be the ref* is
+/// one act to whoever needs the files, and a verb that answered *nothing here*
+/// would be the only verb in reach of someone whose tree went missing — which
+/// is precisely the reader a refusal elsewhere sends here. A directory holding
+/// content this repository never registered is the one case that refuses: it is
+/// named and left exactly as it stands.
 final class RefreshCommand extends EntityCommand {
   RefreshCommand(super.cli);
 
@@ -214,13 +219,6 @@ final class RefreshCommand extends EntityCommand {
     if (rest.length < 2) usageException('refresh: <coord> <path> are required');
     final path = cli.locate(rest[1]);
     final standing = cli.instanceAt(coordinate(), place: placeOption);
-    if (ambientGit.worktreeHead(path) == null) {
-      // Nothing of ours stands there. Not-found and not a refusal: a directory
-      // nobody materialized is a thing the caller named and we cannot find.
-      cli.err.writeln('entity refresh: no worktree at $path');
-      cli.exitCode = EntityRunner.notFoundCode;
-      return;
-    }
     final face = standing.materialization(path);
     face.refresh();
     cli.out.writeln(face.at?.sha ?? '');

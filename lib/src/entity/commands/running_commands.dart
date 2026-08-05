@@ -95,11 +95,28 @@ final class RunCommand extends EntityCommand {
     // another directory finds another installation, answers zero, and moves
     // nothing. Which is exactly what it did the first time it was tried by hand.
     final place = cli.installedAt(coord.entity, place: placeOption);
+    // The one line every refusal below ends on. **A refusal that names no cure
+    // is refused by halves**: the guard is right to stop, and a reader left
+    // holding a sentence has nowhere to go. Written once because all three
+    // states are cured by the same act — make this directory be the genesis
+    // this installation holds — and a second spelling would rot apart from the
+    // first.
+    final cure = 'entity -C ${place.path} refresh ${entity.name}:$_genesisId '
+        '${staged.directory.path}';
+
     if (standing == null) {
+      final blocked = staged.directory.existsSync() &&
+          staged.directory.listSync().isNotEmpty;
       cli.err.writeln([
-        'entity run: ${entity.name} has no class tree at '
-            '${staged.directory.path}',
-        'the executables it declares are not on disk — install it again',
+        if (blocked)
+          'entity run: ${entity.name} has no class tree at '
+              '${staged.directory.path} — a directory this installation never '
+              'registered stands there'
+        else
+          'entity run: ${entity.name} has no class tree at '
+              '${staged.directory.path}',
+        'the executables it declares are not on disk',
+        if (blocked) 'move what stands there aside, then: $cure' else 'stand it up: $cure',
       ].join('\n  '));
       cli.exitCode = EntityRunner.notFoundCode;
       return;
@@ -112,8 +129,7 @@ final class RunCommand extends EntityCommand {
         'entity run: ${entity.name} stands at ${standing.short} and this '
             'installation holds ${holds.short}',
         'running it would execute bodies this place does not declare',
-        'bring it forward: entity -C ${place.path} refresh ${entity.name}:'
-            '$_genesisId ${staged.directory.path}',
+        'bring it forward: $cure',
       ].join('\n  '));
       cli.exitCode = EntityRunner.notFoundCode;
       return;

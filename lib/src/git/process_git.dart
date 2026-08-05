@@ -468,6 +468,14 @@ final class ProcessGit implements Git {
   @override
   Commit? worktreeHead(String path) {
     if (!Directory(path).existsSync()) return null;
+    // **Possession before reading.** `rev-parse HEAD` asked inside a directory
+    // that is no worktree at all does not fail: Git walks *up* and answers for
+    // whatever repository contains it. A stage standing under a place that
+    // happens to live inside a checkout therefore reports that checkout's head
+    // — a commit from another line entirely, and a plausible one, which is the
+    // worst kind. The question here is *what does the tree standing here hold*,
+    // and a directory nobody registered is not standing here at all.
+    if (worktreeRepository(path) == null) return null;
     // Asked from inside the worktree, because that is the only vantage from
     // which `HEAD` means *this* tree: asked of the repository it would answer
     // with the bare repository's own head, which is another tree's business.

@@ -265,23 +265,110 @@ functions:
     expect(ran.err, isNot(contains('declares no function')));
   });
 
-  test('an absent class tree refuses and points at installing again', () async {
+  String stagePath([String? at]) => p.join(
+        at ?? site.path,
+        '.place',
+        Entity.plotNamespace,
+        'probe.thing',
+        Entity.classDirName,
+      );
+
+  /// The remedy exactly as the refusal printed it, split into an argv — **the
+  /// witness of a different matter than the assertions above**. Everything else
+  /// here reads a value the code computed; this reads the sentence a human is
+  /// handed, and hands it back untouched.
+  ///
+  /// The program's own name is asserted and then dropped, because the runner
+  /// under test *is* `entity`: what would otherwise go untested is that the line
+  /// names the program a reader has, rather than a verb spelled for this file.
+  List<String> cureIn(String err) {
+    final line = err
+        .split('\n')
+        .map((line) => line.trim())
+        .firstWhere((line) => line.contains('entity -C '));
+    final argv = line.substring(line.indexOf('entity -C ')).split(' ');
+    expect(argv.first, 'entity', reason: 'the cure must name a real program');
+    return argv.skip(1).toList();
+  }
+
+  test('an absent class tree refuses, and the cure it prints stands it up',
+      () async {
     await install();
-    final staged = p.join(
-      site.path,
-      '.place',
-      Entity.plotNamespace,
-      'probe.thing',
-      Entity.classDirName,
-    );
-    Directory(staged).deleteSync(recursive: true);
+    Directory(stagePath()).deleteSync(recursive: true);
 
     final ran = await cli(['run', 'probe.thing:alpha', 'say.hello', report(), '0']);
 
     expect(ran.code, 1);
     expect(ran.err, contains('no class tree'));
-    expect(ran.err, contains('install it again'));
     expect(File(report()).existsSync(), isFalse);
+
+    // Typed verbatim, and from outside the place: a cure that carries no
+    // vantage resolves against wherever the reader stands, which is another
+    // installation of the same name or none at all.
+    final cured = await cli(cureIn(ran.err), cwd: scratch.path);
+    expect(cured.code, 0, reason: cured.err);
+
+    final again = await cli(['run', 'probe.thing:alpha', 'say.hello', report(), '0']);
+    expect(again.code, 0, reason: again.err);
+    expect(reported(report())['entity'], 'probe.thing');
+  });
+
+  test("another entity's worktree is not this entity's stage", () async {
+    await install();
+    final made = await cli(['create', 'other.thing']);
+    expect(made.code, 0, reason: made.err);
+
+    // A **registered** worktree, and of the wrong repository — the state the
+    // register alone cannot catch, since it answers *somebody holds this* and
+    // the question is *do we*. Standing here by hand, from the other entity's
+    // own repository, at the other entity's own genesis.
+    await runWithGitAsync(git, () async {
+      final ours = Entity('probe.thing', from: site.path);
+      final theirs = Entity('other.thing', from: site.path);
+      ours.stagedClass.release();
+      git.worktreeAdd(
+        repositoryOf(site.path, 'other.thing'),
+        path: stagePath(),
+        at: theirs.genesis,
+      );
+    });
+    final foreign = git.worktreeHead(stagePath())!;
+
+    final ran = await cli(['run', 'probe.thing:alpha', 'say.hello', report(), '0']);
+
+    expect(ran.code, 1);
+    expect(ran.err, isNot(contains(foreign.short)),
+        reason: "a sha from another entity's line is not ours to report");
+    expect(ran.err, contains('never registered'));
+    expect(File(report()).existsSync(), isFalse);
+  });
+
+  test('a directory that is not ours blocks the stage, and is never discarded',
+      () async {
+    await install();
+    final staged = Directory(stagePath());
+    staged.deleteSync(recursive: true);
+    // Somebody else's files, standing where the class stands. The one state
+    // that has no automatic cure: what is here is only knowable by whoever put
+    // it here.
+    staged.createSync(recursive: true);
+    File(p.join(staged.path, 'theirs.txt')).writeAsStringSync('not ours\n');
+
+    final ran = await cli(['run', 'probe.thing:alpha', 'say.hello', report(), '0']);
+
+    expect(ran.code, 1);
+    expect(ran.err, contains('never registered'));
+    expect(ran.err, contains('move what stands there aside'));
+
+    // And the cure refuses rather than clearing the way for itself.
+    final refused = await cli(cureIn(ran.err), cwd: scratch.path);
+    expect(refused.code, EntityRunner.refusedCode, reason: refused.err);
+    expect(refused.err, contains('not a worktree of ours'));
+    expect(
+      File(p.join(staged.path, 'theirs.txt')).readAsStringSync(),
+      'not ours\n',
+      reason: 'a verb that clears what it does not own deletes strangers',
+    );
   });
 
   test('a stale class tree refuses, and the cure it prints is a cure', () async {
@@ -388,6 +475,75 @@ functions:
       // it. Falsified by staging only on install — `create` then leaves a hole
       // the printed cure cannot fill.
       expect(entity.stagedClass.at, entity.genesis);
+    });
+  });
+
+  // --------------------------------------------------------- the neighbourhood
+
+  /// **A place with a repository above it**, which is the ordinary condition and
+  /// not an exotic one: a habitat is a checkout, and every place inside it has a
+  /// repository overhead that answers questions nobody asked it.
+  ///
+  /// Every other gate in this file is born under `systemTemp` with nothing
+  /// above, and that is a population with one value on the axis the law speaks
+  /// about — *which repository answers for this directory*. Under one value the
+  /// wrong reading has nothing to be wrong with: it fails to resolve, and the
+  /// honest branch runs for the dishonest reason.
+  group('a place inside a repository', () {
+    void enclose(String path) {
+      Process.runSync('git', ['init', '--quiet', path]);
+      Process.runSync('git', [
+        '-C', path,
+        '-c', 'user.email=gate@bentos',
+        '-c', 'user.name=gate',
+        'commit', '--quiet', '--allow-empty', '-m', 'the neighbour',
+      ]);
+    }
+
+    /// The head the enclosing repository would answer with — the number that
+    /// must never appear in anything this entity says about itself.
+    String neighbourHead(String path) => Process.runSync(
+          'git',
+          ['-C', path, 'rev-parse', 'HEAD'],
+        ).stdout.toString().trim();
+
+    test('the stage reports its own repository, never the one above it',
+        () async {
+      enclose(scratch.path);
+      await install();
+
+      // The campus state, made by hand: the files stand, and the link that made
+      // them a worktree is gone. Nothing of the machinery under judgment minted
+      // this — which is the point, since the machinery cannot produce the state
+      // it fails to describe.
+      File(p.join(stagePath(), '.git')).deleteSync();
+
+      final ran = await cli(['run', 'probe.thing:alpha', 'say.hello', report(), '0']);
+
+      expect(ran.code, 1);
+      expect(
+        ran.err,
+        isNot(contains(neighbourHead(scratch.path).substring(0, 7))),
+        reason: 'the head above the place is not this entity to report',
+      );
+      expect(ran.err, contains('never registered'));
+      expect(File(report()).existsSync(), isFalse);
+    });
+
+    test('the cure works with a repository overhead, exactly as without',
+        () async {
+      enclose(scratch.path);
+      await install();
+      Directory(stagePath()).deleteSync(recursive: true);
+
+      final ran = await cli(['run', 'probe.thing:alpha', 'say.hello', report(), '0']);
+      expect(ran.code, 1);
+
+      final cured = await cli(cureIn(ran.err), cwd: scratch.path);
+      expect(cured.code, 0, reason: cured.err);
+
+      final again = await cli(['run', 'probe.thing:alpha', 'say.hello', report(), '0']);
+      expect(again.code, 0, reason: again.err);
     });
   });
 }

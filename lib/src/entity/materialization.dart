@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import '../git/git.dart';
 import '../git/git_ambient.dart';
 import '../git/model/commit.dart';
 
@@ -50,17 +51,58 @@ final class Materialization {
   /// constructed the object.
   ///
   /// Null when nothing of ours stands there — the honest answer for a directory
-  /// already released.
-  Commit? get at => ambientGit.worktreeHead(directory.path);
+  /// already released, and for one that was never ours to begin with.
+  ///
+  /// **Ours, and not merely somebody's.** [ambientGit.worktreeHead] answers for
+  /// a registered worktree of *whatever* repository holds it, and a place may
+  /// sit inside a checkout that is nobody's business here. Asking [gitDir] by
+  /// name is what makes *is this tree the one this repository stood up* a
+  /// question about possession rather than about neighbourhood.
+  Commit? get at =>
+      _ours ? ambientGit.worktreeHead(directory.path) : null;
 
-  /// Brings the files up to the instance's present tip. The duty of whoever
-  /// looks; nothing does it for them.
+  /// Whether the directory is a worktree **this** repository registered.
+  bool get _ours {
+    final holder = ambientGit.worktreeRepository(directory.path);
+    return holder != null && _resolved(holder) == _resolved(gitDir);
+  }
+
+  /// One spelling for one directory: the register answers resolved and a caller
+  /// carries whatever it was handed, which differ wherever temp is a link.
+  static String _resolved(String path) {
+    final dir = Directory(path);
+    return dir.existsSync() ? dir.resolveSymbolicLinksSync() : path;
+  }
+
+  /// Brings the files to the ref's present tip — **and stands them up when
+  /// nothing stands here yet**, because a tree that was never put down and one
+  /// that fell behind are the same question to whoever needs it now: *make this
+  /// directory be the ref*.
+  ///
+  /// Three states, and the third is why this cannot be written as two:
+  ///
+  /// - **absent** — nothing here, or an empty directory: materialized.
+  /// - **ours** — advanced, or left alone when it already stands at the tip.
+  /// - **alien** — content here that this repository never registered:
+  ///   [WorktreeNotOurs], loud and named. Never discarded. A verb that clears
+  ///   what it does not own to make room for itself is one bad path away from
+  ///   deleting a stranger's work, and the caller who put those files there is
+  ///   the only one who knows what they are.
   void refresh() {
     final following = ref;
     if (following == null) return;
     final tip = ambientGit.revParse(gitDir, following);
-    if (tip == null || tip == at) return;
-    ambientGit.worktreeRemove(gitDir, path: directory.path);
+    if (tip == null) return;
+    final standing = at;
+    if (standing == tip) return;
+    if (standing != null) {
+      ambientGit.worktreeRemove(gitDir, path: directory.path);
+      ambientGit.worktreeAdd(gitDir, path: directory.path, at: tip);
+      return;
+    }
+    if (directory.existsSync() && directory.listSync().isNotEmpty) {
+      throw WorktreeNotOurs(directory.path, repository: gitDir);
+    }
     ambientGit.worktreeAdd(gitDir, path: directory.path, at: tip);
   }
 
