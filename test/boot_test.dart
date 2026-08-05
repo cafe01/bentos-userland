@@ -41,4 +41,31 @@ void main() {
       throwsA(isA<LlmBootException>()),
     );
   });
+
+  // The routing error is a USER-facing message: it names the device the user
+  // asked for and the vendors they can actually reach. Driver wiring is the
+  // product author's business and must never surface at this end — a message
+  // that sends the reader to a Dart file inside the package is telling the
+  // wrong person what to do.
+  test('unknown vendor speaks to the user, not to the driver author', () {
+    final message = (() {
+      try {
+        bootLlmDevice('/dev/llm/cohere/command');
+        fail('expected a routing error');
+      } on LlmBootException catch (e) {
+        return e.message;
+      }
+    })();
+
+    expect(message, contains('/dev/llm/cohere/command'));
+    expect(message, contains('cohere'));
+    expect(message, contains('openai'));
+    expect(message, contains('anthropic'));
+    expect(message, contains('llm models'));
+
+    expect(message, isNot(contains('registerLlmDriver')));
+    expect(message, isNot(contains('bundled_drivers')));
+    expect(message, isNot(contains('.dart')));
+    expect(message, isNot(contains('lib/')));
+  });
 }

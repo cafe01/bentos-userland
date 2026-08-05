@@ -63,6 +63,13 @@ abstract base class ArmingCommand extends EntityCommand {
     if (woken.isEmpty) {
       usageException('$name: the command is required — `-- <command>`');
     }
+    // Refused here, at the terminal, rather than written to a table that cannot
+    // hold it and firing something else weeks later.
+    try {
+      ArmingTables.checkCommand(woken);
+    } on ArgumentError catch (e) {
+      usageException('$name: ${e.message}');
+    }
 
     final coord = coordinate();
     final entity = cli.entityNamed(coord.entity, place: placeOption);
@@ -101,6 +108,14 @@ final class OffCommand extends EntityCommand {
   }
 }
 
+/// One armed argument as a person should read it: bare when it is one word,
+/// single-quoted when it holds whitespace the display would otherwise erase.
+String _shown(String argument) {
+  if (argument.isEmpty) return "''";
+  if (!argument.contains(RegExp(r'\s'))) return argument;
+  return "'${argument.replaceAll("'", r"'\''")}'";
+}
+
 /// `entity listeners <coord>` — what is armed here. Here, and not anywhere
 /// else: two installations of one entity are two participants, not two views.
 final class ListenersCommand extends EntityCommand {
@@ -133,7 +148,10 @@ final class ListenersCommand extends EntityCommand {
           line.instance,
           '${line.pattern}',
           line.once ? ArmingTables.onceLifetime : ArmingTables.alwaysLifetime,
-          line.command.join(' '),
+          // Quoted where a bare word would lie: this column is read by a person
+          // deciding whether the armed line is the one they meant, and a command
+          // printed as `sh -c echo hi` claims boundaries the line does not have.
+          line.command.map(_shown).join(' '),
         ].join('\t'),
       );
     }

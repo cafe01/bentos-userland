@@ -322,5 +322,77 @@ exit $exitCode
       );
       expect(tableOf('attempted'), contains('r1'), reason: 'and it lives on');
     });
+
+    /// A listener that records **one argument per line**, which is the only way
+    /// a test can see boundaries at all: `echo "$@"` prints the same text for
+    /// one argument holding a space and for two arguments.
+    String argvListener(String label) {
+      final script = File(p.join(tmp.path, label))
+        ..writeAsStringSync('''#!/usr/bin/env bash
+for a in "\$@"; do echo "\$a"; done >> "${p.join(tmp.path, '$label.log')}"
+exit 0
+''');
+      Process.runSync('chmod', ['755', script.path]);
+      return script.path;
+    }
+
+    test('an argument holding a space arrives as one argument', () {
+      // The table is what the caller's argv has to survive. Joined on a space
+      // and split back by the shell, `sh -c 'echo hi'` reaches exec as three
+      // words and does nothing the caller asked for — the silent failure the
+      // command block exists to end.
+      declareAction(newSha, 'prompt');
+      arm(
+        'attempted',
+        ['r1', '*', 'prompt', 'always', '--', argvListener('argv'), 'two words']
+            .join('\t'),
+      );
+
+      expect(fireWith('prepared', ['$oldSha $newSha refs/heads/s1']).exitCode, 0);
+      expect(
+        logOf('argv').readAsLinesSync().first,
+        'two words',
+        reason: 'the space is inside the argument, not between two',
+      );
+    });
+
+    test('the command block carries every argument, in order', () {
+      declareAction(newSha, 'prompt');
+      arm(
+        'attempted',
+        [
+          'r1',
+          '*',
+          'prompt',
+          'always',
+          '--',
+          argvListener('argv'),
+          '-c',
+          'echo one two',
+          'tail',
+        ].join('\t'),
+      );
+
+      expect(fireWith('prepared', ['$oldSha $newSha refs/heads/s1']).exitCode, 0);
+      expect(
+        logOf('argv').readAsLinesSync(),
+        ['-c', 'echo one two', 'tail', repo, 'refs/heads/s1', oldSha, newSha,
+            'prompt'],
+      );
+    });
+
+    test('a line armed before the command block still splits on whitespace', () {
+      // The compatibility that makes the change safe to ship: an installation
+      // armed by an older binary keeps firing exactly as it always did.
+      declareAction(newSha, 'prompt');
+      arm(
+        'attempted',
+        ['r1', '*', 'prompt', 'always', '${argvListener('argv')} -c tail']
+            .join('\t'),
+      );
+
+      expect(fireWith('prepared', ['$oldSha $newSha refs/heads/s1']).exitCode, 0);
+      expect(logOf('argv').readAsLinesSync().take(2).toList(), ['-c', 'tail']);
+    });
   });
 }

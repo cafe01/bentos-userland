@@ -83,9 +83,10 @@ TranscriptionDriver bootTranscribeDevice(String devicePath) {
 
   final factory = _transcribeRegistry[vendor];
   if (factory == null) {
+    final known = _transcribeRegistry.keys.toList()..sort();
     throw SttBootException(
-      'unknown vendor "$vendor" (no driver registered — '
-      'wire it via registerTranscribeDriver, see bin/_stt_drivers.dart)',
+      'no device at "$devicePath": unknown vendor "$vendor" '
+      '(${known.isEmpty ? 'no vendors available' : 'available vendors: ${known.join(', ')}'})',
     );
   }
   return factory(model);
@@ -115,9 +116,10 @@ LiveTranscriptionDriver<Object?> bootLiveDevice(String devicePath) {
 
   final factory = _liveRegistry[vendor];
   if (factory == null) {
+    final known = _liveRegistry.keys.toList()..sort();
     throw SttBootException(
-      'unknown vendor "$vendor" (no live driver registered — '
-      'wire it via registerLiveDriver, see bin/_stt_drivers.dart)',
+      'no live device at "$devicePath": unknown vendor "$vendor" '
+      '(${known.isEmpty ? 'no vendors available' : 'available vendors: ${known.join(', ')}'})',
     );
   }
   return factory(model);

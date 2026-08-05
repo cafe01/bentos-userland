@@ -56,8 +56,12 @@ const String referenceTransactionShim = r'''#!/usr/bin/env bash
 #   $REPO/bentos/landed      woken detached
 #   $REPO/bentos/refused     woken detached
 # Line format, tab-separated:
-#   <id>\t<instance-glob>\t<action-glob>\t<always|once>\t<command...>
+#   <id>\t<instance-glob>\t<action-glob>\t<always|once>\t--\t<arg>\t<arg>...
 # Each command is called as: <cmd> <repo> <ref> <old> <new> <action>
+#
+# The `--` opens the command block and every argument is its own field, so an
+# argument holding a space survives the table. A tail without it was written
+# before that and is split on whitespace, which is what it has always meant.
 #
 # A `once` line is pruned from its table at the moment it matches and BEFORE
 # its command runs — so it can never fire twice, including at `prepared`, where
@@ -110,6 +114,26 @@ while read -r old new ref; do
       *) cmd="${life:-}${cmd:+$TAB$cmd}"; life=always ;;
     esac
     [ -n "${cmd:-}" ] || continue
+
+    # The command block. With the sentinel, one field per argument — read as an
+    # array so the boundaries the caller drew are the boundaries exec sees.
+    # Without it, a line from before the sentinel: split on whitespace, which is
+    # the only reading that keeps doing what that line has always done.
+    if [ "${cmd%%$TAB*}" = "--" ]; then
+      argv=()
+      rest="${cmd#--$TAB}"
+      while [ -n "$rest" ]; do
+        argv+=("${rest%%$TAB*}")
+        case "$rest" in
+          *"$TAB"*) rest="${rest#*$TAB}" ;;
+          *) rest="" ;;
+        esac
+      done
+    else
+      # shellcheck disable=SC2206
+      argv=($cmd)
+    fi
+    [ "${#argv[@]}" -gt 0 ] || continue
     # shellcheck disable=SC2254
     case "$instance" in $inst_glob) ;; *) continue ;; esac
     # shellcheck disable=SC2254
@@ -124,12 +148,12 @@ while read -r old new ref; do
     fi
 
     if [ "$hold" = "1" ]; then
-      if ! $cmd "$REPO" "$ref" "$old" "$new" "$action" >>"$LOG" 2>&1; then
-        echo "entity: refused by $id: $cmd" >&2
+      if ! "${argv[@]}" "$REPO" "$ref" "$old" "$new" "$action" >>"$LOG" 2>&1; then
+        echo "entity: refused by $id: ${argv[*]}" >&2
         exit 1
       fi
     else
-      nohup $cmd "$REPO" "$ref" "$old" "$new" "$action" >>"$LOG" 2>&1 &
+      nohup "${argv[@]}" "$REPO" "$ref" "$old" "$new" "$action" >>"$LOG" 2>&1 &
     fi
   done < "$TABLE"
 done

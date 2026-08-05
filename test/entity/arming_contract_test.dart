@@ -155,6 +155,48 @@ void main() {
       expect(read.once, isFalse);
     });
 
+    test('an argument holding a space round trips as one argument', () {
+      const armed = Registration(
+        id: 'r7',
+        instance: 's1',
+        pattern: EventPattern(action: 'prompt', phase: EventPhase.landed),
+        command: ['sh', '-c', 'echo hi >> log'],
+        once: false,
+      );
+      expect(line(ArmingTables.encode(armed)).command,
+          ['sh', '-c', 'echo hi >> log']);
+    });
+
+    test('a single argument holding a space is not two', () {
+      // The case the sentinel exists for: without it this line is
+      // indistinguishable from one written before the command block, and the
+      // reader has to guess.
+      const armed = Registration(
+        id: 'r7',
+        instance: 's1',
+        pattern: EventPattern(action: 'prompt', phase: EventPhase.landed),
+        command: ['/opt/my scripts/reindex'],
+        once: false,
+      );
+      expect(line(ArmingTables.encode(armed)).command,
+          ['/opt/my scripts/reindex']);
+    });
+
+    test('a command that cannot be written to the table is refused', () {
+      // A tab or a newline has no form on a tab-delimited, one-line-per-line
+      // wire, and an empty word has no form at all. Refusing at arming is the
+      // difference between an error the caller sees and a line that fires
+      // something else.
+      expect(() => ArmingTables.checkCommand(['sh', 'a\tb']),
+          throwsA(isA<ArgumentError>()));
+      expect(() => ArmingTables.checkCommand(['sh', 'a\nb']),
+          throwsA(isA<ArgumentError>()));
+      expect(() => ArmingTables.checkCommand(['sh', '']),
+          throwsA(isA<ArgumentError>()));
+      expect(() => ArmingTables.checkCommand(['sh', '-c', 'echo hi']),
+          returnsNormally);
+    });
+
     test('a blank, a comment and a line with no command are not lines', () {
       expect(ArmingTables.decode('', EventPhase.landed), isNull);
       expect(ArmingTables.decode('# off for now', EventPhase.landed), isNull);

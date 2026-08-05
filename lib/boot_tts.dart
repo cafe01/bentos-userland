@@ -64,9 +64,10 @@ SpeechSynthesisDriver<Object?> bootTtsDevice(String devicePath) {
 
   final factory = _ttsRegistry[vendor];
   if (factory == null) {
+    final known = _ttsRegistry.keys.toList()..sort();
     throw TtsBootException(
-      'unknown vendor "$vendor" (no driver registered — '
-      'wire it via registerTtsDriver, see bin/_tts_drivers.dart)',
+      'no device at "$devicePath": unknown vendor "$vendor" '
+      '(${known.isEmpty ? 'no vendors available' : 'available vendors: ${known.join(', ')}'})',
     );
   }
   return factory(model);

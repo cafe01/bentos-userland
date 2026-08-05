@@ -83,9 +83,13 @@ Bentos bootLlmDevice(String devicePath) {
 
   final factory = _registry[vendor];
   if (factory == null) {
+    final known = _registry.keys.toList()..sort();
+    final available = known.isEmpty
+        ? 'no vendors available'
+        : 'available vendors: ${known.join(', ')}';
     throw LlmBootException(
-      'unknown vendor "$vendor" (no driver registered — '
-      'wire it via registerLlmDriver, see lib/bundled_drivers.dart)',
+      'no device at "$devicePath": unknown vendor "$vendor" '
+      '($available — run `llm models` to list devices)',
     );
   }
 
