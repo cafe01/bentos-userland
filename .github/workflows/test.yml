@@ -5,6 +5,18 @@
 # windowsSemantics, for one — can land on main with no witness until a
 # release is cut. This closes that gap without touching the release
 # mechanism: it never builds, never publishes, never runs the smoke tests.
+#
+# **Three jobs, three different claims, and each one is honest about its own.**
+# A bare `dart test` ran all three claims as one and reported the worst — which
+# is how this workflow spent a whole front red for two reasons that were never
+# defects: assertions tagged `owed` that name what another repository still owes,
+# and a material gate that demands binaries and a genesis no plain runner has.
+#
+# Nothing here carries `continue-on-error`, and nothing depends on `material` or
+# `owed`. A green check mark over a known red erases the debt from the one place
+# it would be seen; a job that gates on another repository's genesis reddens a
+# push for a reason the push did not cause. So each stands alone and fails for
+# itself, and publishing — over in release.yml — depends on the fast gate alone.
 
 name: test
 
@@ -37,5 +49,79 @@ jobs:
       - name: Resolve dependencies
         run: dart pub get
 
+      # The gate that runs fifty times a day: everything judged with doubles, in
+      # seconds. The two exclusions are not a softening — each is a claim with a
+      # job of its own below.
       - name: Run the test suite
-        run: dart test --concurrency 1
+        run: dart test --concurrency 1 -x owed -x material
+
+  # The material gate: the real `entity`, the real `bentos.llm` bodies, a real
+  # Git tree and a real device. It is the only witness this package has of the
+  # seam between itself and the floor — everything above `EntityPrimitive` is
+  # judged with no process at all — so it must be able to go red, and it does:
+  # remove the reply body from the genesis and it stops at `owes_inference` and
+  # says the circuit never came back to rest.
+  #
+  # It never skips. Absent binaries and an absent genesis are failures here, and
+  # the day that becomes fragile is the day a `skip` is worth asking for.
+  #
+  # Linux only, and nothing needs it: a genesis moving in another repository must
+  # never redden a push in this one.
+  material:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.12.0
+
+      - name: Reach the public siblings over HTTPS
+        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
+
+      - name: Resolve dependencies
+        run: dart pub get
+
+      # The entity's own bodies reach for these by name — `llm` and `jq` most of
+      # all, `chat-codec` and `chat-render` to encode and render a turn. They are
+      # installed by the same script and the same registry a developer uses, so
+      # CI and the hand stand on one set or they stand on two.
+      - name: Install the coreutils the bodies reach for
+        run: |
+          PREFIX="${{ runner.temp }}/bin" bash script/install.sh entity place llm chat-codec chat-render
+          echo "${{ runner.temp }}/bin" >> "$GITHUB_PATH"
+
+      # The genesis is another repository's, and this is the only line that says
+      # where it lives. The gate reads $BENTOS_LLM_SOURCE and presumes no campus.
+      - name: Fetch the bentos.llm genesis
+        run: git clone --branch genesis https://github.com/cafe01/bentos.llm.git "${{ runner.temp }}/bentos.llm"
+
+      - name: Gate — open · say · reply · rest, against the real floor
+        env:
+          BENTOS_LLM_SOURCE: ${{ runner.temp }}/bentos.llm
+        run: dart test -t material test/llm/session/material
+
+  # What the floor still owes, reported rather than hidden. It is red today —
+  # `bentos.llm` has no deposit for a result nobody ran, none for discarding
+  # without rewriting, and `entity` has no ambient coordinate — and each failure
+  # names its own missing piece. The day those land it goes green by itself, with
+  # nobody editing anything here. That is the seam working, not the seam broken.
+  owed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.12.0
+
+      - name: Reach the public siblings over HTTPS
+        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
+
+      - name: Resolve dependencies
+        run: dart pub get
+
+      - name: Report — the deposits the floor has not landed
+        run: dart test --concurrency 1 -t owed

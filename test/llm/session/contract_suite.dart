@@ -662,9 +662,23 @@ void runSessionContract(SessionConstruction construction) {
     test(
       'a knob the device does not announce is shown with its reason',
       () async {
+        // The same channel its untagged sibling stands on. Without it this
+        // claim died on a missing path, and a standing red that fails before
+        // reaching its own subject names no piece at all.
+        floor.commit(demo, pinned, {
+          ...realSessionTree(),
+          'llm/channel.toml':
+              'device = "/dev/llm/openai/gpt-4o-mini"\ntemperature = 0.0\n',
+        });
         final knobs = await faceOver().knobs(demo);
         final refused = knobs.where((k) => !k.offered);
-        expect(refused, isNotEmpty);
+        expect(
+          refused,
+          isNotEmpty,
+          reason: 'owed by the floor — a device does not announce its '
+              'capabilities, so no knob can be reported as refused. When a '
+              'device ships that announcement, this goes green by itself',
+        );
         expect(refused.first.refusedBecause, isNotNull);
       },
       tags: 'owed',

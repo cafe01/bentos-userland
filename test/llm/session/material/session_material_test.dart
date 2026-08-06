@@ -89,9 +89,23 @@ void main() {
     expect(names.last, endsWith('.jsonl'),
         reason: "an assistant's turn lands as its event stream");
 
-    final log = _run('entity', ['log', coord], at: plot.path);
-    expect(log, contains('assistant.reply'));
-    expect(log, contains('user.say'));
+    // The log's columns are the floor's own: sha, PAYLOAD NOUN, actor, instant,
+    // sentence. It never carries the function's name — the noun is all the
+    // substrate reads, and the verb survives only inside the sentence a person
+    // is shown. Asserting the pair (noun, actor) is the stronger claim anyway:
+    // it says the reply was authored by the assistant and the prompt by the
+    // user, which a search for a function name never said.
+    //
+    // The lines with an EMPTY noun are the class's own authoring commits
+    // leaking into every instance's log — a defect of `entity log` recorded on
+    // the primitive's front, and the reason `EntityPrimitive.log` drops them.
+    final acts = [
+      for (final line in _run('entity', ['log', coord], at: plot.path).split('\n'))
+        if (line.split('\t') case [_, final noun, final actor, ...])
+          if (noun.trim().isNotEmpty) (noun, actor)
+    ];
+    expect(acts, contains(('reply', 'assistant')));
+    expect(acts, contains(('prompt', 'user')));
   });
 }
 

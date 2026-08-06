@@ -70,6 +70,12 @@ final class PrimitiveFailure implements Exception {
   final String verb;
   final String message;
   final int? exitCode;
+
+  /// The floor's own words, where a person reads them. An undressed exception
+  /// arrives as a stack trace where somebody needed a sentence.
+  @override
+  String toString() =>
+      'entity $verb failed${exitCode == null ? '' : ' ($exitCode)'}: $message';
 }
 
 /// The verbs of `entity` that the face speaks.

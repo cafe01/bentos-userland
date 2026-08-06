@@ -175,6 +175,12 @@ final class OwedByFloor implements Exception {
   /// The piece that is missing, spelled as the floor will spell it — e.g.
   /// `bentos.llm: user.revise --from <message> --drop`.
   final String owed;
+
+  /// The debt, spelled where a person reads it. Without this the standing red
+  /// in CI says `Instance of 'OwedByFloor'` and names nothing — a seam that
+  /// reports its own existence and not its content, which is half a seam.
+  @override
+  String toString() => 'llm session $verb: owed by the floor — $owed';
 }
 
 /// How the suite reaches an implementation without naming one.
