@@ -53,12 +53,15 @@ class BentosChatDevice implements ChatDevice {
       // ways — writes RAW encodeMessage() records in, decodes RAW ChatEvent
       // records out. Override both formats so the base decodes proto records
       // (not raw text) and encodes proto events (not lossy UTF-8 text).
-      await _applyConfig(fd, config.copyWith(
-        inputFormat: Format.structured,
-        outputFormat: Format.structured,
-        inputEncoding: Encoding.protobuf,
-        outputEncoding: Encoding.protobuf,
-      ));
+      await _applyConfig(
+        fd,
+        config.copyWith(
+          inputFormat: Format.structured,
+          outputFormat: Format.structured,
+          inputEncoding: Encoding.protobuf,
+          outputEncoding: Encoding.protobuf,
+        ),
+      );
       for (final m in messages) {
         await _bentos.write(fd, encodeMessage(m));
       }

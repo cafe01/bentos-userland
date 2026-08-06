@@ -17,7 +17,7 @@ library;
 import 'package:chat_inference/chat_inference.dart';
 
 import '../../boot.dart';
-import '../chat/bentos_chat_device.dart';
+import 'bentos_chat_device.dart';
 import 'config.dart';
 
 /// How a device path becomes a device — the in-process portal by default.
@@ -30,10 +30,10 @@ ChatDevice openBootedDevice(String devicePath) =>
 /// about itself or why it could not be asked.
 final class DeviceListing {
   const DeviceListing.available(this.id, ChatCapabilities this.capabilities)
-      : unavailable = null;
+    : unavailable = null;
 
   const DeviceListing.unavailable(this.id, String this.unavailable)
-      : capabilities = null;
+    : capabilities = null;
 
   /// The device path — the only name a device has here, vendor-blind by
   /// construction.

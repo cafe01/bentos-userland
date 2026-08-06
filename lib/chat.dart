@@ -5,5 +5,5 @@ library;
 
 export 'package:chat_inference/chat_inference.dart';
 
-export 'src/chat/bentos_chat_device.dart';
-export 'src/chat/chat_ioctl_cmds.dart';
+export 'src/llm/bentos_chat_device.dart';
+export 'src/llm/chat_ioctl_cmds.dart';
