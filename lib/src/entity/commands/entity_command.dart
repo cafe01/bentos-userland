@@ -74,4 +74,61 @@ abstract base class EntityCommand extends Command<void> {
       usageException('$name: ${e.message}');
     }
   }
+
+  /// The first positional read as a coordinate **that the environment may
+  /// complete** — the precedence, in the two steps that exist today:
+  ///
+  /// 1. **The argument**, whenever it names an instance. It always wins, which
+  ///    is what keeps every verb scriptable with no environment at all.
+  /// 2. **The environment**, when the argument is a bare name: first the
+  ///    occurrence a hook is firing for, then the ontology's own pointer.
+  ///
+  /// The third step — *the place, when the answer is unambiguous* — is not here
+  /// yet, and its absence is visible in the refusal below rather than papered
+  /// over by guessing.
+  ///
+  /// **The occurrence outranks the pointer, and is read only when it speaks of
+  /// this same entity.** A hook firing for `a.thing` may wake a command about
+  /// `b.thing`, and an instance borrowed across that boundary would send a verb
+  /// at an object nobody named.
+  (Coordinate, CoordinateSource) ambientCoordinate() {
+    final typed = positional('coord');
+    if (typed.contains(':')) return (coordinate(), CoordinateSource.argument);
+
+    final occurrenceEntity = cli.env[OccurrenceEnvironment.entity];
+    final occurrenceInstance = cli.env[OccurrenceEnvironment.instance];
+    if (occurrenceEntity == typed &&
+        occurrenceInstance != null &&
+        occurrenceInstance.isNotEmpty) {
+      return (
+        Coordinate(entity: typed, instance: occurrenceInstance),
+        CoordinateSource.occurrence,
+      );
+    }
+
+    final variable = ambientVariableFor(typed);
+    final pointed = cli.env[variable];
+    if (pointed != null && pointed.isNotEmpty) {
+      final Coordinate parsed;
+      try {
+        parsed = Coordinate.parse(pointed);
+      } on FormatException {
+        usageException(
+          '$name: $variable holds "$pointed", which is not <entity>:<instance>',
+        );
+      }
+      if (parsed.entity != typed) {
+        usageException(
+          '$name: $variable points at ${parsed.entity} and you named $typed',
+        );
+      }
+      return (parsed, CoordinateSource.pointer);
+    }
+
+    usageException([
+      '$name: $typed names a class, and this verb acts on an instance',
+      'type one — $typed:<instance>',
+      'or point at one — export $variable=$typed:<instance>',
+    ].join('\n  '));
+  }
 }

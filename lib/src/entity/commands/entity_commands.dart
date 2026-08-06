@@ -53,6 +53,11 @@ final class InstallCommand extends EntityCommand {
       cli.locate(source),
       at: cli.vantage(placeOption),
       as: argResults!['as'] as String?,
+      // A reaction the manifest declares and this installer cannot read is said
+      // out loud, here, while the person who installed it is still standing at
+      // the terminal — the alternative is a declaration that silently never
+      // fires, which is the failure this whole reading exists to end.
+      warn: (complaint) => cli.err.writeln('entity install: $complaint'),
     );
     cli.out.writeln(entity.name);
   }

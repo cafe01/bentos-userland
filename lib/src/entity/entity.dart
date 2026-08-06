@@ -106,7 +106,7 @@ final class Entity {
     // The tenant asks; the landlord records. The gitlink is the place's own
     // tree entry and no tenant writes there.
     place.register(name, url: '', path: name, sha: genesisSha.sha);
-    ArmingTables(gitDir).ensureArmed();
+    ArmingTables(gitDir, entity: name).ensureArmed();
     // An authored entity's genesis is empty, and the stage is stood up all the
     // same: what it buys is that the tree *exists and follows the ref* from the
     // first moment, so the author who writes a manifest and lands it has a tree
@@ -179,13 +179,19 @@ final class Entity {
   /// disposable directory, read there, then cloned again — locally, cheaply —
   /// into the place at the name now decided. `--as` skips the stage
   /// entirely, since nothing about its name depends on the content.
-  static Future<Entity> install(String source, {String? at, String? as}) async {
+  static Future<Entity> install(
+    String source, {
+    String? at,
+    String? as,
+    void Function(String complaint)? warn,
+  }) async {
     final place = Place(at ?? Directory.current.path);
     final String name;
     final String gitDir;
     if (as != null) {
       name = as;
       gitDir = p.join(place.plot(plotNamespace).path, name, repositoryDirName);
+      _refuseIfTaken(place, name, gitDir);
       await ambientGit.clone(source, gitDir);
       _ensureGenesis(gitDir);
     } else {
@@ -196,6 +202,10 @@ final class Entity {
         _ensureGenesis(stagingGitDir);
         name = _declaredName(stagingGitDir) ?? _nameFromSource(source);
         gitDir = p.join(place.plot(plotNamespace).path, name, repositoryDirName);
+        // Asked here, where the name is finally known and before one byte has
+        // been written into the place: the staging clone is ours and disposable,
+        // so a refusal from this line leaves the site exactly as it stood.
+        _refuseIfTaken(place, name, gitDir);
         await ambientGit.clone(stagingGitDir, gitDir);
         _ensureGenesis(gitDir);
       } finally {
@@ -208,15 +218,111 @@ final class Entity {
       path: name,
       sha: ambientGit.revParse(gitDir, genesisRef)?.sha ?? '',
     );
-    ArmingTables(gitDir).ensureArmed();
+    ArmingTables(gitDir, entity: name).ensureArmed();
     // No *instance* is checked out: a site that only reacts holds no instance
     // worktree at all, and bringing one down is the place's own recursive verb.
     // The class is the other half — its tree is where the executables the
     // manifest names actually stand, and arming has just written lines that
     // point at them.
     final installed = Entity(name, from: place.root.path);
+    // The class first, the table after: arming writes lines that point at
+    // bodies, and a line armed before its body stands is a window in which an
+    // act wakes something that is not there yet.
     installed.stageClass();
+    installed._armDeclared(place, warn: warn);
     return installed;
+  }
+
+  /// Refuses to install over an installation that already stands here.
+  ///
+  /// **Two states, and neither is ours to overwrite.** A registered name is an
+  /// installation someone made, with its own tables, its own remotes and
+  /// possibly its own line of history — clobbering it is not what a second
+  /// `install` means, and what it *does* mean (fetch, re-stage, re-arm) is a
+  /// verb of its own that does not exist yet. A directory standing with no
+  /// registration is stranger still: nothing here knows what it is, so it is
+  /// named and left exactly where it is.
+  ///
+  /// The value of saying it here is the shape of the alternative. Without this,
+  /// the answer was the substrate's own — an unhandled `git clone` failure, a
+  /// stack trace and exit 255 — which names no cure and no owner, and which a
+  /// script cannot branch on.
+  static void _refuseIfTaken(Place place, String name, String gitDir) {
+    if (place.lookup(name) != null) {
+      throw EntityAlreadyInstalled(name, place.root.path);
+    }
+    final standing = Directory(p.dirname(gitDir));
+    if (standing.existsSync() && standing.listSync().isNotEmpty) {
+      throw EntityAlreadyInstalled(
+        name,
+        place.root.path,
+        unregistered: standing.path,
+      );
+    }
+  }
+
+  /// Arms what the manifest declares: for every function that names both an
+  /// executable and the landings it reacts to, one line pointing at `entity
+  /// run`.
+  ///
+  /// **This is why the manifest has a function table at all.** A reaction
+  /// declared in band travels with the entity, so a site that installs it reacts
+  /// without anybody writing a line by hand — and the per-seat `arm` that each
+  /// face used to perform in its own code becomes a *reading*, performed once,
+  /// by the installer.
+  ///
+  /// Armed on `*`, and that is not a lost instance: at install time no instance
+  /// exists, and the one the event lands on reaches the woken command through
+  /// the environment the shim exports. A line that named an instance could only
+  /// ever have been armed after the fact, which is the debt this closes.
+  ///
+  /// It arms **this manifest only**. Composition is transitive and a fused body
+  /// would have to be walked to be armed, but `is:` has no emitter yet — a
+  /// traversal written against nothing is a shape nobody demonstrated.
+  ///
+  /// A row that is not a legible event pattern is **complained about, never
+  /// dropped in silence**: the entity is installed and everything legible is
+  /// armed, because one misspelled reaction is not a reason to refuse a
+  /// platform's ordinary act.
+  void _armDeclared(Place place, {void Function(String complaint)? warn}) {
+    final Manifest declared;
+    try {
+      declared = manifest;
+    } on Object {
+      // No manifest at all is the ordinary condition of a freshly authored
+      // entity, and an entity that declares nothing declares no reactions.
+      return;
+    }
+    final tables = ArmingTables(_gitDir, entity: name);
+    for (final entry in declared.reactions.entries) {
+      final function = entry.key;
+      if (declared.functions[function] == null) {
+        warn?.call(
+          "$name: '$function' declares reactions and no executable — "
+          'nothing was armed for it',
+        );
+        continue;
+      }
+      for (final text in entry.value) {
+        final EventPattern pattern;
+        try {
+          pattern = EventPattern.parse(text.trim());
+        } on FormatException catch (e) {
+          warn?.call("$name: '$function' declares on: $text — ${e.message}");
+          continue;
+        }
+        tables.add(
+          instance: '*',
+          pattern: pattern,
+          // Resolved by the substrate's PATH when the line fires, which is the
+          // same law a hand-armed bare name lives under. The vantage is written
+          // out because a hook fires from a working directory nobody chose, and
+          // a bare name would resolve up from wherever that happens to be.
+          command: ['entity', '-C', place.root.path, 'run', name, function],
+          provenance: Provenance.manifest,
+        );
+      }
+    }
   }
 
   /// **A clone brings history, never a class born here** — a foreign
@@ -506,6 +612,30 @@ final class EntityNotInstalled implements Exception {
 
   @override
   String toString() => 'entity not installed: $name (searched up from $anchor)';
+}
+
+/// An installation of this name already stands at this place.
+///
+/// **A refusal and not a fault**: nothing was cloned, nothing was registered,
+/// nothing was armed, and the answer a script must be able to branch on is *I
+/// did not touch what is there*. The same reading `WorktreeNotOurs` gets, for
+/// the same reason.
+final class EntityAlreadyInstalled implements Exception {
+  const EntityAlreadyInstalled(this.name, this.place, {this.unregistered});
+
+  final String name;
+  final String place;
+
+  /// The directory standing in the way when **no registration** explains it —
+  /// the stranger case, reported by path because only whoever put it there
+  /// knows what it is.
+  final String? unregistered;
+
+  @override
+  String toString() => unregistered == null
+      ? '$name is already installed at $place'
+      : '$name cannot be installed at $place: '
+          'a directory stands at $unregistered that this place never registered';
 }
 
 /// The internal escape hatch — **not exported** from `lib/entity.dart`.

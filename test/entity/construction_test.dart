@@ -703,7 +703,7 @@ void main() {
     // the primitive is already a tenancy, which is the one case that cannot fail.
 
     /// A repository with committed content, stood up by Git itself.
-    (String root, String plain) _byHand(String label) {
+    (String root, String plain) byHand(String label) {
       final root = Directory(
           Directory.systemTemp.createTempSync(label).resolveSymbolicLinksSync());
       addTearDown(() {
@@ -737,7 +737,7 @@ void main() {
 
     test('a directory that is no worktree of ours survives, and the refusal is '
         'loud', () async {
-      final (root, plain) = _byHand('entity_bystander_');
+      final (root, plain) = byHand('entity_bystander_');
 
       final refused = await release(plain, from: root);
 

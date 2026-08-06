@@ -72,6 +72,28 @@ final class EventPattern {
   String toString() => '$action.${phase.suffix}';
 }
 
+/// Who put a line in a table — **the line's provenance**, and the one property
+/// of a registration that is about the registration rather than about what it
+/// watches.
+///
+/// It is recorded because the two kinds have different owners: a hand-armed line
+/// is a person's decision and nobody else's to touch, while a manifest-armed
+/// line is a *reading* of what the entity declared and belongs to whoever
+/// performs that reading again. Nothing re-arms today, which is exactly why the
+/// mark is written now: the alternative is a format migration across every table
+/// already on disk, at the moment the first consumer needs to tell them apart.
+enum Provenance {
+  /// Armed by a caller — `entity on`, `entity once`, or the API's own members.
+  hand,
+
+  /// Written by [Entity.install], reading the `on:` rows the entity's manifest
+  /// declares.
+  manifest;
+
+  /// The word as it stands in a table.
+  String get word => name;
+}
+
 /// One armed listener, as it stands in an installation's table.
 ///
 /// **Arming is per installation** — the tables sit beside the repository, in
@@ -86,6 +108,7 @@ final class Registration {
     required this.pattern,
     required this.command,
     this.once = false,
+    this.provenance = Provenance.hand,
   });
 
   /// The handle `off` takes. Stable for the life of the line.
@@ -115,4 +138,8 @@ final class Registration {
   /// refusal ends the transaction and would otherwise leave the shim no path to
   /// the pruning.
   final bool once;
+
+  /// Whose reading put this line here. Default [Provenance.hand], because a
+  /// line nobody marked was typed by somebody.
+  final Provenance provenance;
 }

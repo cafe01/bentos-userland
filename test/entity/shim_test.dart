@@ -32,7 +32,7 @@ void main() {
     Directory(p.join(repo, 'hooks')).createSync(recursive: true);
     Directory(p.join(repo, 'bentos')).createSync(recursive: true);
     final hook = File(p.join(repo, 'hooks', 'reference-transaction'))
-      ..writeAsStringSync(referenceTransactionShim);
+      ..writeAsStringSync(referenceTransactionShimFor('probe.thing'));
     Process.runSync('chmod', ['755', hook.path]);
 
     // The stand-in for git: answers `cat-file commit <sha>` out of a directory

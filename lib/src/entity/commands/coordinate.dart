@@ -36,3 +36,42 @@ final class Coordinate {
   String toString() =>
       path == null ? '$entity:$instance' : '$entity:$instance:$path';
 }
+
+/// The environment variable an ontology's ambient coordinate is read from:
+/// upper case, every separator a underscore — `bentos.llm` reads `BENTOS_LLM`.
+///
+/// **A mechanical rule and not a registry.** Derived from the name, so a new
+/// ontology asks nobody's permission and nothing has to be kept in step; and one
+/// variable per ontology, so a caller stands in an LLM session and a chat
+/// channel at once without either erasing the other.
+///
+/// The convention belongs to the primitive rather than to each face: whoever
+/// answers for coordinates answers for how one is found when nobody typed it.
+String ambientVariableFor(String entity) =>
+    entity.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '_');
+
+/// Where an ambient coordinate came from, so that a verb can say which step
+/// answered rather than leaving a caller to guess.
+enum CoordinateSource {
+  /// The caller typed it. Always wins — it is what keeps every verb scriptable
+  /// with no environment at all.
+  argument,
+
+  /// The occurrence a hook is firing for: the instance the event landed on,
+  /// exported by the shim. It outranks a pointer because it is a fact about
+  /// *this* transaction, while a pointer is a fact about somebody's session.
+  occurrence,
+
+  /// The ontology's ambient variable — a session's pointer, the shell's own.
+  pointer,
+}
+
+/// The environment names the shim exports the occurrence under, and the same
+/// ones `run` lays for a body. One vocabulary, so that a function woken by a
+/// reaction and a function called by hand read their context identically.
+abstract final class OccurrenceEnvironment {
+  static const String entity = 'BENTOS_ENTITY';
+  static const String instance = 'BENTOS_INSTANCE';
+  static const String coordinate = 'BENTOS_COORD';
+  static const String place = 'BENTOS_PLACE';
+}

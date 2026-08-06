@@ -40,6 +40,7 @@ final class Manifest {
     required this.actions,
     required this.cardinality,
     required this.functions,
+    required this.reactions,
     required this.fields,
   });
 
@@ -90,6 +91,21 @@ final class Manifest {
   /// two would make a manifest's own omission read as the caller's typo.
   final Map<String, String?> functions;
 
+  /// What each function reacts to: the function's semantic name against the
+  /// event patterns its `on:` rows declare, verbatim and unvalidated.
+  ///
+  /// Typed for the same reason [functions] is — a primitive outside the entity
+  /// acts on it. **Installing is reading this table and arming it**, which is
+  /// what turns a per-seat `arm` written in code into a declaration read by the
+  /// installer, and what lets a reaction survive being installed somewhere its
+  /// author never saw.
+  ///
+  /// The patterns are **strings here on purpose**: parsing one is the arming
+  /// component's business, and a manifest that could not be *read* because one
+  /// row is misspelled would take the whole entity down over a typo in one
+  /// reaction.
+  final Map<String, List<String>> reactions;
+
   /// The document entire, as parsed. The escape hatch that keeps an unsettled
   /// schema from being frozen by this type.
   final Map<String, Object?> fields;
@@ -123,6 +139,13 @@ final class Manifest {
                 '${row['exec']}',
               _ => null,
             },
+      },
+      reactions: {
+        if (fields['functions'] case final Map<String, Object?> declared)
+          for (final entry in declared.entries)
+            if (entry.value case final Map<String, Object?> row)
+              if (row['on'] case final List<Object?> landings)
+                entry.key: [for (final landing in landings) '$landing'],
       },
       fields: fields,
     );

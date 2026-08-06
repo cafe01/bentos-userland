@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import '../entity_runner.dart';
 import '../manifest.dart';
+import 'coordinate.dart';
 import 'entity_command.dart';
 
 /// `entity run <coord> <function> [args...]` — a caller names a verb and the
@@ -27,6 +28,15 @@ import 'entity_command.dart';
 /// looked up, not required to be born, not read. A function that needs it to
 /// exist finds that out itself, which is the only reading under which `run`
 /// interprets nothing.
+///
+/// # The coordinate may come from the environment
+///
+/// A bare entity name is completed by the ambient coordinate — the occurrence a
+/// hook is firing for, then the ontology's own pointer — and that is what makes
+/// a **manifest-armed line possible at all**: at install time no instance
+/// exists, so the line is armed on `*` and names none, and the instance the
+/// event landed on reaches this verb through the shim's exports. A typed
+/// coordinate always wins, so nothing scripted changes meaning.
 ///
 /// # Transparent, not replaced
 ///
@@ -55,7 +65,7 @@ final class RunCommand extends EntityCommand {
   Future<void> run() async {
     final rest = argResults!.rest;
     if (rest.length < 2) usageException('run: <coord> <function> are required');
-    final coord = coordinate();
+    final (coord, _) = ambientCoordinate();
     if (coord.path != null) {
       // A path selects content inside an instance, and running is not reading.
       usageException('run: expected <entity>:<instance>, with no path');
@@ -142,10 +152,10 @@ final class RunCommand extends EntityCommand {
         program,
         arguments,
         environment: {
-          'BENTOS_PLACE': place.path,
-          'BENTOS_ENTITY': entity.name,
-          'BENTOS_INSTANCE': coord.instance,
-          'BENTOS_COORD': '${coord.entity}:${coord.instance}',
+          OccurrenceEnvironment.place: place.path,
+          OccurrenceEnvironment.entity: entity.name,
+          OccurrenceEnvironment.instance: coord.instance,
+          OccurrenceEnvironment.coordinate: '${coord.entity}:${coord.instance}',
         },
         // The caller's own, untouched: context arrives by environment, so
         // relocating the body would be this verb inventing a fact nobody asked

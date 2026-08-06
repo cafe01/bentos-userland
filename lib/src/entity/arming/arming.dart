@@ -20,9 +20,19 @@ import 'shim_source.dart';
 final class ArmingTables {
   /// Bound to one installation's repository — the **common** directory, which
   /// the primitive resolves and no caller passes by hand.
-  const ArmingTables(this.gitDir);
+  ///
+  /// [entity] is the name this installation answers to, and it is here for one
+  /// reason: the shim exports it, so that a woken listener knows *which* entity
+  /// spoke without deriving it from a path. Deriving is what a shell would have
+  /// to do, and the layout of a plot is decided in Dart — a second decision
+  /// point about the same fact is how a platform law goes stale in one file and
+  /// wrong in its neighbour. Empty for the readers that never rewrite the shim.
+  const ArmingTables(this.gitDir, {this.entity = ''});
 
   final String gitDir;
+
+  /// The installation's own name, as the shim will export it.
+  final String entity;
 
   /// The directory the tables and the reactor log stand in.
   static const String tablesDirName = 'bentos';
@@ -42,7 +52,7 @@ final class ArmingTables {
     Directory(p.join(gitDir, tablesDirName)).createSync(recursive: true);
     final hook = File(p.join(gitDir, hookPath))
       ..parent.createSync(recursive: true)
-      ..writeAsStringSync(referenceTransactionShim);
+      ..writeAsStringSync(referenceTransactionShimFor(entity));
     // The shim is a program the substrate execs; a mode bit is the whole of
     // what makes it one.
     Process.runSync('chmod', ['755', hook.path]);
@@ -78,6 +88,7 @@ final class ArmingTables {
     required EventPattern pattern,
     required List<String> command,
     bool once = false,
+    Provenance provenance = Provenance.hand,
   }) {
     checkCommand(command);
     final armed = Registration(
@@ -86,6 +97,7 @@ final class ArmingTables {
       pattern: pattern,
       command: command,
       once: once,
+      provenance: provenance,
     );
     final table = tableFor(pattern.phase)..parent.createSync(recursive: true);
     table.writeAsStringSync(
@@ -130,7 +142,7 @@ final class ArmingTables {
   }
 
   /// The wire form of one line:
-  /// `<id>\t<instance>\t<action>\t<lifetime>\t--\t<arg>\t<arg>…`.
+  /// `<id>\t<instance>\t<action>\t<lifetime>\t<provenance>\t--\t<arg>\t<arg>…`.
   ///
   /// Tab-separated because the shim reads it with `IFS=$'\t' read`, and because
   /// a command line contains spaces and must survive being written by a
@@ -150,14 +162,16 @@ final class ArmingTables {
   /// reader — Dart or shell — could choose between them. The sentinel says
   /// *boundaries follow*, and it is the same `--` the caller typed.
   ///
-  /// The lifetime stands before the command because the command is the only
-  /// variadic field — and it is spelled in words rather than a flag so that a
-  /// person reading the table sees what the line will do to itself.
+  /// The lifetime and the provenance stand before the command because the
+  /// command is the only variadic field — and both are spelled in words rather
+  /// than flags so that a person reading the table sees what the line will do to
+  /// itself and why it is there.
   static String encode(Registration r) => [
         r.id,
         r.instance,
         r.pattern.action,
         r.once ? onceLifetime : alwaysLifetime,
+        r.provenance.word,
         commandSentinel,
         ...r.command,
       ].join('\t');
@@ -182,6 +196,12 @@ final class ArmingTables {
   /// split it on whitespace — so a table armed by an older binary keeps firing
   /// exactly as it did, and only lines written from here on carry true
   /// boundaries.
+  ///
+  /// And a third time on the provenance, which is read **only when the sentinel
+  /// stands behind it**. A word alone would be ambiguous — a line from before
+  /// this column whose command begins with the word `hand` reads identically —
+  /// while `<word>\t--` is a shape no older writer ever produced. A line without
+  /// it is [Provenance.hand], which is what every line already on disk is.
   static Registration? decode(String line, EventPhase phase) {
     final trimmed = line.trim();
     if (trimmed.isEmpty || trimmed.startsWith('#')) return null;
@@ -190,11 +210,20 @@ final class ArmingTables {
     final declared = parts[3].trim();
     final stated = declared == onceLifetime || declared == alwaysLifetime;
     final fields = parts.sublist(stated ? 4 : 3);
-    final kept = [
+    var kept = [
       for (final field in fields)
         if (field.trim().isNotEmpty) field.trim(),
     ];
     if (kept.isEmpty) return null;
+    var provenance = Provenance.hand;
+    if (kept.length > 1 && kept[1] == commandSentinel) {
+      for (final candidate in Provenance.values) {
+        if (kept.first != candidate.word) continue;
+        provenance = candidate;
+        kept = kept.sublist(1);
+        break;
+      }
+    }
     final List<String> command;
     if (kept.first == commandSentinel) {
       command = kept.sublist(1);
@@ -208,6 +237,7 @@ final class ArmingTables {
       pattern: EventPattern(action: parts[2], phase: phase),
       command: command,
       once: declared == onceLifetime,
+      provenance: provenance,
     );
   }
 }

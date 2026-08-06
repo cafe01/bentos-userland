@@ -32,7 +32,13 @@ void main() {
       expect(id, isNotEmpty);
 
       final armed = await cli.run(['listeners', 't.chat:*']);
-      expect(armed.out, contains('$id\t*\tprompt.landed\talways\tnotify.sh --loud'));
+      // The provenance column says whose reading put the line here, and a line
+      // typed at a terminal is `hand` — the mark exists so that a line an
+      // installer read out of a manifest is distinguishable from this one.
+      expect(
+        armed.out,
+        contains('$id\t*\tprompt.landed\talways\thand\tnotify.sh --loud'),
+      );
     });
 
     test('several events, an id per line — none of them unreachable',
@@ -58,8 +64,8 @@ void main() {
       await cli.run(['on', 't.chat:*', '*.landed', '--', 'notify.sh']);
 
       final r = await cli.run(['listeners', 't.chat:*']);
-      expect(r.out, contains('prompt.attempted\talways\tgate.sh'));
-      expect(r.out, contains('*.landed\talways\tnotify.sh'));
+      expect(r.out, contains('prompt.attempted\talways\thand\tgate.sh'));
+      expect(r.out, contains('*.landed\talways\thand\tnotify.sh'));
     });
 
     test('an unreadable pattern is never silently armed on nothing', () async {
@@ -132,7 +138,10 @@ void main() {
 
       expect(r.code, 0);
       final armed = await cli.run(['listeners', 't.chat:c1']);
-      expect(armed.out, contains('${r.out.trim()}\tc1\treply.landed\tonce\tmonitor.sh'));
+      expect(
+        armed.out,
+        contains('${r.out.trim()}\tc1\treply.landed\tonce\thand\tmonitor.sh'),
+      );
     });
 
     test('it is `on` in every respect but the lifetime', () async {

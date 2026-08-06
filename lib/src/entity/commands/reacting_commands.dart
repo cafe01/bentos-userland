@@ -181,6 +181,11 @@ final class ListenersCommand extends EntityCommand {
           line.instance,
           '${line.pattern}',
           line.once ? ArmingTables.onceLifetime : ArmingTables.alwaysLifetime,
+          // Why the line is there. A table mixing what a person typed with what
+          // an installer read from a manifest is unreadable without it — and a
+          // reader deciding whether to disarm something needs to know whose
+          // decision it was before touching it.
+          line.provenance.word,
           // Quoted where a bare word would lie: this column is read by a person
           // deciding whether the armed line is the one they meant, and a command
           // printed as `sh -c echo hi` claims boundaries the line does not have.

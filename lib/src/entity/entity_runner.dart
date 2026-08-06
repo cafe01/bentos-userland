@@ -49,10 +49,15 @@ import 'instance.dart';
 /// holding one runs Git itself, and here it stands as a named escape hatch for
 /// the person who has decided to go below the ontology.
 final class EntityRunner {
-  EntityRunner({StringSink? out, StringSink? err, String? currentDirectory})
-      : out = out ?? io.stdout,
+  EntityRunner({
+    StringSink? out,
+    StringSink? err,
+    String? currentDirectory,
+    Map<String, String>? environment,
+  })  : out = out ?? io.stdout,
         err = err ?? io.stderr,
-        _cwdOverride = currentDirectory {
+        _cwdOverride = currentDirectory,
+        _envOverride = environment {
     _runner = CommandRunner<void>(
       'entity',
       'The WHAT organ — say what a thing is, act on it, and arm what it publishes.',
@@ -94,6 +99,7 @@ final class EntityRunner {
   final StringSink out;
   final StringSink err;
   final String? _cwdOverride;
+  final Map<String, String>? _envOverride;
 
   /// Content, verbatim. A separate channel because an instance may hold
   /// anything and [out] is a text sink: `read` must be able to hand back a
@@ -134,6 +140,14 @@ final class EntityRunner {
 
   /// The working directory — injected override, else the process's own.
   String get cwd => _cwdOverride ?? io.Directory.current.path;
+
+  /// The environment this run reads its ambient coordinate from — injected
+  /// override, else the process's own.
+  ///
+  /// Injected for the same reason [cwd] is: a claim about *what a verb does when
+  /// the environment says so* cannot be proven by a gate that has no way to make
+  /// the environment say anything.
+  Map<String, String> get env => _envOverride ?? io.Platform.environment;
 
   /// The vantage a name resolves from: `-C` when given, else the working
   /// directory. Relative paths resolve against the injected [cwd], never the
@@ -202,6 +216,12 @@ final class EntityRunner {
     } on EntityNotInstalled catch (e) {
       err.writeln('$e');
       exitCode = notFoundCode;
+    } on EntityAlreadyInstalled catch (e) {
+      // Refusal, and the same reading as a worktree that is not ours: nothing
+      // was cloned, registered or armed, and what a caller must be able to
+      // branch on is *I did not touch what is there*.
+      err.writeln('entity: refused — $e');
+      exitCode = refusedCode;
     } on WorktreeNotOurs catch (e) {
       // Refusal and not a fault: the caller named a directory this repository
       // does not hold, and the answer a script must be able to branch on is
@@ -219,6 +239,15 @@ final class EntityRunner {
       // absence of a thing the caller named, which is the not-found answer and
       // not a fault in the machine.
       err.writeln('entity: ${e.message}');
+      exitCode = notFoundCode;
+    } on io.ProcessException catch (e) {
+      // The substrate refused, and its word travels. **A coreutil never exits
+      // by stack trace**: a trace names a Dart frame to a person holding a
+      // terminal, exits 255, and says nothing a script can read — where the
+      // message underneath it ("destination path already exists") is the whole
+      // of what happened. Whatever this floor cannot name is still a failure,
+      // and the generic failure is 1.
+      err.writeln('entity: ${e.message.trim()}');
       exitCode = notFoundCode;
     } on Object catch (e) {
       // An act whose body failed produced no state worth landing, and the

@@ -42,9 +42,22 @@
 /// skipped, which is why creating an instance never wakes a listener.
 library;
 
-/// The shim's source, installed verbatim as
-/// `<entity>/hooks/reference-transaction`, mode 755.
-const String referenceTransactionShim = r'''#!/usr/bin/env bash
+/// The shim installed at `<entity>/hooks/reference-transaction`, mode 755, for
+/// the installation answering to [entity].
+///
+/// The name is interpolated rather than derived, because `<plot>/<name>/repo.git`
+/// is a layout Dart decides and a shell would have to re-derive — the same fact
+/// decided twice is how one file stays right while its neighbour goes wrong.
+/// Single-quoted with the shell's own escape, so a name holding a quote or a
+/// newline is carried rather than refused: the value is a directory name and
+/// this file is the last place that could mangle it.
+String referenceTransactionShimFor(String entity) =>
+    _shimTemplate.replaceAll(_entityPlaceholder, entity.replaceAll("'", r"'\''"));
+
+/// What the template carries where the installation's name belongs.
+const String _entityPlaceholder = '__BENTOS_ENTITY__';
+
+const String _shimTemplate = r'''#!/usr/bin/env bash
 # reference-transaction — the entity's nervous system. Generated; do not edit.
 #
 # Contract:  argv[1] = prepared | committed | aborted
@@ -56,8 +69,17 @@ const String referenceTransactionShim = r'''#!/usr/bin/env bash
 #   $REPO/bentos/landed      woken detached
 #   $REPO/bentos/refused     woken detached
 # Line format, tab-separated:
-#   <id>\t<instance-glob>\t<action-glob>\t<always|once>\t--\t<arg>\t<arg>...
+#   <id>\t<instance-glob>\t<action-glob>\t<always|once>\t<provenance>\t--\t<arg>...
 # Each command is called as: <cmd> <repo> <ref> <old> <new> <action>
+# and with the occurrence in its environment:
+#   BENTOS_ENTITY BENTOS_INSTANCE BENTOS_EVENT BENTOS_PHASE BENTOS_NOUN BENTOS_SHA
+#
+# The environment is what lets a line armed on `*` wake something that knows
+# WHERE the event landed: the instance is not in the line, because at the moment
+# a manifest is armed no instance exists yet.
+#
+# The provenance column is read only when `--` stands behind it; a line without
+# one was armed by hand, which is what every line written before it was.
 #
 # The `--` opens the command block and every argument is its own field, so an
 # argument holding a space survives the table. A tail without it was written
@@ -91,6 +113,11 @@ ZERO=0000000000000000000000000000000000000000
 LOG="$REPO/bentos/reactor.log"
 TAB=$'\t'
 
+# The installation's own name, written here when the shim was installed. Every
+# woken command learns which entity spoke without deriving it from a path.
+export BENTOS_ENTITY='__BENTOS_ENTITY__'
+export BENTOS_PHASE="$table_name"
+
 while read -r old new ref; do
   case "$ref" in refs/heads/*) ;; *) continue ;; esac
   [ "$old" = "$new" ] && continue
@@ -103,6 +130,15 @@ while read -r old new ref; do
            | sed -n 's/^Bentos-Action: //p' | head -n 1)
   [ -n "$action" ] || action="-"
 
+  # The occurrence, in the environment of everything woken below: WHERE it
+  # landed and WHAT landed. A line armed on `*` is not a line that lost the
+  # instance — the instance is here, and it is the truth of this transaction
+  # rather than of whoever armed the line.
+  export BENTOS_INSTANCE="$instance"
+  export BENTOS_NOUN="$action"
+  export BENTOS_EVENT="$action.$table_name"
+  export BENTOS_SHA="$new"
+
   while IFS=$'\t' read -r id inst_glob act_glob life cmd; do
     [ -z "${id:-}" ] && continue
     case "$id" in \#*) continue ;; esac
@@ -114,6 +150,16 @@ while read -r old new ref; do
       *) cmd="${life:-}${cmd:+$TAB$cmd}"; life=always ;;
     esac
     [ -n "${cmd:-}" ] || continue
+
+    # The provenance column, when one stands there. Recognised only with the
+    # sentinel behind it, so a line from before this column whose command begins
+    # with one of these words is not mistaken for a marked one.
+    case "${cmd%%$TAB*}" in
+      hand|manifest)
+        after="${cmd#*$TAB}"
+        [ "${after%%$TAB*}" = "--" ] && cmd="$after"
+        ;;
+    esac
 
     # The command block. With the sentinel, one field per argument — read as an
     # array so the boundaries the caller drew are the boundaries exec sees.
