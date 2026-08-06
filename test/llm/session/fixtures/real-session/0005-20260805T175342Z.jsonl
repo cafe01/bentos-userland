@@ -1,0 +1,21 @@
+{"textStart":{"index":0}}
+{"textDelta":{"index":0,"text":"Exist"}}
+{"textDelta":{"index":0,"text":"em"}}
+{"textDelta":{"index":0,"text":" "}}
+{"textDelta":{"index":0,"text":"28"}}
+{"textDelta":{"index":0,"text":" arquivos"}}
+{"textDelta":{"index":0,"text":" markdown"}}
+{"textDelta":{"index":0,"text":" em"}}
+{"textDelta":{"index":0,"text":" `/"}}
+{"textDelta":{"index":0,"text":"Users"}}
+{"textDelta":{"index":0,"text":"/c"}}
+{"textDelta":{"index":0,"text":"afe"}}
+{"textDelta":{"index":0,"text":"/work"}}
+{"textDelta":{"index":0,"text":"space"}}
+{"textDelta":{"index":0,"text":"/b"}}
+{"textDelta":{"index":0,"text":"entos"}}
+{"textDelta":{"index":0,"text":"/off"}}
+{"textDelta":{"index":0,"text":"ices"}}
+{"textDelta":{"index":0,"text":"`."}}
+{"textStop":{"index":0}}
+{"complete":{"metadata":{"model":"gpt-4o-mini-2024-07-18","stopReason":"CHAT_STOP_REASON_END_TURN","usage":{"inputTokens":"125","outputTokens":"19"}}}}

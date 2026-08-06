@@ -1,0 +1,1 @@
+{"role":"CHAT_ROLE_USER","content":[{"functionResult":{"callId":"call_A","content":[{"text":{"text":"first"}}],"isError":false}},{"functionResult":{"callId":"call_B","content":[{"text":{"text":"boom"}}],"isError":true}},{"text":{"text":"and a note travelling beside them"}}]}

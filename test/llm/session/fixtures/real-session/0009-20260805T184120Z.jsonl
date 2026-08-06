@@ -1,0 +1,44 @@
+{"textStart":{"index":0}}
+{"textDelta":{"index":0,"text":"P"}}
+{"textDelta":{"index":0,"text":"arece"}}
+{"textDelta":{"index":0,"text":" que"}}
+{"textDelta":{"index":0,"text":" não"}}
+{"textDelta":{"index":0,"text":" há"}}
+{"textDelta":{"index":0,"text":" arquivos"}}
+{"textDelta":{"index":0,"text":" markdown"}}
+{"textDelta":{"index":0,"text":" no"}}
+{"textDelta":{"index":0,"text":" diret"}}
+{"textDelta":{"index":0,"text":"ório"}}
+{"textDelta":{"index":0,"text":" `/"}}
+{"textDelta":{"index":0,"text":"Users"}}
+{"textDelta":{"index":0,"text":"/c"}}
+{"textDelta":{"index":0,"text":"afe"}}
+{"textDelta":{"index":0,"text":"/work"}}
+{"textDelta":{"index":0,"text":"space"}}
+{"textDelta":{"index":0,"text":"/b"}}
+{"textDelta":{"index":0,"text":"entos"}}
+{"textDelta":{"index":0,"text":"/off"}}
+{"textDelta":{"index":0,"text":"ices"}}
+{"textDelta":{"index":0,"text":"`,"}}
+{"textDelta":{"index":0,"text":" o"}}
+{"textDelta":{"index":0,"text":" que"}}
+{"textDelta":{"index":0,"text":" explica"}}
+{"textDelta":{"index":0,"text":" a"}}
+{"textDelta":{"index":0,"text":" mensagem"}}
+{"textDelta":{"index":0,"text":" de"}}
+{"textDelta":{"index":0,"text":" erro"}}
+{"textDelta":{"index":0,"text":"."}}
+{"textDelta":{"index":0,"text":" Você"}}
+{"textDelta":{"index":0,"text":" gostaria"}}
+{"textDelta":{"index":0,"text":" de"}}
+{"textDelta":{"index":0,"text":" verificar"}}
+{"textDelta":{"index":0,"text":" outro"}}
+{"textDelta":{"index":0,"text":" diret"}}
+{"textDelta":{"index":0,"text":"ório"}}
+{"textDelta":{"index":0,"text":" ou"}}
+{"textDelta":{"index":0,"text":" realizar"}}
+{"textDelta":{"index":0,"text":" outra"}}
+{"textDelta":{"index":0,"text":" ação"}}
+{"textDelta":{"index":0,"text":"?"}}
+{"textStop":{"index":0}}
+{"complete":{"metadata":{"model":"gpt-4o-mini-2024-07-18","stopReason":"CHAT_STOP_REASON_END_TURN","usage":{"inputTokens":"214","outputTokens":"42"}}}}

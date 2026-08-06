@@ -1,0 +1,10 @@
+# Tags declared so the runner knows them and a typo is an error rather than a
+# silently empty selection.
+#
+#   dart test -x owed -x material     the gate that runs fifty times a day
+#   dart test -t owed                 what the floor still owes, reported
+#   dart test -t material test/llm/session/material
+#                                     the real binaries, on their own target
+tags:
+  owed:
+  material:

@@ -1,0 +1,27 @@
+{"functionCallStart":{"index":0,"id":"call_R399Uha2pUVDwMUEhAbSNGJ1","name":"bash"}}
+{"functionArgsDelta":{"index":0,"partialJson":"{\""}}
+{"functionArgsDelta":{"index":0,"partialJson":"command"}}
+{"functionArgsDelta":{"index":0,"partialJson":"\":\""}}
+{"functionArgsDelta":{"index":0,"partialJson":"find"}}
+{"functionArgsDelta":{"index":0,"partialJson":" /"}}
+{"functionArgsDelta":{"index":0,"partialJson":"Users"}}
+{"functionArgsDelta":{"index":0,"partialJson":"/c"}}
+{"functionArgsDelta":{"index":0,"partialJson":"afe"}}
+{"functionArgsDelta":{"index":0,"partialJson":"/work"}}
+{"functionArgsDelta":{"index":0,"partialJson":"space"}}
+{"functionArgsDelta":{"index":0,"partialJson":"/b"}}
+{"functionArgsDelta":{"index":0,"partialJson":"entos"}}
+{"functionArgsDelta":{"index":0,"partialJson":"/off"}}
+{"functionArgsDelta":{"index":0,"partialJson":"ices"}}
+{"functionArgsDelta":{"index":0,"partialJson":" -"}}
+{"functionArgsDelta":{"index":0,"partialJson":"name"}}
+{"functionArgsDelta":{"index":0,"partialJson":" '*."}}
+{"functionArgsDelta":{"index":0,"partialJson":"md"}}
+{"functionArgsDelta":{"index":0,"partialJson":"'"}}
+{"functionArgsDelta":{"index":0,"partialJson":" |"}}
+{"functionArgsDelta":{"index":0,"partialJson":" wc"}}
+{"functionArgsDelta":{"index":0,"partialJson":" -"}}
+{"functionArgsDelta":{"index":0,"partialJson":"l"}}
+{"functionArgsDelta":{"index":0,"partialJson":"\"}"}}
+{"functionCallStop":{"index":0}}
+{"complete":{"metadata":{"model":"gpt-4o-mini-2024-07-18","stopReason":"CHAT_STOP_REASON_FUNCTION_CALL","usage":{"inputTokens":"82","outputTokens":"33"}}}}

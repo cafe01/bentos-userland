@@ -1,0 +1,23 @@
+{"functionCallStart":{"index":0,"id":"call_aZAIkEykNuC03TgdfItfRHKo","name":"bash"}}
+{"functionArgsDelta":{"index":0,"partialJson":"{\""}}
+{"functionArgsDelta":{"index":0,"partialJson":"command"}}
+{"functionArgsDelta":{"index":0,"partialJson":"\":\""}}
+{"functionArgsDelta":{"index":0,"partialJson":"ls"}}
+{"functionArgsDelta":{"index":0,"partialJson":" -"}}
+{"functionArgsDelta":{"index":0,"partialJson":"lt"}}
+{"functionArgsDelta":{"index":0,"partialJson":"u"}}
+{"functionArgsDelta":{"index":0,"partialJson":" /"}}
+{"functionArgsDelta":{"index":0,"partialJson":"Users"}}
+{"functionArgsDelta":{"index":0,"partialJson":"/c"}}
+{"functionArgsDelta":{"index":0,"partialJson":"afe"}}
+{"functionArgsDelta":{"index":0,"partialJson":"/work"}}
+{"functionArgsDelta":{"index":0,"partialJson":"space"}}
+{"functionArgsDelta":{"index":0,"partialJson":"/b"}}
+{"functionArgsDelta":{"index":0,"partialJson":"entos"}}
+{"functionArgsDelta":{"index":0,"partialJson":"/off"}}
+{"functionArgsDelta":{"index":0,"partialJson":"ices"}}
+{"functionArgsDelta":{"index":0,"partialJson":"/*."}}
+{"functionArgsDelta":{"index":0,"partialJson":"md"}}
+{"functionArgsDelta":{"index":0,"partialJson":"\"}"}}
+{"functionCallStop":{"index":0}}
+{"complete":{"metadata":{"model":"gpt-4o-mini-2024-07-18","stopReason":"CHAT_STOP_REASON_FUNCTION_CALL","usage":{"inputTokens":"158","outputTokens":"29"}}}}
