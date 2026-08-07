@@ -1,0 +1,609 @@
+/// The `bentos.chat` coreutil — the shell's face on a channel.
+///
+/// **A face, and not the contract.** It adds nothing to the API and states
+/// nothing the medium does not already hold: every verb here is one call to
+/// [Channel] and one rendering of what came back. The command is the entity's
+/// own name, so one namespace serves identity, repository and PATH entry and no
+/// collision forms as entities are installed.
+///
+/// There is **no seat in the line**, because the ontology has one and the caller
+/// is it: `bentos.chat say` is the whole clause, and who spoke is the author git
+/// puts on the commit — a person at a keyboard and a program in a pipe enter by
+/// the same door and are told apart afterwards rather than beforehand.
+///
+/// There is **no `arm` and no `disarm`**. Nothing in this entity reacts, so
+/// there is nothing for the face to register: a client that wants to wake on
+/// speech arms its own executable with the generic `entity on` at the channel's
+/// coordinate, and the medium is not involved and does not record it.
+library;
+
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io' as io;
+
+import 'package:args/command_runner.dart';
+import 'package:path/path.dart' as p;
+
+// Only the absence: the face stands on the floor's own vocabulary for a thing
+// that is not installed, and translates nothing else of the primitive's.
+import '../../entity/entity.dart' show EntityNotInstalled;
+import '../channel.dart';
+import '../handle.dart';
+import '../outcome.dart';
+import '../seams.dart';
+import 'coordinate.dart';
+import 'floor.dart';
+import 'render.dart';
+
+/// The runner behind `bin/bentos.chat.dart`.
+final class ChatRunner {
+  ChatRunner({
+    StringSink? out,
+    StringSink? err,
+    String? currentDirectory,
+    Map<String, String>? environment,
+    Future<String> Function()? readStdin,
+    this.floor = const EntityFloor(),
+  })  : out = out ?? io.stdout,
+        err = err ?? io.stderr,
+        _cwdOverride = currentDirectory,
+        _envOverride = environment,
+        _readStdin = readStdin ?? _stdin {
+    _runner = CommandRunner<void>(
+      'bentos.chat',
+      'A conversation between participants: join it, speak into it, leave it.',
+    )
+      ..argParser.addOption(
+        'place',
+        abbr: 'C',
+        help: 'The vantage the channel resolves from.',
+        valueHelp: 'place',
+      )
+      ..argParser.addOption(
+        'channel',
+        abbr: 'c',
+        help: 'Which channel. Ambient otherwise: $channelVariable, then the '
+            'place, when it carries exactly one.',
+        valueHelp: 'coord',
+      )
+      ..addCommand(_Join(this))
+      ..addCommand(_Leave(this))
+      ..addCommand(_Say(this))
+      ..addCommand(_Topic(this))
+      ..addCommand(_Away(this))
+      ..addCommand(_Back(this))
+      ..addCommand(_Roster(this))
+      ..addCommand(_History(this))
+      ..addCommand(_Monitor(this))
+      ..addCommand(_Check(this))
+      ..addCommand(_Where(this));
+  }
+
+  final StringSink out;
+  final StringSink err;
+  final ChatFloor floor;
+  final String? _cwdOverride;
+  final Map<String, String>? _envOverride;
+  final Future<String> Function() _readStdin;
+
+  late final CommandRunner<void> _runner;
+
+  /// The process's answer.
+  ///
+  /// **0 acted · 1 not found · 3 refused · 64 usage · 75 stumbled.**
+  ///
+  /// The fifth is the one this face adds to its sisters', and it is not
+  /// decoration: a stumble is *not* a refusal — nobody decided anything, the
+  /// channel is simply moving faster than this writer can land in it — and the
+  /// body already exits 75 for it. Flattening the two here would destroy the
+  /// distinction at the exact boundary where a script reads it, and would make a
+  /// busy channel indistinguishable from a hostile one.
+  int exitCode = 0;
+
+  static const int okCode = 0;
+  static const int notFoundCode = 1;
+  static const int refusedCode = 3;
+  static const int usageCode = 64;
+  static const int stumbledCode = bodyStumbled;
+
+  String get cwd => _cwdOverride ?? io.Directory.current.path;
+
+  Map<String, String> get env => _envOverride ?? io.Platform.environment;
+
+  /// The vantage a channel resolves from: `-C` when given, else the working
+  /// directory. Relative paths resolve against [cwd] and never the process's.
+  String vantage(String? placeArg) {
+    final target = placeArg ?? cwd;
+    return p.normalize(p.isAbsolute(target) ? target : p.join(cwd, target));
+  }
+
+  /// Which channel, by the precedence: **argument, then variable, then the
+  /// place**.
+  ChatCoordinate coordinate(String? channelArg, {String? place}) {
+    if (channelArg != null) {
+      return ChatCoordinate(
+        ChatCoordinate.parse(channelArg),
+        CoordinateSource.argument,
+      );
+    }
+    final ambient = env[channelVariable];
+    if (ambient != null && ambient.trim().isNotEmpty) {
+      return ChatCoordinate(
+        ChatCoordinate.parse(ambient.trim()),
+        CoordinateSource.environment,
+      );
+    }
+    final anchor = vantage(place);
+    final here = floor.channels(anchor);
+    // One is the answer; anything else is the place declining to answer, and
+    // guessing for the caller would be inventing an intention.
+    if (here.length == 1) {
+      return ChatCoordinate(here.single, CoordinateSource.place);
+    }
+    throw NoAmbientChannel(anchor, here);
+  }
+
+  /// An act's outcome, as a line and a number.
+  ///
+  /// A method of the runner and not an extension on it: `dart:io` exports a
+  /// top-level `exitCode` setter, which an unqualified assignment inside an
+  /// extension binds to in preference to this field — the number then lands on
+  /// the process while the caller reads zero, and nothing says so.
+  void report(ActResult result) {
+    switch (result) {
+      case Acted(:final commit):
+        if (commit.isNotEmpty) out.writeln(commit);
+      case Refused(:final reason):
+        // The floor's own words, never paraphrased.
+        err.writeln(reason.isEmpty ? '$chatOntology: refused' : reason);
+        exitCode = refusedCode;
+      case Stumbled(:final attempts):
+        err.writeln(
+          '$chatOntology: the channel is moving faster than this writer — '
+          'the swap lost its race $attempts times. Nobody refused anything; '
+          'try again.',
+        );
+        exitCode = stumbledCode;
+    }
+  }
+
+  Future<void> run(List<String> args) async {
+    try {
+      await _runner.run(args);
+    } on UsageException catch (e) {
+      err.writeln(e.message);
+      exitCode = usageCode;
+    } on MalformedCoordinate catch (e) {
+      err.writeln('$e');
+      exitCode = usageCode;
+    } on NoAmbientChannel catch (e) {
+      err.writeln('$e');
+      // Nothing here is absence; several is a question only the caller can
+      // answer, and a question is a usage problem rather than a missing thing.
+      exitCode = e.candidates.isEmpty ? notFoundCode : usageCode;
+    } on AmbiguousCommit catch (e) {
+      err.writeln('$e');
+      exitCode = usageCode;
+    } on NoSuchCommit catch (e) {
+      err.writeln('$e');
+      exitCode = notFoundCode;
+    } on NoSuchChannel catch (e) {
+      err.writeln('$e');
+      exitCode = notFoundCode;
+    } on EntityNotInstalled catch (e) {
+      // The ordinary answer to standing outside the installation's scope, and
+      // it arrived here as a stack trace and exit 255 the first time anybody
+      // typed a verb from a directory with no `bentos.chat` above it. Absence
+      // of the medium is absence, not a crash — and the floor already says so
+      // in one sentence.
+      err.writeln('$chatOntology: $e');
+      exitCode = notFoundCode;
+    } on NoIdentity catch (e) {
+      err.writeln('$e');
+      exitCode = notFoundCode;
+    } on ChatFailure catch (e) {
+      // **A coreutil never exits by stack trace.** The body's own words and its
+      // own number: whoever wrote that program knows what its codes mean, and
+      // inventing one here would discard the only report the failure made.
+      err.writeln('$e');
+      exitCode = e.exitCode;
+    } on io.ProcessException catch (e) {
+      err.writeln('$chatOntology: ${e.message.trim()}');
+      exitCode = notFoundCode;
+    } on StateError catch (e) {
+      // What the primitive raises for the absence of a thing the caller named.
+      err.writeln('$chatOntology: ${e.message}');
+      exitCode = notFoundCode;
+    }
+  }
+
+  static Future<String> _stdin() =>
+      io.stdin.transform(utf8.decoder).join();
+}
+
+/// What every verb here shares: the two globals, and the channel they name.
+abstract base class _ChatCommand extends Command<void> {
+  _ChatCommand(this.face);
+
+  /// The face this verb belongs to. Named `face` and not `runner` because
+  /// `Command.runner` already exists and hands back the `CommandRunner`: a field
+  /// of another type there is not a shadow, it is an invalid override, and the
+  /// analyzer says so.
+  final ChatRunner face;
+
+  String? get _place => globalResults?['place'] as String?;
+  String? get _channel => globalResults?['channel'] as String?;
+
+  ChatCoordinate get coordinate =>
+      face.coordinate(_channel, place: _place);
+
+  Channel channel({String? cursor}) => face.floor.channel(
+        coordinate.name,
+        place: face.vantage(_place),
+        cursor: cursor,
+      );
+
+  /// The single argument a verb takes, or the whole of stdin when it takes
+  /// none — **which is what makes speaking from a pipe ordinary rather than
+  /// special**.
+  Future<String> textOrStdin() async {
+    final rest = argResults!.rest;
+    if (rest.length > 1) usageException('$name: one text, or none and a pipe');
+    if (rest.length == 1) return rest.single;
+    return (await face._readStdin()).trimRight();
+  }
+
+  /// A moment, ISO-8601 and nothing else. The rejection teaches: a face that
+  /// merely refused would leave the caller guessing at a syntax nobody wrote
+  /// down.
+  DateTime? instant(String flag) {
+    final given = argResults![flag] as String?;
+    if (given == null) return null;
+    final parsed = DateTime.tryParse(given);
+    if (parsed == null) {
+      usageException(
+        "$name: --$flag takes an ISO-8601 moment (2026-08-06, "
+        "2026-08-06T12:00:00Z), not '$given'",
+      );
+    }
+    return parsed.toUtc();
+  }
+
+  /// The point in history a read answers at: a commit of this line, or the
+  /// prefix of one.
+  String? get asOf => argResults!['as-of'] as String?;
+
+  void addAsOf() => argParser.addOption(
+        'as-of',
+        help: 'Read at a commit of this channel — the present otherwise.',
+        valueHelp: 'sha',
+      );
+}
+
+// ── acting ───────────────────────────────────────────────────────────────────
+
+final class _Join extends _ChatCommand {
+  _Join(super.face) {
+    argParser.addOption(
+      'name',
+      help: 'The display name to enter under.',
+      valueHelp: 'display',
+    );
+  }
+
+  @override
+  String get name => 'join';
+
+  @override
+  String get description =>
+      'Enter the channel. Idempotent, and it opens one that is not there yet.';
+
+  @override
+  Future<void> run() async => face.report(
+        await channel().join(displayName: argResults!['name'] as String?),
+      );
+}
+
+final class _Leave extends _ChatCommand {
+  _Leave(super.face);
+
+  @override
+  String get name => 'leave';
+
+  @override
+  String get description => 'Walk out. What was said stays said.';
+
+  @override
+  Future<void> run() async => face.report(await channel().leave());
+}
+
+final class _Say extends _ChatCommand {
+  _Say(super.face);
+
+  @override
+  String get name => 'say';
+
+  @override
+  String get description => 'Speak. The text, or stdin when there is none.';
+
+  @override
+  String get invocation => 'bentos.chat say [<text>]';
+
+  @override
+  Future<void> run() async {
+    final body = await textOrStdin();
+    if (body.isEmpty) usageException('say: nothing to say');
+    face.report(await channel().say(body));
+  }
+}
+
+final class _Topic extends _ChatCommand {
+  _Topic(super.face);
+
+  @override
+  String get name => 'topic';
+
+  @override
+  String get description =>
+      'Set the topic, or print it when given no text. Its history is the log '
+      'of that one file.';
+
+  @override
+  String get invocation => 'bentos.chat topic [<text>]';
+
+  @override
+  Future<void> run() async {
+    final rest = argResults!.rest;
+    // Reading is what a bare `topic` means at a keyboard, and it is the one
+    // verb of this face that both reads and writes — the noun and the verb
+    // being the same word in English is a fact about the language, not a
+    // second surface.
+    if (rest.isEmpty) {
+      final topic = await channel().topic();
+      if (topic != null) face.out.writeln(topic);
+      return;
+    }
+    if (rest.length > 1) usageException('topic: one text');
+    face.report(await channel().setTopic(rest.single));
+  }
+}
+
+final class _Away extends _ChatCommand {
+  _Away(super.face);
+
+  @override
+  String get name => 'away';
+
+  @override
+  String get description =>
+      'Declare yourself away, with an optional reason. Presence is declared or '
+      'absent, never simulated.';
+
+  @override
+  String get invocation => 'bentos.chat away [<reason>]';
+
+  @override
+  Future<void> run() async {
+    final rest = argResults!.rest;
+    if (rest.length > 1) usageException('away: one reason, or none');
+    face.report(
+      await channel().away(rest.isEmpty ? null : rest.single),
+    );
+  }
+}
+
+final class _Back extends _ChatCommand {
+  _Back(super.face);
+
+  @override
+  String get name => 'back';
+
+  @override
+  String get description => 'Declare yourself back.';
+
+  @override
+  Future<void> run() async => face.report(await channel().back());
+}
+
+// ── reading ──────────────────────────────────────────────────────────────────
+
+final class _Roster extends _ChatCommand {
+  _Roster(super.face) {
+    addAsOf();
+  }
+
+  @override
+  String get name => 'roster';
+
+  @override
+  String get description => 'Who is here — one listing, never a walk.';
+
+  @override
+  Future<void> run() async {
+    final roster = await channel().roster(at: asOf);
+    for (final participant in roster.participants) {
+      face.out.writeln(rosterLine(participant));
+    }
+  }
+}
+
+final class _History extends _ChatCommand {
+  _History(super.face) {
+    argParser
+      ..addOption(
+        'since',
+        help: 'Spoken at or after this ISO-8601 moment.',
+        valueHelp: 'when',
+      )
+      ..addOption(
+        'until',
+        help: 'Spoken at or before this ISO-8601 moment.',
+        valueHelp: 'when',
+      )
+      ..addOption(
+        'limit',
+        abbr: 'n',
+        help: 'The last N to arrive — arrival, never the clock.',
+        valueHelp: 'n',
+      );
+    addAsOf();
+  }
+
+  @override
+  String get name => 'history';
+
+  @override
+  String get description =>
+      'The transcript, in the order it arrived. --since and --until filter on '
+      'the time a message states it was spoken.';
+
+  @override
+  Future<void> run() async {
+    final transcript = await channel().history(
+      since: instant('since'),
+      until: instant('until'),
+      limit: _limit,
+      at: asOf,
+    );
+    for (final message in transcript) {
+      face.out.writeln(messageLine(message));
+    }
+  }
+
+  int? get _limit {
+    final given = argResults!['limit'] as String?;
+    if (given == null) return null;
+    final n = int.tryParse(given);
+    if (n == null || n < 0) {
+      usageException("history: --limit takes a count, not '$given'");
+    }
+    return n;
+  }
+}
+
+final class _Monitor extends _ChatCommand {
+  _Monitor(super.face) {
+    argParser
+      ..addOption(
+        'history',
+        help: 'Print the last N utterances before watching.',
+        valueHelp: 'n',
+      )
+      ..addOption(
+        'interval',
+        help: 'Seconds between reads. The tick is the client\'s, and there is '
+            'nothing for an inert medium to do about it.',
+        valueHelp: 'seconds',
+        defaultsTo: '2',
+      )
+      ..addFlag(
+        'once',
+        help: 'Drain what has landed and exit, instead of blocking.',
+        negatable: false,
+      );
+  }
+
+  @override
+  String get name => 'monitor';
+
+  @override
+  String get description =>
+      'Watch the channel. Blocks, and prints what lands.';
+
+  @override
+  Future<void> run() async {
+    final channel = this.channel();
+
+    if (_backlog != null) {
+      for (final message in await channel.history(limit: _backlog)) {
+        face.out.writeln(messageLine(message));
+      }
+    }
+    // The backlog is printed, so what has already landed must not arrive a
+    // second time as an event: the cursor is wound to the tip before watching.
+    await channel.sync();
+
+    // **A poll, and it is a frontier rather than a design.** The floor's
+    // subscription table has a second effect — signal a live process — which is
+    // exactly what a monitor wants: a doorbell carrying nothing, the woken one
+    // re-reading the tree it already trusts. That mechanism is held on the
+    // primitive's front, and until it lands, watching a channel is asking again.
+    final interval = _interval;
+    while (true) {
+      for (final event in await channel.sync()) {
+        face.out.writeln(eventLine(event));
+      }
+      if (argResults!['once'] as bool) return;
+      await Future<void>.delayed(interval);
+    }
+  }
+
+  int? get _backlog {
+    final given = argResults!['history'] as String?;
+    if (given == null) return null;
+    final n = int.tryParse(given);
+    if (n == null || n < 0) {
+      usageException("monitor: --history takes a count, not '$given'");
+    }
+    return n;
+  }
+
+  Duration get _interval {
+    final given = argResults!['interval'] as String;
+    final seconds = double.tryParse(given);
+    if (seconds == null || seconds <= 0) {
+      usageException("monitor: --interval takes seconds, not '$given'");
+    }
+    return Duration(microseconds: (seconds * 1000000).round());
+  }
+}
+
+final class _Check extends _ChatCommand {
+  _Check(super.face);
+
+  @override
+  String get name => 'check';
+
+  @override
+  String get description =>
+      'The gate: a message\'s declared author is the author who signed the '
+      'commit. It deposits nothing and refuses by exiting 3.';
+
+  @override
+  Future<void> run() async {
+    // Not a `Channel` method, and this is the one verb of the face that says
+    // so: a gate carries no seat and answers nobody. It is the entity's own
+    // function, run through the primitive like any other body.
+    final coordinate = this.coordinate;
+    final outcome = await face.floor
+        .bodies(coordinate.name, place: face.vantage(_place))
+        .run('check', const [], attempts: defaultAttempts);
+    if (outcome.stdout.trim().isNotEmpty) {
+      face.out.writeln(outcome.stdout.trimRight());
+    }
+    if (outcome.stderr.trim().isNotEmpty) {
+      face.err.writeln(outcome.stderr.trimRight());
+    }
+    face.exitCode = outcome.exitCode;
+  }
+}
+
+final class _Where extends _ChatCommand {
+  _Where(super.face);
+
+  @override
+  String get name => 'where';
+
+  @override
+  String get description =>
+      'Which channel this shell is in, and which step named it.';
+
+  @override
+  Future<void> run() async {
+    // The ambient coordinate is a precedence, and a precedence that cannot be
+    // interrogated is a place to get lost in: a person surprised by which
+    // channel they are speaking into needs to see which step answered.
+    final coordinate = this.coordinate;
+    face.out.writeln('${coordinate.whole}\t${coordinate.source.label}');
+  }
+}

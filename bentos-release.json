@@ -2,6 +2,7 @@
   "product": "bentos-userland",
   "executables": [
     { "name": "bentos", "entrypoint": "bin/bentos.dart", "platforms": ["linux-x64", "macos-arm64", "macos-x64", "windows-x64"] },
+    { "name": "bentos.chat", "entrypoint": "bin/bentos.chat.dart", "platforms": ["linux-x64", "macos-arm64", "macos-x64", "windows-x64"] },
     { "name": "chat-codec", "entrypoint": "bin/chat_codec.dart", "platforms": ["linux-x64", "macos-arm64", "macos-x64", "windows-x64"] },
     { "name": "chat-render", "entrypoint": "bin/chat_render.dart", "platforms": ["linux-x64", "macos-arm64", "macos-x64", "windows-x64"] },
     { "name": "entity", "entrypoint": "bin/entity.dart", "platforms": ["linux-x64", "macos-arm64", "macos-x64", "windows-x64"] },
