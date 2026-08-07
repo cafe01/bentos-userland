@@ -108,16 +108,21 @@ final class EventPattern {
   }
 
   /// Whether [actionName] is selected by this pattern's action glob.
-  bool matchesAction(String actionName) {
-    final expr = RegExp(
-      '^${action.split('*').map(RegExp.escape).join('.*')}\$',
-    );
-    return expr.hasMatch(actionName);
-  }
+  bool matchesAction(String actionName) => globMatches(action, actionName);
 
   @override
   String toString() => '$action.${phase.suffix}';
 }
+
+/// Whether [value] is selected by [glob], where `*` matches any run of
+/// characters.
+///
+/// **One grammar, one home.** A registration selects on two axes — the instance
+/// and the action — and they are the same glob read against different words; a
+/// second implementation for the instance would be the same rule free to drift
+/// from itself.
+bool globMatches(String glob, String value) =>
+    RegExp('^${glob.split('*').map(RegExp.escape).join('.*')}\$').hasMatch(value);
 
 /// Who put a line in a table — **the line's provenance**, and the one property
 /// of a registration that is about the registration rather than about what it

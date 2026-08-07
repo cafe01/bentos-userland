@@ -5,7 +5,9 @@ import 'package:path/path.dart' as p;
 
 import '../place/place.dart';
 import 'arming/arming.dart';
+import 'dispatch.dart';
 import 'event.dart';
+import 'transaction.dart';
 import '../git/git_ambient.dart';
 import 'instance.dart';
 import 'manifest.dart';
@@ -548,6 +550,24 @@ final class Entity {
     return first!;
   }
 
+  /// Publishes a ref transaction into the primitive: journals every triple in
+  /// [updates], matches each against this installation's tables for [phase], and
+  /// dispatches.
+  ///
+  /// **The trampoline's only callee**, and the whole content of *the hook
+  /// publishes*. What the shim keeps is the contract with Git and its own
+  /// self-location; matching, lifetimes, provenance, detaching, journaling and
+  /// the woken body's context are all [Dispatch]'s, once.
+  ///
+  /// The return value is the exit code Git decides the transaction by: non-zero
+  /// at [EventPhase.attempted] aborts it whole. At the other two phases the work
+  /// is detached before this returns, so it is always `0`.
+  Future<int> emit(EventPhase phase, Iterable<TransactionRefUpdate> updates) {
+    final (place: place, gitDir: gitDir) = _installation;
+    return Dispatch(entity: this, gitDir: gitDir, place: place)
+        .emit(phase, updates);
+  }
+
   /// Disarms the registration [id]. Idempotent.
   void off(String id) => ArmingTables(_gitDir).remove(id);
 
@@ -585,11 +605,24 @@ final class Entity {
   ///
   /// Deliberately private, and the reason [gitDirOf] exists at all: the whole
   /// point of the API is that no caller holds this.
-  String get _gitDir {
+  String get _gitDir => _installation.gitDir;
+
+  /// The resolved installation, **both halves**: the place that answered and the
+  /// repository inside its plot.
+  ///
+  /// The walk is `_gitDir`'s, and it is written here because a body dispatch
+  /// wakes is told where it stands (`BENTOS_PLACE`) — the place that answered
+  /// for *this* installation, which only the walk knows and which a caller
+  /// re-deriving from the repository's path would be decoding a plot's layout to
+  /// guess.
+  ({String place, String gitDir}) get _installation {
     final anchor = _anchor ?? Directory.current.path;
     for (Place? place = Place(anchor); place != null; place = place.parent) {
       if (place.lookup(name) == null) continue;
-      return p.join(place.plot(plotNamespace).path, name, repositoryDirName);
+      return (
+        place: place.root.path,
+        gitDir: p.join(place.plot(plotNamespace).path, name, repositoryDirName),
+      );
     }
     throw EntityNotInstalled(name, anchor);
   }

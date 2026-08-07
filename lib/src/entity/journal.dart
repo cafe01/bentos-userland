@@ -26,7 +26,15 @@ final class OccurrenceLine {
   /// The installation's own name — `BENTOS_ENTITY`.
   final String entity;
   final Event event;
-  final Actor actor;
+
+  /// Who acted, from the commit's author — **null when the commit could not be
+  /// read at all**, which at `.landed` is journaled rather than refused.
+  ///
+  /// Absent, and never a stand-in name: an invented author is the defect this
+  /// system already paid for once, and *nobody knows* is a different fact from
+  /// *somebody called unknown*.
+  final Actor? actor;
+
   final DateTime instant;
 
   /// The act's legible sentence, stored and never interpreted.
@@ -40,7 +48,7 @@ final class OccurrenceLine {
         'phase': event.phase.suffix,
         'commit': event.commit.sha,
         'parent': event.parent.sha,
-        'actor': actor.name,
+        if (actor != null) 'actor': actor!.name,
         'instant': instant.toIso8601String(),
         if (sentence != null) 'sentence': sentence,
       };
@@ -343,7 +351,10 @@ final class Journal {
         return OccurrenceLine(
           entity: json['entity']! as String,
           event: event,
-          actor: Actor(json['actor']! as String),
+          actor: switch (json['actor']) {
+            final String named => Actor(named),
+            _ => null,
+          },
           instant: DateTime.parse(json['instant']! as String),
           sentence: json['sentence'] as String?,
         );

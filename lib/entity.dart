@@ -16,6 +16,10 @@ export 'src/git/git_ambient.dart';
 export 'src/entity/instance.dart';
 export 'src/entity/manifest.dart';
 export 'src/entity/materialization.dart';
+// The transaction triple is on the surface because `emit` takes it: the
+// publisher that calls it is another process holding nothing but Git's own
+// stdin, so the type it parses that line into cannot be private.
+export 'src/entity/transaction.dart';
 export 'src/git/model/actor.dart';
 export 'src/git/model/commit.dart';
 export 'src/git/model/remote.dart';
