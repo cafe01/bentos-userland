@@ -55,7 +55,8 @@ final class Workspace {
   /// [say] is the legible sentence — what a person reads, stored beside the
   /// noun and never interpreted here or anywhere beneath.
   ///
-  /// Returns [Landed] or [Refused]; it does not throw for a lost race, which is
+  /// Returns [Landed], [Contested] or [Barred]; it does not throw for a lost
+  /// race, which is
   /// an ordinary outcome and not an error. Releasing is **not** implied — the
   /// plumbing family's caller may still want the directory, and the bracket
   /// releases in its own `finally`.
@@ -87,9 +88,8 @@ final class Workspace {
     // wrong. The substrate said which it was; this reads it and re-reads the
     // ref only where the answer is genuinely about the ref.
     final declined = _gateRefusal(swap.report);
-    if (declined != null) return Refused(declined);
-    return Refused(
-      'the ref moved',
+    if (declined != null) return Barred(declined);
+    return Contested(
       expected: expectedTip,
       found: ambientGit.revParse(gitDir, ref),
     );

@@ -433,7 +433,7 @@ void main() {
         File('${workspace.directory.path}/note').writeAsStringSync('hello\n');
       });
 
-      expect(result, isA<Refused>());
+      expect(result, isA<Barred>());
       expect(one.tip, equals(standing), reason: 'nothing was ever true');
       // Refusal leaves no residue on the ref and the object survives, orphaned —
       // which is what makes a `.refused` payload readable at all.
@@ -645,7 +645,7 @@ void main() {
       expect([for (final i in mine.instances) i.id], contains('two'));
     });
 
-    test('two lines that diverged are refused, and nothing moves', () async {
+    test('two lines that diverged say so, and nothing moves', () async {
       // Both sites act on the same instance from the same parent. Neither line
       // contains the other, so there is no line to extend — and joining them is
       // an act of its own, which fetch declines to invent.
@@ -656,21 +656,38 @@ void main() {
         File('${w.directory.path}/note').writeAsStringSync('theirs\n');
       });
 
+      final theirTip = theirs().instance('one').tip;
       final result = await one.fetch(repositoryOf(there.path, mine.name));
 
-      expect(result, isA<Refused>());
-      expect((result as Refused).reason, equals('diverged'));
+      // **Diverged, and deliberately not `Contested`.** The fetch did not fail
+      // — the substrate did what it was asked and the histories disagree. A
+      // contest ends by re-reading the tip and retrying; this one re-reads the
+      // tip and diverges identically, forever, because what ends it is someone
+      // joining the lines.
+      expect(result, isA<Diverged>());
+      expect(result, isNot(isA<Contested>()));
+      expect((result as Diverged).local, equals(ours.action.commit));
+      expect(result.remote, equals(theirTip));
       expect(one.tip, equals(ours.action.commit),
           reason: 'our line is untouched — divergence is legitimate');
       expect(utf8.decode(one.read('note')), equals('ours\n'));
     });
 
-    test('a remote that carries no such instance refuses', () async {
+    test('a remote that carries no such instance is not found, and not a '
+        'refusal at all', () async {
+      // **Not an `ActionResult`.** Nothing was refused: no gate was asked and
+      // no ref moved under anyone. The caller named something that is not
+      // there, which is the not-found answer — so it travels as an exception
+      // and never as a value in the sealed type.
       final absent = mine.instance('never-born');
-      final result = await absent.fetch(repositoryOf(there.path, mine.name));
+      final remote = repositoryOf(there.path, mine.name);
 
-      expect(result, isA<Refused>());
-      expect((result as Refused).reason, contains('no such instance'));
+      await expectLater(
+        absent.fetch(remote),
+        throwsA(isA<InstanceNotAtRemote>()
+            .having((e) => e.remote, 'remote', remote)
+            .having((e) => e.instance, 'instance', 'never-born')),
+      );
       expect(absent.tip, isNull);
     });
   });
@@ -759,15 +776,16 @@ void main() {
       expect(File('$plain/precious.txt').readAsStringSync(), 'mine\n',
           reason: 'the bystander is the assertion; everything else is how we '
               'learn that it held');
-      expect(refused.code, EntityRunner.refusedCode,
+      expect(refused.code, EntityRunner.barredCode,
           reason: 'a silent zero over an untouched directory is the half of the '
               'defect that survives fixing the deletion');
-      expect(refused.err, contains('refused'));
+      expect(refused.err, contains('barred'),
+          reason: 'the word the code 3 now carries everywhere it is printed');
 
       // The same claim about the repository's own working tree — the directory a
       // wrong path names most often, and the one the incident actually cost.
       final onItself = await release(root);
-      expect(onItself.code, EntityRunner.refusedCode);
+      expect(onItself.code, EntityRunner.barredCode);
       expect(File('$root/README.md').existsSync(), isTrue);
       expect(Directory('$root/.git').existsSync(), isTrue);
     });
@@ -848,7 +866,7 @@ void main() {
         0,
         reason: 'the gates did not pass:\n${ran.stdout}\n${ran.stderr}',
       );
-      expect('${ran.stdout}', contains('All 33 gates green.'));
+      expect('${ran.stdout}', contains('All 34 gates green.'));
     }, timeout: const Timeout(Duration(minutes: 10)));
   });
 }

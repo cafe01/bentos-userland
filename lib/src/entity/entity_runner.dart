@@ -135,7 +135,23 @@ final class EntityRunner {
 
   static const int okCode = 0;
   static const int notFoundCode = 1;
-  static const int refusedCode = 3;
+
+  /// The request was declined and nothing happened: a gate said no, or this
+  /// coreutil itself refused to touch what was there. Retrying changes nothing.
+  /// The `.attempted` gate is one source of this code, not its definition.
+  static const int barredCode = 3;
+
+  /// The ref moved under the act. Nobody decided anything, and a script that
+  /// re-reads the tip and tries again will terminate — which is the whole
+  /// reason this is a number of its own and not [barredCode]: a distinction
+  /// that does not survive the process boundary does not exist.
+  static const int contestedCode = 4;
+
+  /// Two lines advanced from a common ancestor. Nothing failed and nothing will
+  /// change by trying again — a script that loops here loops forever, which is
+  /// why this cannot share a number with [contestedCode].
+  static const int divergedCode = 5;
+
   static const int usageCode = 64;
 
   /// The working directory — injected override, else the process's own.
@@ -193,13 +209,21 @@ final class EntityRunner {
     switch (result) {
       case Landed(:final action):
         out.writeln(action.commit.sha);
-      case Refused(:final reason, :final expected, :final found):
+      case Barred(:final reason):
+        err.writeln('entity: barred — $reason');
+        exitCode = barredCode;
+      case Contested(:final expected, :final found):
         err.writeln([
-          'entity: refused — $reason',
+          'entity: contested',
           if (expected != null) 'expected ${expected.short}',
           if (found != null) 'found ${found.short}',
         ].join(', '));
-        exitCode = refusedCode;
+        exitCode = contestedCode;
+      case Diverged(:final local, :final remote):
+        err.writeln(
+          'entity: diverged, local ${local.short}, remote ${remote.short}',
+        );
+        exitCode = divergedCode;
     }
   }
 
@@ -220,14 +244,19 @@ final class EntityRunner {
       // Refusal, and the same reading as a worktree that is not ours: nothing
       // was cloned, registered or armed, and what a caller must be able to
       // branch on is *I did not touch what is there*.
-      err.writeln('entity: refused — $e');
-      exitCode = refusedCode;
+      err.writeln('entity: barred — $e');
+      exitCode = barredCode;
     } on WorktreeNotOurs catch (e) {
       // Refusal and not a fault: the caller named a directory this repository
       // does not hold, and the answer a script must be able to branch on is
       // *I did not touch it* — which a zero could never say.
-      err.writeln('entity: refused — $e');
-      exitCode = refusedCode;
+      err.writeln('entity: barred — $e');
+      exitCode = barredCode;
+    } on InstanceNotAtRemote catch (e) {
+      // The remote holds nothing under that name. Not a refusal — the same
+      // answer this coreutil gives for every other thing it could not find.
+      err.writeln('entity: $e');
+      exitCode = notFoundCode;
     } on BodyNotStartable catch (e) {
       // The body never started, so nothing was written and nothing landed —
       // the caller named something that is not there, which is the same answer

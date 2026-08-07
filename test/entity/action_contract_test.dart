@@ -164,7 +164,8 @@ void main() {
   });
 
   group('the compare-and-swap', () {
-    test('two bodies reading tip A: exactly one lands, the loser is refused', () {
+    test('two bodies reading tip A: exactly one lands, the loser is contested',
+        () {
       // Deterministic by construction: both areas are opened at the same tip
       // before either commits, which is precisely the race the swap exists for.
       site.run(() {
@@ -180,8 +181,10 @@ void main() {
         final second = yours.commit('prompt', actor: const Actor('cafe'));
 
         expect(first, isA<Landed>());
-        expect(second, isA<Refused>());
-        expect((second as Refused).expected, mine.expectedTip);
+        // **Contested and not barred**: nobody decided anything, the ref simply
+        // moved. The loser re-reads the tip and retries, and that terminates.
+        expect(second, isA<Contested>());
+        expect((second as Contested).expected, mine.expectedTip);
         expect(second.found, (first as Landed).action.commit);
 
         mine.release();
@@ -200,19 +203,22 @@ void main() {
 
         final result = ws.commit('prompt', actor: const Actor('alfred'));
 
-        expect(result, isA<Refused>());
-        final refused = result as Refused;
-        expect(refused.reason, contains('illegal at owes_inference'),
+        // A gate spoke, so this is barred and never contested: the same act
+        // will be barred again, and a retry loop here is an infinite loop
+        // wearing a retry policy.
+        expect(result, isA<Barred>());
+        final barred = result as Barred;
+        expect(barred.reason, contains('illegal at owes_inference'),
             reason: 'the sentence a person needs is the gate\'s, not ours');
-        expect(refused.reason, contains('refused by r4'),
+        expect(barred.reason, contains('refused by r4'),
             reason: 'and which registration refused it');
-        expect(refused.reason, isNot(contains('entity: refused by')),
+        expect(barred.reason, isNot(contains('entity: refused by')),
             reason: 'the program is named once, by whoever prints this');
-        // **The half that was wrong before.** A gate refusal is not about the
-        // ref, so nothing here may invite a reader to compare two values — the
-        // guess that did printed `expected b71043a, found b71043a`.
-        expect(refused.expected, isNull);
-        expect(refused.found, isNull);
+        // **The half that was wrong before**, now unrepresentable rather than
+        // merely unasserted: a gate refusal is not about the ref, and `Barred`
+        // carries no tips at all, so nothing can invite a reader to compare two
+        // values the way the guess that printed `expected b71043a, found
+        // b71043a` did.
         expect(llm.instance('s1').tip, ws.expectedTip,
             reason: 'a refused act leaves the ref exactly where it stood');
         ws.release();

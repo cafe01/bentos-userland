@@ -155,8 +155,19 @@ final class Action {
 
 /// What an act returned. **Refusal is a value, not an exception**: the ref
 /// moved, or a gate said no, and both are ordinary outcomes of concurrent
-/// agency, answered by re-reading and retrying. Sealed, so the caller cannot
-/// forget the branch.
+/// agency. Sealed, so the caller cannot forget the branch.
+///
+/// The two refusals share nothing except an unmoved ref, and a caller that
+/// cannot tell them apart cannot behave correctly toward either: retrying a
+/// [Barred] is an infinite loop wearing a retry policy, and treating a
+/// [Contested] as a verdict throws away work that would have landed on the
+/// second try. [Diverged] is neither — nothing was refused at all, and only a
+/// decision ends it.
+///
+/// The members are the caller's **obligations** and not the kinds of failure
+/// there are: proceed, retry, stop, reconcile. What is *not* here is anything
+/// that was never an outcome of the act — an absence travels as an exception,
+/// never as a value in this type.
 sealed class ActionResult {
   const ActionResult();
 }
@@ -167,13 +178,14 @@ final class Landed extends ActionResult {
   final Action action;
 }
 
-/// The act did not become true. [reason] is what the caller can be told, and it
-/// is deliberately thin: the substrate aborts a transaction whole and names no
-/// culprit, so anything richer had to be said by whoever refused.
-final class Refused extends ActionResult {
-  const Refused(this.reason, {this.expected, this.found});
-
-  final String reason;
+/// The ref moved under the act. Nobody decided anything — ordinary concurrent
+/// agency — and retrying, having re-read the tip, is correct and terminates.
+///
+/// It carries the two tips and no reason string: the substrate's whole account
+/// of a contest *is* the pair, and a free-text field here would only invite a
+/// caller to switch on it.
+final class Contested extends ActionResult {
+  const Contested({this.expected, this.found});
 
   /// The tip the actor read and swapped against.
   final Commit? expected;
@@ -181,4 +193,34 @@ final class Refused extends ActionResult {
   /// The tip the substrate actually held, when it is known — the ordinary case
   /// being another actor that landed first.
   final Commit? found;
+}
+
+/// Two lines advanced from a common ancestor. The act did not fail — the
+/// substrate did what it was asked and the histories disagree. Retrying
+/// diverges identically, forever: this one ends only when someone joins the
+/// lines, which is a decision and not an operation.
+///
+/// Distinct from [Contested] precisely because that one is *defined* by
+/// terminating under retry. Four members, because a caller has four
+/// obligations: proceed, retry, stop, reconcile.
+final class Diverged extends ActionResult {
+  const Diverged({required this.local, required this.remote});
+
+  /// The tip this line stands at, untouched — divergence is legitimate rather
+  /// than a fault to repair, so nothing here moved.
+  final Commit local;
+
+  /// The tip the other line stands at.
+  final Commit remote;
+}
+
+/// A gate at `.attempted` said no. The same act will be barred again.
+final class Barred extends ActionResult {
+  const Barred(this.reason);
+
+  /// What the gate said. The substrate aborts a transaction whole and names no
+  /// culprit, so this is the only account of why, and it comes from whoever
+  /// refused. It carries no tips at all — a bar is not about the ref, and the
+  /// guess that thought it was printed `expected b71043a, found b71043a`.
+  final String reason;
 }

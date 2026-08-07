@@ -410,7 +410,7 @@ functions:
 
     // And the cure refuses rather than clearing the way for itself.
     final refused = await cli(cureIn(ran.err), cwd: scratch.path);
-    expect(refused.code, EntityRunner.refusedCode, reason: refused.err);
+    expect(refused.code, EntityRunner.barredCode, reason: refused.err);
     expect(refused.err, contains('not a worktree of ours'));
     expect(
       File(p.join(staged.path, 'theirs.txt')).readAsStringSync(),

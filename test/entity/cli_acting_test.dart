@@ -313,7 +313,7 @@ void main() {
       // Refused and not found: the caller named a directory this repository does
       // not hold, and the answer a script must be able to branch on is *I did
       // not touch it*.
-      expect(r.code, EntityRunner.refusedCode);
+      expect(r.code, EntityRunner.barredCode);
       expect(r.err, contains('not a worktree of ours'));
       expect(File('$where/theirs.txt').readAsStringSync(), 'not ours',
           reason: 'clearing the way for itself is how a verb deletes strangers');

@@ -257,7 +257,7 @@ void main() {
       expect(again.out.trim(), far.taken.commit.sha);
     });
 
-    test('a line that diverged is refused, and the ref does not move',
+    test('a line that diverged says so, and the ref does not move',
         () async {
       final far = await published();
       await cli.run(['fetch', 't.chat:c1', far.remote]);
@@ -275,8 +275,17 @@ void main() {
       });
 
       final r = await cli.run(['fetch', 't.chat:c1', far.remote]);
-      expect(r.code, EntityRunner.refusedCode);
+      // **The distinction survives the process boundary**, which is the whole
+      // reason these are three numbers and not one. A script reading this must
+      // be able to tell the terminating case from the non-terminating one: it
+      // may loop on a contest, it must not loop on this, and it must not read
+      // either as a gate having spoken.
+      expect(r.code, EntityRunner.divergedCode);
+      expect(r.code, isNot(EntityRunner.contestedCode));
+      expect(r.code, isNot(EntityRunner.barredCode));
       expect(r.err, contains('diverged'));
+      expect(r.err, contains(mine.commit.short),
+          reason: 'the two tips are the whole of what divergence says');
       expect((await cli.run(['tip', 't.chat:c1'])).out.trim(), mine.commit.sha);
     });
 
@@ -291,11 +300,15 @@ void main() {
           reason: 'founding a relation sideways would make remotes lie');
     });
 
-    test('an instance the remote never carried is refused', () async {
+    test('an instance the remote never carried is not found', () async {
       final far = await published();
 
       final r = await cli.run(['fetch', 't.chat:ghost', far.remote]);
-      expect(r.code, EntityRunner.refusedCode);
+      // Moved from 3 to 1 on purpose. Grading this as a refusal was the report
+      // answering the easy condition: nothing declined it and nothing raced it
+      // — the thing named is simply not there, which is the same answer this
+      // coreutil already gives for everything else it cannot find.
+      expect(r.code, EntityRunner.notFoundCode);
       expect(r.err, contains('no such instance'));
     });
 
@@ -428,7 +441,7 @@ void main() {
 
         final second = await cli.run(['install', source, '--as', 'dup']);
 
-        expect(second.code, EntityRunner.refusedCode);
+        expect(second.code, EntityRunner.barredCode);
         expect(second.err, contains('dup'));
         expect(second.err, contains('already installed'));
         // Nothing cloned, registered or armed a second time: the same tables
@@ -455,7 +468,7 @@ void main() {
 
           final r = await cli.run(['install', source]);
 
-          expect(r.code, EntityRunner.refusedCode);
+          expect(r.code, EntityRunner.barredCode);
           expect(r.err, contains(standing));
           expect(
             File('$standing/left-by-somebody-else.txt').readAsStringSync(),
@@ -480,7 +493,7 @@ void main() {
           expect(first.code, 0, reason: first.err);
           // A named refusal a script can branch on — never the substrate's own
           // unhandled failure, which named no cure and no owner.
-          expect(second.code, EntityRunner.refusedCode);
+          expect(second.code, EntityRunner.barredCode);
           expect(second.code, isNot(255));
           expect(second.out, isEmpty);
         },

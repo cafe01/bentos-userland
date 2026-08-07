@@ -108,7 +108,7 @@ void main() {
       await cli.run(['release', opened.area]);
     });
 
-    test('a stale parent is refused, and refusal is not an error', () async {
+    test('a stale parent is contested, and a contest is not an error', () async {
       // Two actors read the same tip. The first lands; the second is holding a
       // value the ref no longer has, and the substrate refuses it under lock.
       final first = await work('t.chat:c1');
@@ -126,8 +126,10 @@ void main() {
         ['commit', 't.chat:c1', 'prompt', '-w', second.area, '--parent', second.parent],
       );
 
-      expect(refused.code, EntityRunner.refusedCode);
-      expect(refused.err, contains('refused'));
+      // Contested: the ref moved under the second actor and no gate was asked,
+      // so the code invites the retry that will terminate.
+      expect(refused.code, EntityRunner.contestedCode);
+      expect(refused.err, contains('contested'));
       expect(refused.out, isEmpty);
       expect((await cli.run(['read', 't.chat:c1:1.txt'])).out, 'mine');
       expect((await cli.run(['log', 't.chat:c1'])).out.trim().split('\n'),

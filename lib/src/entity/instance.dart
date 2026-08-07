@@ -195,14 +195,21 @@ final class Instance {
   /// Nothing is merged. What lands is a line *extended* — the local tip an
   /// ancestor of what arrived, or no local tip at all, which is how an instance
   /// born at another site arrives here for the first time. Two lines that
-  /// genuinely diverged are [Refused]: joining them is an act of its own, and
-  /// divergence is legitimate rather than a fault to repair.
+  /// genuinely diverged are [Diverged], and never [Contested]: the fetch
+  /// succeeded and the histories disagree, so retrying changes nothing and
+  /// joining them is an act of its own — divergence is legitimate rather than a
+  /// fault to repair.
+  ///
+  /// A remote that carries no such instance is **not** a refusal and does not
+  /// come back as an [ActionResult] at all: nothing declined it and nothing
+  /// raced it, the thing named is simply not there. It raises
+  /// [InstanceNotAtRemote], which the coreutil answers as not-found.
   Future<ActionResult> fetch(String remote) async {
     final gitDir = _gitDir;
     final standing = ambientGit.revParse(gitDir, ref);
     final arrived = await ambientGit.fetch(gitDir, remote: remote, ref: ref);
     if (arrived == null) {
-      return Refused('no such instance at $remote', expected: standing);
+      throw InstanceNotAtRemote(id, remote);
     }
     if (standing != null) {
       if (standing == arrived) {
@@ -212,7 +219,7 @@ final class Instance {
         return Landed(Action(gitDir: gitDir, ref: ref, commit: arrived));
       }
       if (!ambientGit.isAncestor(gitDir, ancestor: standing, descendant: arrived)) {
-        return Refused('diverged', expected: standing, found: arrived);
+        return Diverged(local: standing, remote: arrived);
       }
     }
     final swap = ambientGit.updateRef(
@@ -222,8 +229,7 @@ final class Instance {
       expected: standing,
     );
     if (!swap.moved) {
-      return Refused(
-        'the ref moved while fetching',
+      return Contested(
         expected: standing,
         found: ambientGit.revParse(gitDir, ref),
       );
@@ -236,6 +242,27 @@ final class Instance {
 
   @override
   String toString() => '${entity.name}:$id';
+}
+
+/// A remote carries no such instance. **Not an [ActionResult]**: no gate was
+/// asked and no ref moved under anyone, so calling it a refusal would grade the
+/// easy condition and flatten back together exactly what [Contested] and
+/// [Barred] exist to hold apart. An absence is not an outcome of an act, and it
+/// travels as this rather than as a value.
+///
+/// How a remote is *named* is a separate question and still open; this only
+/// fixes what happens when the one named holds nothing.
+final class InstanceNotAtRemote implements Exception {
+  const InstanceNotAtRemote(this.instance, this.remote);
+
+  /// The instance id the caller asked for.
+  final String instance;
+
+  /// The remote as the caller named it.
+  final String remote;
+
+  @override
+  String toString() => 'no such instance $instance at $remote';
 }
 
 /// A private directory of this installation's own, under [kind], freshly named.
