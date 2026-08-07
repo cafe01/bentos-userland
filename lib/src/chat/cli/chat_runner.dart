@@ -29,10 +29,12 @@ import 'package:path/path.dart' as p;
 import '../../entity/entity.dart' show EntityNotInstalled;
 import '../channel.dart';
 import '../handle.dart';
+import '../mention.dart';
 import '../outcome.dart';
 import '../seams.dart';
 import 'coordinate.dart';
 import 'floor.dart';
+import 'monitor_cursor.dart';
 import 'render.dart';
 
 /// The runner behind `bin/bentos.chat.dart`.
@@ -44,11 +46,13 @@ final class ChatRunner {
     Map<String, String>? environment,
     Future<String> Function()? readStdin,
     this.floor = const EntityFloor(),
+    io.File? monitorCursorFile,
   })  : out = out ?? io.stdout,
         err = err ?? io.stderr,
         _cwdOverride = currentDirectory,
         _envOverride = environment,
-        _readStdin = readStdin ?? _stdin {
+        _readStdin = readStdin ?? _stdin,
+        _monitorCursorFileOverride = monitorCursorFile {
     _runner = CommandRunner<void>(
       'bentos.chat',
       'A conversation between participants: join it, speak into it, leave it.',
@@ -85,30 +89,46 @@ final class ChatRunner {
   final String? _cwdOverride;
   final Map<String, String>? _envOverride;
   final Future<String> Function() _readStdin;
+  final io.File? _monitorCursorFileOverride;
 
   late final CommandRunner<void> _runner;
 
   /// The process's answer.
   ///
-  /// **0 acted · 1 not found · 3 refused · 64 usage · 75 stumbled.**
+  /// **0 acted · 1 not found · 3 refused · 6 timed out · 64 usage · 75
+  /// stumbled.**
   ///
-  /// The fifth is the one this face adds to its sisters', and it is not
-  /// decoration: a stumble is *not* a refusal — nobody decided anything, the
-  /// channel is simply moving faster than this writer can land in it — and the
-  /// body already exits 75 for it. Flattening the two here would destroy the
-  /// distinction at the exact boundary where a script reads it, and would make a
-  /// busy channel indistinguishable from a hostile one.
+  /// `75` is not decoration: a stumble is *not* a refusal — nobody decided
+  /// anything, the channel is simply moving faster than this writer can land
+  /// in it — and the body already exits 75 for it. Flattening the two here
+  /// would destroy the distinction at the exact boundary where a script reads
+  /// it, and would make a busy channel indistinguishable from a hostile one.
+  ///
+  /// `6` belongs to `monitor --wait --timeout`, and it is a **different**
+  /// nothing-happened than a stumble: 75 says a writer collided and lost, 6
+  /// says a watcher waited and nothing landed at all. 75 was already spoken
+  /// for by the write path, so this reuses no number and invents one instead —
+  /// what must never happen either way is a caller having to parse output to
+  /// tell *landed* from *timed out*.
   int exitCode = 0;
 
   static const int okCode = 0;
   static const int notFoundCode = 1;
   static const int refusedCode = 3;
+  static const int timedOutCode = 6;
   static const int usageCode = 64;
   static const int stumbledCode = bodyStumbled;
 
   String get cwd => _cwdOverride ?? io.Directory.current.path;
 
   Map<String, String> get env => _envOverride ?? io.Platform.environment;
+
+  /// Where `monitor --wait` persists what it has drained, per channel — never
+  /// the client's read mark, which is a different question kept in a
+  /// different file. Overridable so a gate can prove the cross-process cursor
+  /// without touching a real `$HOME`.
+  io.File get monitorCursorFile =>
+      _monitorCursorFileOverride ?? MonitorCursors.defaultFile(environment: env);
 
   /// The vantage a channel resolves from: `-C` when given, else the working
   /// directory. Relative paths resolve against [cwd] and never the process's.
@@ -500,6 +520,26 @@ final class _Monitor extends _ChatCommand {
         'once',
         help: 'Drain what has landed and exit, instead of blocking.',
         negatable: false,
+      )
+      ..addFlag(
+        'wait',
+        help: 'The agent path: block for the next qualifying batch, print '
+            'it, exit. A cursor is persisted per channel so the next call '
+            'picks up where this one left off, across processes.',
+        negatable: false,
+      )
+      ..addOption(
+        'timeout',
+        help: 'Give up after this many seconds of nothing landing — only '
+            'with --wait. Exits ${ChatRunner.timedOutCode} rather than 0, so '
+            'landed and timed-out are never told apart by parsing output.',
+        valueHelp: 'seconds',
+      )
+      ..addFlag(
+        'mention',
+        help: 'Only wake on speech naming me, or naming everyone — a '
+            'predicate over the same stream, nothing routed by the medium.',
+        negatable: false,
       );
   }
 
@@ -512,11 +552,21 @@ final class _Monitor extends _ChatCommand {
 
   @override
   Future<void> run() async {
+    final wait = argResults!['wait'] as bool;
+    final timeout = _timeout;
+    if (timeout != null && !wait) {
+      usageException('monitor: --timeout only applies with --wait');
+    }
+    if (wait) return _runWait(timeout: timeout);
+
     final channel = this.channel();
+    final scanner = _mentionScanner(channel);
 
     if (_backlog != null) {
       for (final message in await channel.history(limit: _backlog)) {
-        face.out.writeln(messageLine(message));
+        if (scanner == null || scanner.mentions(message.body)) {
+          face.out.writeln(messageLine(message));
+        }
       }
     }
     // The backlog is printed, so what has already landed must not arrive a
@@ -531,12 +581,77 @@ final class _Monitor extends _ChatCommand {
     final interval = _interval;
     while (true) {
       for (final event in await channel.sync()) {
-        face.out.writeln(eventLine(event));
+        if (scanner == null || _mentioned(event, scanner)) {
+          face.out.writeln(eventLine(event));
+        }
       }
       if (argResults!['once'] as bool) return;
       await Future<void>.delayed(interval);
     }
   }
+
+  /// The agent path. **The window opens on the first qualifying event and
+  /// closes [_settle] later**; everything that lands while it is open — not
+  /// only what matched — returns together, so a burst comes back as one
+  /// waking rather than one per line. Before that window opens, [timeout]
+  /// bounds the wait; nothing landing in time exits [ChatRunner.timedOutCode]
+  /// rather than 0.
+  Future<void> _runWait({required Duration? timeout}) async {
+    final key = coordinate.whole;
+    final cursors = MonitorCursors.load(file: face.monitorCursorFile);
+    final resuming = cursors.of(key);
+    final channel = this.channel(cursor: resuming);
+    final scanner = _mentionScanner(channel);
+
+    void persist() {
+      final at = channel.cursor;
+      if (at != null) cursors.cursors[key] = at;
+      cursors.save(file: face.monitorCursorFile);
+    }
+
+    // No special first-call priming: a channel opened at no cursor sees the
+    // conversation whole, per `Channel.sync`'s own contract, so the very
+    // first `--wait` for a coordinate reports everything said so far as the
+    // batch — exactly as if it had been watching the whole time. Every call
+    // after that persists where it left off, so nothing here is reported
+    // twice.
+    final deadline = timeout == null ? null : DateTime.now().add(timeout);
+    final batch = <ChannelEvent>[];
+    DateTime? windowCloses;
+
+    while (true) {
+      final events = await channel.sync();
+      final relevant =
+          scanner == null ? events : events.where((e) => _mentioned(e, scanner)).toList();
+      if (relevant.isNotEmpty) {
+        batch.addAll(relevant);
+        windowCloses ??= DateTime.now().add(_settle);
+      }
+      persist();
+
+      final now = DateTime.now();
+      if (windowCloses != null && !now.isBefore(windowCloses)) break;
+      if (windowCloses == null && deadline != null && !now.isBefore(deadline)) {
+        face.err.writeln(
+          '$chatOntology: monitor --wait timed out — nothing landed in '
+          '${timeout!.inSeconds}s',
+        );
+        face.exitCode = ChatRunner.timedOutCode;
+        return;
+      }
+      await Future<void>.delayed(_interval);
+    }
+
+    for (final event in batch) {
+      face.out.writeln(eventLine(event));
+    }
+  }
+
+  MentionScanner? _mentionScanner(Channel channel) =>
+      (argResults!['mention'] as bool) ? MentionScanner(channel.me) : null;
+
+  bool _mentioned(ChannelEvent event, MentionScanner scanner) =>
+      event is Spoke && scanner.mentions(event.message.body);
 
   int? get _backlog {
     final given = argResults!['history'] as String?;
@@ -556,6 +671,19 @@ final class _Monitor extends _ChatCommand {
     }
     return Duration(microseconds: (seconds * 1000000).round());
   }
+
+  Duration? get _timeout {
+    final given = argResults!['timeout'] as String?;
+    if (given == null) return null;
+    final seconds = double.tryParse(given);
+    if (seconds == null || seconds <= 0) {
+      usageException("monitor: --timeout takes seconds, not '$given'");
+    }
+    return Duration(microseconds: (seconds * 1000000).round());
+  }
+
+  /// The burst window: fixed, opened once by the first qualifying event.
+  static const Duration _settle = Duration(seconds: 1);
 }
 
 final class _Check extends _ChatCommand {

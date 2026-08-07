@@ -58,6 +58,8 @@ dependencies:
       ref: ec46bfc863aed7db836033e059b1df5fd5d9f68a
   fixnum: ^1.1.0
   stream_channel: ^2.1.0
+  characters: ^1.3.0
+  nocterm: 0.8.0
   # coreutil libs — exposed via bin/ shells
   websearch:
     path: coreutils/websearch
