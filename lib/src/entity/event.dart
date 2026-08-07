@@ -1,3 +1,6 @@
+import '../git/model/commit.dart';
+import 'instance.dart';
+
 /// The phase an occurrence is observed at. An entity publishes exactly one kind
 /// of occurrence — **its own acts, qualified by phase** — and the vocabulary is
 /// therefore the product of the type's declared actions with these three.
@@ -29,6 +32,50 @@ enum EventPhase {
 
   /// The suffix as it is written in a pattern and read in a table.
   String get suffix => name;
+}
+
+/// One occurrence: an act qualified by phase, and exactly what the substrate
+/// can read off a ref move — enough to match a subscription, never enough to
+/// interpret.
+///
+/// It is what a `listen` reader receives and what a journaled occurrence is
+/// built from. A woken *process* gets the same facts by environment instead,
+/// since it is a body someone started and not a reader holding values.
+final class Event {
+  const Event({
+    required this.instance,
+    required this.noun,
+    required this.phase,
+    required this.commit,
+    required this.parent,
+  });
+
+  final Instance instance;
+
+  /// The payload the act deposited. **The name is the noun and never the
+  /// verb** — `prompt`, not `say` — because the noun is all the substrate can
+  /// read.
+  final String noun;
+
+  final EventPhase phase;
+
+  /// The act's own commit. Never [Commit.zero] — an occurrence with no commit
+  /// is not an occurrence, which is why a birth and a deletion are journaled as
+  /// no occurrence at all rather than as one with a hole in it.
+  final Commit commit;
+
+  /// The value the ref held before this occurrence — **the parent**.
+  ///
+  /// A subscription answering [EventPhase.attempted] judges whether the act is
+  /// legal *where it stands*, and where it stands is here: at that phase the
+  /// ref has not moved, so folding at the tip would be leaning on the
+  /// substrate's transaction timing to be right. An occurrence published
+  /// without it is half an occurrence, and every gate in the system dies on its
+  /// first line.
+  final Commit parent;
+
+  @override
+  String toString() => '$noun.${phase.suffix}@${commit.short}';
 }
 
 /// A subscription's selector — an action name (globs allowed) and a phase, as
