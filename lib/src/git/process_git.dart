@@ -126,8 +126,16 @@ final class ProcessGit implements Git {
   /// The identity the substrate demands. An [Actor] carries a name and at most
   /// an address; where Git insists on both, the address is derived and means
   /// nothing to anyone who reads it back.
+  ///
+  /// **No actor means no identity environment at all.** Overriding Git's own
+  /// cascade — repository config, then global, then system — with an invented
+  /// name signs every unattributed act as a stranger, and a caller that states
+  /// its author in the content is then contradicted by the commit. Where
+  /// nothing is configured anywhere Git refuses with its own well-known
+  /// message, which is the correct answer to an unconfigured machine.
   static Map<String, String> _identity(Actor? actor) {
-    final who = actor ?? const Actor('unknown');
+    final who = actor;
+    if (who == null) return const {};
     final mail = who.email ?? '${who.name}@entity.local';
     return {
       'GIT_AUTHOR_NAME': who.name,

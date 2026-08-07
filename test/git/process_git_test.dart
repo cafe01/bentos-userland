@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:bentos_userland/src/git/model/actor.dart';
 import 'package:bentos_userland/src/git/process_git.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -36,6 +37,52 @@ void main() {
     ]);
     return path;
   }
+
+  group('the identity cascade', () {
+    /// Who Git recorded as the author of one commit object.
+    String authorOf(String repo, String sha) => Process.runSync(
+          'git',
+          ['-C', repo, 'log', '-1', '--format=%an <%ae>', sha],
+        ).stdout.toString().trim();
+
+    /// A repository whose **config** names an identity — which is the thing the
+    /// cascade is supposed to find. `enclosing` passes `-c` per command, and a
+    /// flag on a command the port never runs answers for nothing.
+    (String, String) groundOf(String name) {
+      final repo = enclosing(name);
+      final gitDir = p.join(repo, '.git');
+      Process.runSync('git', ['-C', repo, 'config', 'user.name', 'gate']);
+      Process.runSync('git', ['-C', repo, 'config', 'user.email', 'gate@bentos']);
+      final tree = Process.runSync('git', ['-C', gitDir, 'rev-parse', 'HEAD^{tree}']);
+      return (repo, tree.stdout.toString().trim());
+    }
+
+    test('no actor means no identity environment, so the machine answers', () {
+      final (repo, tree) = groundOf('cascade');
+
+      final made = git.commitTree(p.join(repo, '.git'),
+          tree: tree, parents: [], message: 'two');
+
+      // The defect this replaced: a null actor was substituted by
+      // `Actor('unknown')` and exported, overriding Git's own cascade — so an
+      // act whose content named its author was contradicted by its own commit,
+      // permanently and on every remote that fetched the line.
+      expect(authorOf(repo, made), isNot(contains('unknown')));
+      expect(authorOf(repo, made), 'gate <gate@bentos>');
+    });
+
+    test('an actor is still the author, byte for byte', () {
+      final (repo, tree) = groundOf('named');
+
+      final made = git.commitTree(p.join(repo, '.git'),
+          tree: tree,
+          parents: [],
+          message: 'two',
+          actor: const Actor('alfred', email: 'alfred@bentos.life'));
+
+      expect(authorOf(repo, made), 'alfred <alfred@bentos.life>');
+    });
+  });
 
   group('worktreeHead', () {
     test('a plain directory inside a repository holds no tree of anyone’s',
