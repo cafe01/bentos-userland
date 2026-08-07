@@ -295,6 +295,98 @@ exit 0
     });
   });
 
+  group('the provenance column', () {
+    /// A table line carrying the new column, verbatim: `<id>\t<instance>\t
+    /// <action>\t<lifetime>\t<provenance>\t--\t<arg>…`.
+    String armedWithProvenance(
+      String id,
+      String instance,
+      String action,
+      String provenance,
+      List<String> command, {
+      String life = 'always',
+    }) =>
+        [id, instance, action, life, provenance, '--', ...command].join('\t');
+
+    test('all six BENTOS_* reach the listener with the occurrence\'s values',
+        () async {
+      declareAction(newSha, 'reply');
+      final envLog = File(p.join(tmp.path, 'env.log'));
+      final scribe = File(p.join(tmp.path, 'scribe'))
+        ..writeAsStringSync('''#!/usr/bin/env bash
+env | grep '^BENTOS_' | sort > "${envLog.path}"
+exit 0
+''');
+      Process.runSync('chmod', ['755', scribe.path]);
+      arm(
+        'landed',
+        armedWithProvenance('r1', '*', 'reply', 'manifest', [scribe.path]),
+      );
+
+      expect(fireWith('committed', ['$oldSha $newSha refs/heads/s1']).exitCode, 0);
+      expect(await appears(envLog), isTrue, reason: 'landed listeners are detached');
+      final env = envLog.readAsStringSync();
+      expect(env, contains('BENTOS_ENTITY=probe.thing'));
+      expect(env, contains('BENTOS_PHASE=landed'));
+      expect(env, contains('BENTOS_INSTANCE=s1'));
+      expect(env, contains('BENTOS_NOUN=reply'));
+      expect(env, contains('BENTOS_EVENT=reply.landed'));
+      expect(env, contains('BENTOS_SHA=$newSha'));
+      expect(env, contains('BENTOS_OLD=$oldSha'));
+    });
+
+    test('a line with a provenance column dispatches with the right command',
+        () {
+      declareAction(newSha, 'prompt');
+      arm(
+        'attempted',
+        armedWithProvenance(
+          'r1',
+          '*',
+          'prompt',
+          'manifest',
+          [listener('v'), '--flag', 'two words'],
+        ),
+      );
+
+      expect(fireWith('prepared', ['$oldSha $newSha refs/heads/s1']).exitCode, 0);
+      // The provenance word and the sentinel are read and consumed — neither
+      // reaches the listener, and the argument holding a space survives whole.
+      expect(
+        logOf('v').readAsStringSync().trim(),
+        '--flag two words $repo refs/heads/s1 $oldSha $newSha prompt',
+      );
+    });
+
+    test(
+      'a pre-column line whose whole command is the bare word "manifest" '
+      'is not mistaken for the provenance marker',
+      () {
+        // Pre-column lines are one whitespace field with no internal tab, so
+        // the shim's tab-boundary check must leave this one whole rather than
+        // reading it as an armed marker with nothing after it. The falsifier
+        // for the `--` guard: a naive prefix match on the word alone would
+        // strip this to nothing and the command would silently vanish.
+        declareAction(newSha, 'prompt');
+        final bin = Directory(p.join(tmp.path, 'bin'));
+        final exe = File(p.join(bin.path, 'manifest'))
+          ..writeAsStringSync('''#!/usr/bin/env bash
+echo ran >> "${p.join(tmp.path, 'manifest.log')}"
+exit 0
+''');
+        Process.runSync('chmod', ['755', exe.path]);
+        arm('attempted', armed('r1', '*', 'prompt', 'manifest'));
+
+        expect(fireWith('prepared', ['$oldSha $newSha refs/heads/s1']).exitCode, 0);
+        expect(
+          File(p.join(tmp.path, 'manifest.log')).existsSync(),
+          isTrue,
+          reason: 'the bare word "manifest" is a command, not a stripped marker',
+        );
+      },
+    );
+  });
+
   test('the shim finds the entity from its own path, never by asking git', () {
     // The proof: with the fake git answering nothing at all, the tables are
     // still found and the listener still runs. Asking git would resolve to a

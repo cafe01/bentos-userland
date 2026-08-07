@@ -40,13 +40,18 @@ void main() {
     if (scratch.existsSync()) scratch.deleteSync(recursive: true);
   });
 
-  Future<Run> cli(List<String> args, {String? cwd}) async {
+  Future<Run> cli(
+    List<String> args, {
+    String? cwd,
+    Map<String, String>? environment,
+  }) async {
     final out = StringBuffer();
     final err = StringBuffer();
     final runner = EntityRunner(
       out: out,
       err: err,
       currentDirectory: cwd ?? site.path,
+      environment: environment,
     );
     await runWithGitAsync(git, () => runner.run(args));
     return (out: out.toString(), err: err.toString(), code: runner.exitCode);
@@ -518,6 +523,98 @@ functions:
       // it. Falsified by staging only on install — `create` then leaves a hole
       // the printed cure cannot fill.
       expect(entity.stagedClass.at, entity.genesis);
+    });
+  });
+
+  // ------------------------------------------------------ the ambient coordinate
+
+  /// **Tier C, the precedence itself.** `ambientCoordinate()` is exercised
+  /// through `run` because it is the verb that actually reads it — a claim
+  /// about precedence proven anywhere else would be a claim about a value the
+  /// gate minted, never about what a caller typed against a real environment.
+  group('the ambient coordinate', () {
+    test('the argument wins over an environment that points elsewhere',
+        () async {
+      await install();
+      final second = await cli(['new', 'probe.thing', 'beta']);
+      expect(second.code, 0, reason: second.err);
+
+      final ran = await cli(
+        ['run', 'probe.thing:alpha', 'say.hello', report(), '0'],
+        environment: {
+          'BENTOS_ENTITY': 'probe.thing',
+          'BENTOS_INSTANCE': 'beta',
+          'PROBE_THING': 'probe.thing:beta',
+        },
+      );
+
+      expect(ran.code, 0, reason: ran.err);
+      expect(reported(report())['instance'], 'alpha',
+          reason: 'a typed coordinate is scriptable with no environment at all');
+    });
+
+    test('a bare name completed by the occurrence resolves to it', () async {
+      await install();
+
+      final ran = await cli(
+        ['run', 'probe.thing', 'say.hello', report(), '0'],
+        environment: {
+          'BENTOS_ENTITY': 'probe.thing',
+          'BENTOS_INSTANCE': 'alpha',
+        },
+      );
+
+      expect(ran.code, 0, reason: ran.err);
+      expect(reported(report())['instance'], 'alpha');
+    });
+
+    test('a bare name completed by the ontology\'s own pointer resolves to it',
+        () async {
+      await install();
+
+      final ran = await cli(
+        ['run', 'probe.thing', 'say.hello', report(), '0'],
+        environment: {'PROBE_THING': 'probe.thing:alpha'},
+      );
+
+      expect(ran.code, 0, reason: ran.err);
+      expect(reported(report())['instance'], 'alpha');
+    });
+
+    test(
+      'the occurrence of another entity is ignored, and the pointer answers '
+      'instead',
+      () async {
+        await install();
+
+        // A hook firing for `other.thing` woke this command by accident — the
+        // guard is the point: an instance borrowed across that boundary would
+        // send this verb at an object nobody named for it.
+        final ran = await cli(
+          ['run', 'probe.thing', 'say.hello', report(), '0'],
+          environment: {
+            'BENTOS_ENTITY': 'other.thing',
+            'BENTOS_INSTANCE': 'zzz',
+            'PROBE_THING': 'probe.thing:alpha',
+          },
+        );
+
+        expect(ran.code, 0, reason: ran.err);
+        expect(reported(report())['instance'], 'alpha',
+            reason: 'a stranger\'s occurrence must not resolve this name');
+      },
+    );
+
+    test('nothing posted is a usage failure naming both cures', () async {
+      await install();
+
+      final ran = await cli(['run', 'probe.thing', 'say.hello', report(), '0']);
+
+      expect(ran.code, 64);
+      expect(ran.err, contains('type one'));
+      expect(ran.err, contains('point at one'));
+      expect(ran.err, contains('PROBE_THING'));
+      expect(File(report()).existsSync(), isFalse);
     });
   });
 

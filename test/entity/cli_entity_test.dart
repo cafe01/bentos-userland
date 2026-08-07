@@ -413,6 +413,79 @@ void main() {
       expect((await cli.run(['which', 't.mystery'])).code,
           EntityRunner.notFoundCode);
     });
+
+    group('a second install over what already stands', () {
+      test('a registered name refuses — exit 3, and nothing touched',
+          () async {
+        final origin = Site('origin', site.git);
+        addTearDown(origin.dispose);
+        final source = repositoryOf(origin.root.path, 't.smoke');
+        await Cli(origin).run(['create', 't.smoke']);
+
+        final first = await cli.run(['install', source, '--as', 'dup']);
+        expect(first.code, 0, reason: first.err);
+        final before = (await cli.run(['listeners', 'dup'])).out;
+
+        final second = await cli.run(['install', source, '--as', 'dup']);
+
+        expect(second.code, EntityRunner.refusedCode);
+        expect(second.err, contains('dup'));
+        expect(second.err, contains('already installed'));
+        // Nothing cloned, registered or armed a second time: the same tables
+        // read back exactly as the first install left them.
+        expect((await cli.run(['listeners', 'dup'])).out, before);
+      });
+
+      test(
+        'a directory standing with no registration refuses, and names the '
+        'path rather than erasing it',
+        () async {
+          final origin = Site('origin', site.git);
+          addTearDown(origin.dispose);
+          final source = repositoryOf(origin.root.path, 't.smoke');
+          await Cli(origin).run(['create', 't.smoke']);
+
+          // A stranger, standing exactly where the install would land — made
+          // by hand, never by this system's own clone.
+          final standing =
+              Directory(repositoryOf(site.root.path, 't.smoke')).parent.path;
+          Directory(standing).createSync(recursive: true);
+          File('$standing/left-by-somebody-else.txt')
+              .writeAsStringSync('mine\n');
+
+          final r = await cli.run(['install', source]);
+
+          expect(r.code, EntityRunner.refusedCode);
+          expect(r.err, contains(standing));
+          expect(
+            File('$standing/left-by-somebody-else.txt').readAsStringSync(),
+            'mine\n',
+            reason: 'a refusal that names a directory does not clear it first',
+          );
+        },
+      );
+
+      test(
+        'two installs at the same coordinate reproduce the refusal, never a '
+        'raw substrate exception',
+        () async {
+          final origin = Site('origin', site.git);
+          addTearDown(origin.dispose);
+          final source = repositoryOf(origin.root.path, 't.smoke');
+          await Cli(origin).run(['create', 't.smoke']);
+
+          final first = await cli.run(['install', source, '--as', 'dup']);
+          final second = await cli.run(['install', source, '--as', 'dup']);
+
+          expect(first.code, 0, reason: first.err);
+          // A named refusal a script can branch on — never the substrate's own
+          // unhandled failure, which named no cure and no owner.
+          expect(second.code, EntityRunner.refusedCode);
+          expect(second.code, isNot(255));
+          expect(second.out, isEmpty);
+        },
+      );
+    });
   });
 }
 
