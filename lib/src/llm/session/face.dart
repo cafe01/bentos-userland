@@ -228,8 +228,9 @@ abstract interface class SessionFace {
   /// not yet born, which is the one asymmetry of the seat: external will has to
   /// enter the graph somewhere.
   ///
-  /// [system] is the constitution. A real one does not fit in argv, so a value
-  /// naming a file that exists is read as its contents.
+  /// [system] is the constitution, as text. A real one does not fit in argv, so
+  /// a register takes a path from the person and hands the contents here —
+  /// reading a file is I/O, which is the skin's job and never the face's.
   Future<OpenedSession> open({
     String? name,
     String? entity,
