@@ -189,6 +189,36 @@ void main() {
       });
     });
 
+    test('a gate refusing is reported in the gate\'s own words', () {
+      site.run(() {
+        final ws = llm.instance('s1').beginAct();
+        File(p.join(ws.directory.path, 'prompt.txt')).writeAsStringSync('hi');
+        // A gate stands at this swap and says no. Nothing about the ref is
+        // wrong — it holds exactly what the act was cut from.
+        site.git.declineNextSwap = 'entity: refused by r4: bin/check\n'
+            "check: bentos.llm:s1: 'prompt' is illegal at owes_inference";
+
+        final result = ws.commit('prompt', actor: const Actor('alfred'));
+
+        expect(result, isA<Refused>());
+        final refused = result as Refused;
+        expect(refused.reason, contains('illegal at owes_inference'),
+            reason: 'the sentence a person needs is the gate\'s, not ours');
+        expect(refused.reason, contains('refused by r4'),
+            reason: 'and which registration refused it');
+        expect(refused.reason, isNot(contains('entity: refused by')),
+            reason: 'the program is named once, by whoever prints this');
+        // **The half that was wrong before.** A gate refusal is not about the
+        // ref, so nothing here may invite a reader to compare two values — the
+        // guess that did printed `expected b71043a, found b71043a`.
+        expect(refused.expected, isNull);
+        expect(refused.found, isNull);
+        expect(llm.instance('s1').tip, ws.expectedTip,
+            reason: 'a refused act leaves the ref exactly where it stood');
+        ws.release();
+      });
+    });
+
     test('refusal is a value, never a throw', () {
       site.run(() {
         final ws = llm.instance('s1').beginAct();

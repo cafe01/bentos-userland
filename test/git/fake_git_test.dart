@@ -56,12 +56,12 @@ void main() {
     test('a null expectation demands the ref not exist', () {
       final first = Commit(commitWith({'a.txt': 'one'}));
       expect(
-        git.updateRef('/e.git', ref: 'refs/heads/x', newCommit: first, expected: null),
+        git.updateRef('/e.git', ref: 'refs/heads/x', newCommit: first, expected: null).moved,
         isTrue,
       );
       final second = Commit(commitWith({'a.txt': 'two'}, parent: first));
       expect(
-        git.updateRef('/e.git', ref: 'refs/heads/x', newCommit: second, expected: null),
+        git.updateRef('/e.git', ref: 'refs/heads/x', newCommit: second, expected: null).moved,
         isFalse,
         reason: 'a first action must refuse to happen twice',
       );
@@ -79,8 +79,8 @@ void main() {
       final secondLanded =
           git.updateRef('/e.git', ref: 'refs/heads/x', newCommit: yours, expected: base);
 
-      expect(firstLanded, isTrue);
-      expect(secondLanded, isFalse);
+      expect(firstLanded.moved, isTrue);
+      expect(secondLanded.moved, isFalse);
       expect(git.revParse('/e.git', 'refs/heads/x'), mine);
     });
   });

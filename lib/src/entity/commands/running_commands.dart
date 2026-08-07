@@ -71,7 +71,15 @@ final class RunCommand extends EntityCommand {
       usageException('run: expected <entity>:<instance>, with no path');
     }
     final wanted = rest[1];
+    // **The sentinel is the caller's, not the body's.** Option parsing stops at
+    // the first positional, so `--` is never consumed and arrives here as an
+    // argument — and a body handed it says `unexpected argument: --` and
+    // deposits nothing. One leading `--` is dropped: it is the word a caller
+    // writes so their own shell, or a sibling verb that demands it, lets the
+    // rest through. Only the first, and only leading — anything further belongs
+    // to the body and this verb has no opinion about it.
     final arguments = rest.sublist(2);
+    if (arguments.isNotEmpty && arguments.first == '--') arguments.removeAt(0);
 
     final entity = cli.entityNamed(coord.entity, place: placeOption);
     // The manifest is read from the ref, always: one source for the contract,

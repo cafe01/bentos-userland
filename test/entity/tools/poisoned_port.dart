@@ -34,7 +34,7 @@ void main(List<String> args) {
       message: Action.messageFor('note'),
       actor: const Actor('poisoned'),
     );
-    if (!git.updateRef(gitDir, ref: ref, newCommit: Commit(sha), expected: tip)) {
+    if (!git.updateRef(gitDir, ref: ref, newCommit: Commit(sha), expected: tip).moved) {
       stderr.writeln('the swap was refused');
       exit(1);
     }

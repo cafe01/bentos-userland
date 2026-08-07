@@ -265,15 +265,15 @@ final class ProcessGit implements Git {
   // --------------------------------------------------------------------- refs
 
   @override
-  bool updateRef(
+  RefUpdate updateRef(
     String gitDir, {
     required String ref,
     required Commit newCommit,
     required Commit? expected,
   }) {
     // The compare-and-swap, and the one verb whose refusal is an ordinary
-    // outcome: a non-zero exit means another actor got there first, not that
-    // anything is broken.
+    // outcome: a non-zero exit means another actor got there first, or a gate
+    // said no — never that anything is broken.
     final result = _run([
       '--git-dir=$gitDir',
       'update-ref',
@@ -281,7 +281,11 @@ final class ProcessGit implements Git {
       newCommit.sha,
       (expected ?? Commit.zero).sha,
     ]);
-    return result.exitCode == 0;
+    if (result.exitCode == 0) return const RefUpdate(moved: true);
+    // Carried whole and unread. Which of the two refusals this is, is a
+    // question the ontology asks — the port only stops throwing away the
+    // answer.
+    return RefUpdate(moved: false, report: _text(result.stderr).trim());
   }
 
   @override

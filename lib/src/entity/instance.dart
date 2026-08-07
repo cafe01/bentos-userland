@@ -215,13 +215,13 @@ final class Instance {
         return Refused('diverged', expected: standing, found: arrived);
       }
     }
-    final moved = ambientGit.updateRef(
+    final swap = ambientGit.updateRef(
       gitDir,
       ref: ref,
       newCommit: arrived,
       expected: standing,
     );
-    if (!moved) {
+    if (!swap.moved) {
       return Refused(
         'the ref moved while fetching',
         expected: standing,

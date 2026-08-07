@@ -187,6 +187,49 @@ functions:
     // nothing else in the file moves.
   });
 
+  test('the caller\'s `--` is the caller\'s, and never the body\'s', () async {
+    await install();
+
+    // The sentinel a caller writes so their own shell — or a sibling verb that
+    // demands one — lets the rest through. Option parsing here stops at the
+    // first positional, so nothing consumes it, and the body met it as an
+    // argument: `unexpected argument: --`, with the deposit never made.
+    final ran = await cli([
+      'run',
+      'probe.thing:alpha',
+      'say.hello',
+      '--',
+      report(),
+      '0',
+      'extra',
+    ]);
+
+    expect(ran.code, 0, reason: ran.err);
+    expect(reported(report())['args'], 'extra',
+        reason: 'one leading `--` is dropped, and only the first');
+  });
+
+  test('a `--` the body owns is left where the caller put it', () async {
+    await install();
+
+    // Only leading, and only one: a sentinel standing among the body's own
+    // arguments belongs to the body, and this verb has no opinion about it.
+    final ran = await cli([
+      'run',
+      'probe.thing:alpha',
+      'say.hello',
+      '--',
+      report(),
+      '0',
+      'extra',
+      '--',
+      'deeper',
+    ]);
+
+    expect(ran.code, 0, reason: ran.err);
+    expect(reported(report())['args'], 'extra -- deeper');
+  });
+
   test('the instance travels verbatim — never looked up, never born', () async {
     await install();
 

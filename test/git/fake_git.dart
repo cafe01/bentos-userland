@@ -142,7 +142,11 @@ final class FakeGit implements Git {
     required String message,
     Actor? actor,
   }) {
-    final who = actor ?? const Actor('unknown');
+    // No actor means the real floor passes no identity and Git's own cascade
+    // answers. The double has no config to cascade through, so it stands in for
+    // one — never for an invented author, which is the defect this fake would
+    // otherwise keep testifying to.
+    final who = actor ?? const Actor('configured', email: 'configured@local');
     final instant = DateTime.utc(2026, 1, 1).add(Duration(seconds: _counter));
     final sha = _sha('commit:$tree:${parents.join('+')}:$message:${who.name}');
     _repo(gitDir).commits[sha] = CommitObj(
@@ -156,21 +160,51 @@ final class FakeGit implements Git {
   }
 
   @override
-  bool updateRef(
+  RefUpdate updateRef(
     String gitDir, {
     required String ref,
     required Commit newCommit,
     required Commit? expected,
   }) {
+    // A gate standing at this swap. The double has no hooks, so refusal by one
+    // is asked for rather than provoked — and what it reports is the message
+    // Git itself writes, taken from a real `reference-transaction` hook exiting
+    // non-zero, never a sentence invented here.
+    final declining = declineNextSwap;
+    if (declining != null) {
+      declineNextSwap = null;
+      return RefUpdate(
+        moved: false,
+        report: '$declining\nfatal: ref updates aborted by hook',
+      );
+    }
     final repo = _repo(gitDir);
     final current = repo.refs[ref];
     // The swap, modelled exactly: a null expectation means the ref must not
-    // exist, and any disagreement refuses rather than throws.
-    if (expected == null && current != null) return false;
-    if (expected != null && current != expected.sha) return false;
+    // exist, and any disagreement refuses rather than throws. The report is
+    // Git's own for a lost race — the word `hook` is absent from it, which is
+    // the whole of what tells the two refusals apart.
+    if (expected == null && current != null) {
+      return RefUpdate(
+        moved: false,
+        report: "fatal: cannot lock ref '$ref': reference already exists",
+      );
+    }
+    if (expected != null && current != expected.sha) {
+      return RefUpdate(
+        moved: false,
+        report: "fatal: cannot lock ref '$ref': is at "
+            "${current ?? 'nothing'} but expected ${expected.sha}",
+      );
+    }
     repo.refs[ref] = newCommit.sha;
-    return true;
+    return const RefUpdate(moved: true);
   }
+
+  /// What a gate will write to stderr the next time a swap is attempted, after
+  /// which that swap is refused by the hook and this is cleared. Null is the
+  /// ordinary state: no gate stands anywhere.
+  String? declineNextSwap;
 
   @override
   void branch(String gitDir, {required String name, required Commit startPoint}) {

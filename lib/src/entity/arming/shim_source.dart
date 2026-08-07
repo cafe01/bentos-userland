@@ -72,7 +72,15 @@ const String _shimTemplate = r'''#!/usr/bin/env bash
 #   <id>\t<instance-glob>\t<action-glob>\t<always|once>\t<provenance>\t--\t<arg>...
 # Each command is called as: <cmd> <repo> <ref> <old> <new> <action>
 # and with the occurrence in its environment:
-#   BENTOS_ENTITY BENTOS_INSTANCE BENTOS_EVENT BENTOS_PHASE BENTOS_NOUN BENTOS_SHA
+#   BENTOS_ENTITY BENTOS_INSTANCE BENTOS_EVENT BENTOS_PHASE BENTOS_NOUN
+#   BENTOS_SHA   the act's commit — the value the ref takes
+#   BENTOS_OLD   the value it held before it — the act's PARENT
+#
+# BENTOS_OLD is not a convenience. A gate at `prepared` judges whether the act
+# is legal AT ITS PARENT, and at that moment the ref still holds the old value —
+# so a gate that folded the tip would be leaning on Git's transaction timing to
+# be right. The parent rides argv too, but a body reached through `entity run`
+# is a grandchild and argv does not survive that hop; the environment does.
 #
 # The environment is what lets a line armed on `*` wake something that knows
 # WHERE the event landed: the instance is not in the line, because at the moment
@@ -138,6 +146,7 @@ while read -r old new ref; do
   export BENTOS_NOUN="$action"
   export BENTOS_EVENT="$action.$table_name"
   export BENTOS_SHA="$new"
+  export BENTOS_OLD="$old"
 
   while IFS=$'\t' read -r id inst_glob act_glob life cmd; do
     [ -z "${id:-}" ] && continue
@@ -194,8 +203,24 @@ while read -r old new ref; do
     fi
 
     if [ "$hold" = "1" ]; then
-      if ! "${argv[@]}" "$REPO" "$ref" "$old" "$new" "$action" >>"$LOG" 2>&1; then
+      # A REFUSAL SPEAKS TO THE CALLER, not only to the log. The gate's own
+      # sentence — `'prompt' is illegal at owes_inference` — is the whole of
+      # what a person needs, and sending them to a log file to find it is a
+      # refusal that refuses twice. So a held command's output is buffered, kept
+      # in the log as always, and echoed to stderr when it says no: git carries
+      # this stream up through `update-ref`, which is where the floor above
+      # reads it. Buffered and not streamed, because interleaving two gates into
+      # one stream would make neither readable; a gate that runs long enough for
+      # that to matter is a gate that is already wrong.
+      out="$REPO/bentos/refusal.$$"
+      if "${argv[@]}" "$REPO" "$ref" "$old" "$new" "$action" >"$out" 2>&1; then
+        cat "$out" >> "$LOG"
+        rm -f "$out"
+      else
+        cat "$out" >> "$LOG"
         echo "entity: refused by $id: ${argv[*]}" >&2
+        cat "$out" >&2
+        rm -f "$out"
         exit 1
       fi
     else

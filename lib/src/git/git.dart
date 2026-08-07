@@ -23,6 +23,29 @@ final class RawCommit {
   final String message;
 }
 
+/// The outcome of a compare-and-swap: whether the ref moved, and what the
+/// substrate said when it did not.
+///
+/// **A bool discards the evidence.** Git distinguishes a lost race from a gate's
+/// refusal in its own words — `cannot lock ref … reference already exists`
+/// against `ref updates aborted by hook`, the hook's own stderr above it — and a
+/// port that answers `false` to both forces the floor above to guess. It guessed
+/// by re-reading the ref, which is how a refusal by a gate came to print
+/// `expected b71043a, found b71043a`.
+///
+/// Classification stays **above** the port: what travels here is the substrate's
+/// report, unread.
+final class RefUpdate {
+  const RefUpdate({required this.moved, this.report = ''});
+
+  /// True when the ref now holds the new value.
+  final bool moved;
+
+  /// What the substrate wrote while refusing, verbatim and undecoded of meaning.
+  /// Empty when the ref moved.
+  final String report;
+}
+
 /// The Git port — **the one abstract type in the entity package**.
 ///
 /// The entity *is* a Git repository and there will be no second implementation
@@ -120,15 +143,16 @@ abstract interface class Git {
   /// plumbing: [expected] is the value the ref must still hold, and the
   /// substrate either moves it under lock or refuses.
   ///
-  /// Returns `true` when the ref moved and `false` when it did not — refusal
-  /// is an **ordinary outcome of concurrent agency**, not an error. A `null`
-  /// [expected] means *the ref must not exist*.
+  /// Returns a [RefUpdate]: the ref moved, or it did not and the substrate's
+  /// own account of why travels back with the answer — refusal is an **ordinary
+  /// outcome of concurrent agency**, not an error. A `null` [expected] means
+  /// *the ref must not exist*.
   ///
   /// This is also the emission point of every event: the armed shim rides the
   /// `reference-transaction` hook, so a refusal here fires `.refused` and a
   /// success fires `.landed`, locally and on the receiving side of a push
   /// alike.
-  bool updateRef(
+  RefUpdate updateRef(
     String gitDir, {
     required String ref,
     required Commit newCommit,

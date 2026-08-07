@@ -134,6 +134,62 @@ exit $exitCode
       expect(result.stderr.toString(), contains('refused by r1'));
     });
 
+    test('a gate\'s own words come back on stderr, and stay in the log', () {
+      declareAction(newSha, 'prompt');
+      // A gate that says why. Its sentence is the whole of what a person needs,
+      // and it is written where every body writes — its own stderr.
+      final gate = File(p.join(tmp.path, 'speaking-gate'))
+        ..writeAsStringSync('''#!/usr/bin/env bash
+echo "check: 'prompt' is illegal at owes_inference" >&2
+exit 1
+''');
+      Process.runSync('chmod', ['755', gate.path]);
+      arm('attempted', armed('r1', '*', 'prompt', gate.path));
+
+      final result = fireWith('prepared', ['$oldSha $newSha refs/heads/s1']);
+      expect(result.exitCode, isNot(0));
+      // Git carries this stream up through `update-ref`, which is the only road
+      // the sentence has to whoever typed the act. Without it the refusal reads
+      // `refused by r1: <command line>` and sends a person to a log file.
+      expect(
+        result.stderr.toString(),
+        contains("'prompt' is illegal at owes_inference"),
+      );
+      expect(
+        File(p.join(repo, 'bentos', 'reactor.log')).readAsStringSync(),
+        contains("'prompt' is illegal at owes_inference"),
+        reason: 'the log keeps everything it always kept',
+      );
+      expect(
+        Directory(p.join(repo, 'bentos'))
+            .listSync()
+            .map((e) => p.basename(e.path)),
+        isNot(contains(startsWith('refusal.'))),
+        reason: 'the buffer is the shim\'s own, and it does not survive it',
+      );
+    });
+
+    test('the occurrence carries the parent, not only the new value', () {
+      declareAction(newSha, 'prompt');
+      // The environment is the only road: a gate reached through `entity run`
+      // is a grandchild of this shim, and argv does not survive that hop.
+      final scribe = File(p.join(tmp.path, 'scribe'))
+        ..writeAsStringSync('''#!/usr/bin/env bash
+env | grep '^BENTOS_' | sort > "${p.join(tmp.path, 'env.log')}"
+exit 0
+''');
+      Process.runSync('chmod', ['755', scribe.path]);
+      arm('attempted', armed('r1', '*', 'prompt', scribe.path));
+
+      expect(fireWith('prepared', ['$oldSha $newSha refs/heads/s1']).exitCode, 0);
+      final env = File(p.join(tmp.path, 'env.log')).readAsStringSync();
+      expect(env, contains('BENTOS_OLD=$oldSha'),
+          reason: 'a gate judges the act at its PARENT, and this is the parent');
+      expect(env, contains('BENTOS_SHA=$newSha'));
+      expect(env, isNot(contains('BENTOS_NEW=')),
+          reason: 'one value under two names is a drift waiting');
+    });
+
     test('a listener that consents lets it through, and runs in line', () {
       declareAction(newSha, 'prompt');
       arm('attempted', armed('r1', '*', 'prompt', listener('validator')));

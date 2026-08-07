@@ -71,15 +71,23 @@ final class Workspace {
       message: Action.messageFor(name, say: say),
       actor: actor,
     );
-    final landed = ambientGit.updateRef(
+    final swap = ambientGit.updateRef(
       gitDir,
       ref: ref,
       newCommit: Commit(sha),
       expected: expectedTip,
     );
-    if (landed) {
+    if (swap.moved) {
       return Landed(Action(gitDir: gitDir, ref: ref, commit: Commit(sha)));
     }
+    // **Two refusals, and only one of them is about the ref.** A gate at
+    // `attempted` refuses an act the ref never left; reporting that as a lost
+    // race sends the reader to compare two values that are equal, and printing
+    // `expected b71043a, found b71043a` is what a guess looks like when it is
+    // wrong. The substrate said which it was; this reads it and re-reads the
+    // ref only where the answer is genuinely about the ref.
+    final declined = _gateRefusal(swap.report);
+    if (declined != null) return Refused(declined);
     return Refused(
       'the ref moved',
       expected: expectedTip,
@@ -91,3 +99,35 @@ final class Workspace {
   /// `release` may honestly run twice.
   void release() => ambientGit.worktreeRemove(gitDir, path: directory.path);
 }
+
+/// The reason a gate gave, or null when the swap was refused by the ref itself.
+///
+/// Git's own line is the discriminator and the gate's words are what a person
+/// needs: the shim names the registration that refused, and beneath it stands
+/// whatever the refusing body wrote. Git's `fatal:` is dropped — it says *a
+/// hook*, which the sentence already says better.
+String? _gateRefusal(String report) {
+  if (!report.contains(_abortedByHook)) return null;
+  final words = report
+      .split('\n')
+      .map((line) => line.trim())
+      .where((line) => line.isNotEmpty && !line.contains(_abortedByHook))
+      // Our own marker, and only ours: the shim writes `entity:` because it is
+      // speaking into Git's stream where nothing else would name the program.
+      // Here the program is already named by whoever prints this, and carrying
+      // it through reads `entity: refused — entity: refused by r4`.
+      .map((line) => line.startsWith(_ourMarker)
+          ? line.substring(_ourMarker.length).trim()
+          : line)
+      .toList();
+  if (words.isEmpty) return 'refused by a gate';
+  return words.join('\n  ');
+}
+
+/// What Git writes when a `reference-transaction` hook exits non-zero at
+/// `prepared`. A string, because it is the substrate's own report and there is
+/// nothing else to read it by.
+const String _abortedByHook = 'aborted by hook';
+
+/// How the shim names itself when it writes into Git's stream.
+const String _ourMarker = 'entity:';

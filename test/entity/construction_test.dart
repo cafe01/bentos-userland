@@ -131,7 +131,8 @@ void main() {
       );
       expect(
         git.updateRef(gitDir,
-            ref: ref, newCommit: Commit(sha), expected: parent),
+                ref: ref, newCommit: Commit(sha), expected: parent)
+            .moved,
         isTrue,
       );
       work.deleteSync(recursive: true);
@@ -254,11 +255,23 @@ void main() {
         message: 'loser',
       ));
 
+      final lost = git.updateRef(gitDir,
+          ref: 'refs/heads/one', newCommit: stale, expected: first);
+      expect(lost.moved, isFalse, reason: 'the tip moved under the loser');
+      // **The evidence survives the port.** This half of the disjoint pair is
+      // what a lost race says, and the word that is absent from it is the whole
+      // discriminator: a gate's refusal, the other half, is the same `false`
+      // over `ref updates aborted by hook`. A port answering a bare bool made
+      // the floor above guess, and the guess printed `expected b71043a, found
+      // b71043a` at a ref nothing had moved.
+      expect(lost.report, contains('cannot lock ref'));
+      expect(lost.report, isNot(contains('hook')));
       expect(
         git.updateRef(gitDir,
-            ref: 'refs/heads/one', newCommit: stale, expected: first),
-        isFalse,
-        reason: 'the tip moved under the loser',
+                ref: 'refs/heads/three', newCommit: stale, expected: null)
+            .report,
+        isEmpty,
+        reason: 'a swap that moved has nothing to report',
       );
       expect(git.revParse(gitDir, 'refs/heads/one'), equals(second));
 
@@ -280,7 +293,8 @@ void main() {
 
       expect(
         git.updateRef(gitDir,
-            ref: 'refs/heads/one', newCommit: twice, expected: null),
+                ref: 'refs/heads/one', newCommit: twice, expected: null)
+            .moved,
         isFalse,
         reason: 'a null expectation means the ref must not exist',
       );
@@ -289,7 +303,8 @@ void main() {
       // The same swap on a name nobody holds is how a first action lands.
       expect(
         git.updateRef(gitDir,
-            ref: 'refs/heads/two', newCommit: twice, expected: null),
+                ref: 'refs/heads/two', newCommit: twice, expected: null)
+            .moved,
         isTrue,
       );
     });
