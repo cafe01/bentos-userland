@@ -18,6 +18,12 @@ import 'coordinate.dart';
 /// A commit. Every screen is pinned to one of these.
 extension type const Sha(String value) {}
 
+/// The primitive's own grade for a **stumble**: the ref moved under the act,
+/// nobody decided anything, and a caller that re-reads the tip and retries
+/// terminates. Never the same code as a verdict (`3`) — a script that loops
+/// on one must not loop on the other.
+const int contestedCode = 4;
+
 /// One instance of a class, as `entity ls <name>` hands it back.
 final class InstanceRef {
   const InstanceRef(this.instance, this.tip);
@@ -76,6 +82,22 @@ final class PrimitiveFailure implements Exception {
   @override
   String toString() =>
       'entity $verb failed${exitCode == null ? '' : ' ($exitCode)'}: $message';
+}
+
+/// The ref moved under the act. Nobody decided anything, and a caller that
+/// re-reads the tip and tries again terminates — the opposite advice from
+/// [PrimitiveFailure], which is why this is its own type and not a shared
+/// exception with [exitCode] read to tell them apart. Never thrown for a
+/// verdict: a stumble is not a failure of ours, or the floor's, or the
+/// actor's.
+final class PrimitiveContested implements Exception {
+  const PrimitiveContested(this.verb, this.message);
+
+  final String verb;
+  final String message;
+
+  @override
+  String toString() => 'entity $verb contested: $message';
 }
 
 /// The verbs of `entity` that the face speaks.

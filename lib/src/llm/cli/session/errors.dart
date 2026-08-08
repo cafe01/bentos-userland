@@ -1,13 +1,18 @@
 /// What a failure looks like from the outside: one sentence on stderr, and a
 /// code a script can branch on.
 ///
-/// Five codes, and each means one thing:
+/// Six codes, and each means one thing:
 ///
 /// * `0`  — it happened.
 /// * `1`  — the conversation has not been opened. An instruction, not an error.
 /// * `3`  — refused, in the floor's own grade and the floor's own words. A
-///          refusal is an ordinary outcome of concurrent agency, and the code is
-///          the entity's rather than ours.
+///          verdict: the same act will be refused again, and a script must
+///          not loop on it.
+/// * `4`  — contested, in the floor's own grade and the floor's own words.
+///          Not a verdict: the ref moved under the act, nobody decided
+///          anything, and a script that reads the tip again and says it
+///          again terminates. Never folded into `3` — the two demand opposite
+///          answers from the caller.
 /// * `64` — usage (`EX_USAGE`), the value the sister coreutils already speak.
 /// * `69` — `EX_UNAVAILABLE`: the verb exists and the floor does not offer it
 ///          yet. Distinct from every other code on purpose — the caller did
@@ -60,6 +65,11 @@ Future<int> reporting(Future<int> Function() body) async {
       'llm session: no conversation — pass --session or set $sessionVariable',
     );
     return 64;
+  } on PrimitiveContested catch (e) {
+    // Not a failure: the ref moved under the act. Reported at its own grade
+    // so a script never mistakes it for a verdict.
+    stderr.writeln('llm session: $e');
+    return contestedCode;
   } on PrimitiveFailure catch (e) {
     // The floor's own words, and the floor's own grade where it gave one. A
     // refusal that arrived as 3 leaves as 3.

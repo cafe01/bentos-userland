@@ -151,8 +151,19 @@ final class Session implements SessionFace {
       vantage: vantage,
     );
 
-    // A refusal is a value and it is the floor's own words. Nothing was
-    // deposited, so there is nothing to wait for.
+    // A refusal or a stumble is a value and it is the floor's own words.
+    // Nothing was deposited either way, so there is nothing to wait for — but
+    // the two are not the same outcome: one is a verdict, the other is the
+    // ref having moved, and a caller told to retry must be told which.
+    if (landed.exitCode == contestedCode) {
+      return TurnResult(
+        outcome: TurnOutcome.contested,
+        landed: const [],
+        from: from,
+        to: from,
+        refusal: landed.stderr.trim(),
+      );
+    }
     if (landed.exitCode != 0) {
       return TurnResult(
         outcome: TurnOutcome.refused,
@@ -402,9 +413,12 @@ final class Session implements SessionFace {
   // ── the one way anything is written ──────────────────────────────────────
 
   /// Every deposit goes through here: run the entity's own function, and read
-  /// what it landed. The commit is on stdout, the sentence beside it on stderr,
-  /// and any non-zero exit is a refusal **in the floor's own words** — never
-  /// paraphrased, and never turned into an error of ours.
+  /// what it landed. The commit is on stdout, the sentence beside it on stderr.
+  /// A non-zero exit is **in the floor's own words** — never paraphrased —
+  /// and it is one of two distinct things: a stumble, thrown as
+  /// [PrimitiveContested] so a caller can tell it apart from a real failure
+  /// and retry; or anything else, a verdict or an error of ours, thrown as
+  /// [PrimitiveFailure].
   Future<Deposited> _deposit(
     Coordinate coord,
     String function,
@@ -413,6 +427,9 @@ final class Session implements SessionFace {
   }) async {
     final outcome =
         await primitive.run(coord, function, arguments, vantage: vantage);
+    if (outcome.exitCode == contestedCode) {
+      throw PrimitiveContested(function, outcome.stderr.trim());
+    }
     if (outcome.exitCode != 0) {
       throw PrimitiveFailure(function, outcome.stderr.trim(),
           exitCode: outcome.exitCode);

@@ -23,8 +23,16 @@ enum TurnOutcome {
   /// act already committed is not undone by looking away.
   cancelled,
 
-  /// The act itself was refused, and nothing was deposited.
+  /// The act itself was refused, and nothing was deposited. A verdict: the
+  /// same act will be refused again.
   refused,
+
+  /// The ref moved under the act before it could land, and nothing was
+  /// deposited. Not a verdict: nobody decided anything, and a caller that
+  /// reads the tip again and says it again terminates. Never folded into
+  /// [refused] — a face that cannot tell the two apart cannot answer either
+  /// one correctly.
+  contested,
 }
 
 final class TurnResult {
@@ -47,10 +55,12 @@ final class TurnResult {
   final Sha? from;
   final Sha? to;
 
-  /// Why the act was refused, **in the floor's own words**. A refusal is a value
-  /// and not a fault: the check that turned it down is part of how the entity
-  /// works, and a face that paraphrased it would be answering for a layer it
-  /// does not own. Null unless [outcome] is [TurnOutcome.refused].
+  /// Why the act did not land, **in the floor's own words** — a refusal's
+  /// reason or a stumble's report, whichever the floor gave. Both are values
+  /// and not faults: what stands behind them is part of how the entity works,
+  /// and a face that paraphrased either would be answering for a layer it
+  /// does not own. Null unless [outcome] is [TurnOutcome.refused] or
+  /// [TurnOutcome.contested].
   final String? refusal;
 }
 
@@ -62,8 +72,8 @@ final class TurnResult {
 /// happens and nothing above it moves.
 abstract interface class Rest {
   /// Returns [TurnOutcome.rested], [TurnOutcome.timedOut] or
-  /// [TurnOutcome.cancelled]; never [TurnOutcome.refused], which is the act's
-  /// word and not the wait's.
+  /// [TurnOutcome.cancelled]; never [TurnOutcome.refused] or
+  /// [TurnOutcome.contested], which are the act's words and not the wait's.
   Future<TurnOutcome> awaitRest(
     Coordinate coord, {
     required Duration limit,

@@ -320,9 +320,15 @@ int _reportTurn(TurnResult turn, int seconds) {
       stderr.writeln('-- stopped looking; the turn is still running');
       return 1;
     case TurnOutcome.refused:
-      // The floor's own words, and the floor's own grade.
+      // The floor's own words, and the floor's own grade. A verdict: saying
+      // it again will not help.
       stderr.writeln('llm session: refused — ${turn.refusal}');
       return refusedCode;
+    case TurnOutcome.contested:
+      // The floor's own words, and the floor's own grade. Not a verdict: the
+      // ref moved, and reading the tip again and saying it again terminates.
+      stderr.writeln('llm session: contested — ${turn.refusal}');
+      return contestedCode;
   }
 }
 

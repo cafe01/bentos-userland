@@ -11,8 +11,11 @@ import 'dart:io';
 import 'coordinate.dart';
 import 'primitive.dart';
 
-/// The primitive's own grade for a refusal. Named because it is the floor's and
-/// not ours — and because it is *not* the only non-zero a body answers with.
+/// The primitive's own grade for a **verdict**: a gate said no, and the same
+/// act will be barred again. Named because it is the floor's and not ours —
+/// re-exported here because the CLI layer already reaches for it by this
+/// name; [contestedCode] lives in `primitive.dart`, which this face's own
+/// callers reach instead.
 const int refusedCode = 3;
 
 final class EntityPrimitive implements Primitive {
@@ -141,10 +144,11 @@ final class EntityPrimitive implements Primitive {
     List<String> arguments, {
     Vantage vantage = const Vantage.here(),
   }) async {
-    // Every exit code comes back as a value. A body refuses with its own grade
-    // — 3 when the entity refused, 4 when the body refused first — and the
-    // caller reads the floor's own words off stderr. Only a process that could
-    // not run at all is a failure of ours.
+    // Every exit code comes back as a value, unread here: 3 [refusedCode] is
+    // a verdict and 4 [contestedCode] is a stumble, and telling them apart is
+    // the caller's job, not this floor's. The caller reads the floor's own
+    // words off stderr. Only a process that could not run at all is a
+    // failure of ours.
     final result = await _entity(
       ['run', _spell(coord), function, if (arguments.isNotEmpty) ...['--', ...arguments]],
       vantage,
