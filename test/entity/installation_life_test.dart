@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:bentos_userland/entity.dart';
@@ -18,6 +19,7 @@ import 'package:bentos_userland/src/git/process_git.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
+import '../git/fake_git.dart' show NetworkRecordingGit;
 import 'helpers.dart';
 
 /// **The installation's life after its constructor** — `refit` and `upgrade`,
@@ -227,6 +229,46 @@ void main() {
         expect(tables.all.map((r) => r.id), [byHand.id]);
       });
     });
+
+    test('the rewrite is atomic against a real reader process — never a torn '
+        'set of lines', () async {
+      const sizeA = 40, sizeB = 25;
+      final setA = [
+        for (var i = 0; i < sizeA; i++) declaring('prompt.landed', command: 'a$i'),
+      ];
+      final setB = [
+        for (var i = 0; i < sizeB; i++) declaring('prompt.landed', command: 'b$i'),
+      ];
+      site.run(() => tables.replaceProvenance(Provenance.manifest, declared: setA));
+
+      final reader = await Process.start(
+        Platform.resolvedExecutable,
+        [
+          'run',
+          'test/entity/tools/arming_table_reader.dart',
+          gitDirOf(llm),
+          '$sizeA',
+          '$sizeB',
+          '3000',
+        ],
+        workingDirectory: Directory.current.path,
+      );
+      final readerErr = StringBuffer();
+      reader.stderr.transform(utf8.decoder).listen(readerErr.write);
+
+      final deadline = DateTime.now().add(const Duration(seconds: 3));
+      var flip = false;
+      while (DateTime.now().isBefore(deadline)) {
+        site.run(() => tables.replaceProvenance(
+              Provenance.manifest,
+              declared: flip ? setA : setB,
+            ));
+        flip = !flip;
+      }
+
+      final code = await reader.exitCode;
+      expect(code, 0, reason: readerErr.toString());
+    }, timeout: const Timeout(Duration(minutes: 1)));
   });
 
   group('refit — the apparatus half', () {
@@ -321,6 +363,24 @@ void main() {
         expect(llm.remotes, isEmpty);
         expect(llm.refit(), isA<RefitReport>());
       });
+    });
+
+    test('it reaches the network never — the strong witness, not the argued '
+        'one', () {
+      // A synchronous member cannot itself await a network verb, so the claim
+      // has always held by shape. This is the resolution the shape argument
+      // was standing in for: a Git that records every reach, standing behind
+      // the verb, asserting the record stays empty.
+      final recorder = NetworkRecordingGit();
+      final watchedSite = Site('llm-recorder', recorder);
+      addTearDown(watchedSite.dispose);
+      watchedSite.run(() {
+        final watchedLlm = Entity('bentos.llm', from: watchedSite.root.path)
+            .create();
+        watchedLlm.refit();
+      });
+
+      expect(recorder.networkCalls, isEmpty);
     });
 
     test('twice in succession leaves the installation byte-identical to once', () {

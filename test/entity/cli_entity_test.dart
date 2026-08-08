@@ -681,17 +681,26 @@ void main() {
       });
 
       test('a contested swap is exit 4, and it is not exit 3', () async {
-        // Owed rather than written weakly. The condition is a ref moving
-        // between the read and the swap, which needs a seam inside the port —
-        // and `Cli` types its port as `FakeGit` rather than `Git`, so the
-        // watcher the library-level suite uses cannot be installed behind it.
-        // Widening that one word lives in `cli_harness.dart`, which is not this
-        // slice's territory. Exit 4 is therefore witnessed in Dart and not yet
-        // at the boundary, which is precisely where the vocabulary matters
-        // most: `chat/seams.dart` and `llm/session/entity_primitive.dart` both
-        // read exit 3 today with no branch for 4.
-      }, skip: 'needs Cli to accept a Git rather than a FakeGit — a fixture '
-          'widening in shared territory, named rather than worked around');
+        final at = await installed();
+        publish(at.origin, at.name, 'name: t.thing\n# theirs\n');
+
+        // The lost swap, made genuine rather than simulated: a concurrent
+        // actor lands its own write at the one seam where it really could —
+        // after the fetch has returned, before this run's swap.
+        final watched = WatchedGit(site.git);
+        watched.afterFetch = () => _declare(site, at.name, 'name: t.thing\n'
+            '# a concurrent actor, between the read and the swap\n');
+        final watchedCli = Cli(site, git: watched);
+
+        final r = await watchedCli.run(['upgrade', at.name]);
+
+        onTheSurface(r);
+        expect(r.code, EntityRunner.contestedCode);
+        expect(r.code, isNot(EntityRunner.divergedCode),
+            reason: 'a script may retry a contest and must not retry a '
+                'divergence forever');
+        expect(r.err, contains('contested'));
+      });
     });
   });
 }

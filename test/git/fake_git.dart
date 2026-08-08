@@ -26,7 +26,7 @@ import 'package:path/path.dart' as p;
 /// against unimplemented bodies, and the day construction fills them in, the
 /// suite must go green without one assertion being touched. That only works if
 /// the collaborator was real all along.
-final class FakeGit implements Git {
+class FakeGit implements Git {
   /// Every repository this fake holds, by directory. One instance stands in for
   /// a whole machine, which is what lets [clone], [push] and [fetch] be modelled
   /// at all.
@@ -474,6 +474,33 @@ final class FakeGit implements Git {
         instant: obj.instant,
         message: obj.message,
       );
+}
+
+/// A [FakeGit] that records every reach across the network — the strong
+/// witness for a negative claim like *refit reaches no network*, standing
+/// behind the verb under test rather than arguing the claim from the
+/// signature. Empty after the call is the whole of the gate.
+final class NetworkRecordingGit extends FakeGit {
+  final List<String> networkCalls = [];
+
+  @override
+  Future<void> clone(String source, String gitDir, {bool bare = true}) {
+    networkCalls.add('clone $source -> $gitDir');
+    return super.clone(source, gitDir, bare: bare);
+  }
+
+  @override
+  Future<void> push(String gitDir, {required String remote, String? ref}) {
+    networkCalls.add('push $gitDir -> $remote');
+    return super.push(gitDir, remote: remote, ref: ref);
+  }
+
+  @override
+  Future<Commit?> fetch(String gitDir,
+      {required String remote, required String ref}) {
+    networkCalls.add('fetch $gitDir <- $remote $ref');
+    return super.fetch(gitDir, remote: remote, ref: ref);
+  }
 }
 
 final class Repo {
