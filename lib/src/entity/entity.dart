@@ -679,3 +679,12 @@ final class EntityAlreadyInstalled implements Exception {
 /// one named function, one line of the barrel file hiding it, and a reader who
 /// can see the whole boundary at once.
 String gitDirOf(Entity entity) => entity._gitDir;
+
+/// The place that answered for this installation — the other half of the walk,
+/// under the same seam and for the same reason.
+///
+/// `upgrade` re-pins the gitlink, and the gitlink lives in the place's own tree:
+/// the pin's owner is the place that resolved the name, which only the walk
+/// knows and which a caller re-deriving it from the repository's path would be
+/// decoding a plot's layout to guess.
+String placeOf(Entity entity) => entity._installation.place;

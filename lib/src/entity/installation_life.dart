@@ -1,8 +1,11 @@
 import 'package:path/path.dart' as p;
 
+import '../place/place.dart';
 import 'arming/arming.dart';
+import 'arming/arming_provenance.dart';
 import 'entity.dart';
 import 'event.dart';
+import 'manifest.dart';
 import '../git/git_ambient.dart';
 import '../git/model/commit.dart';
 
@@ -115,8 +118,121 @@ extension InstallationUpgrade on Entity {
   /// [GenesisContested] where the ref moved between read and swap, and
   /// [GenesisDiverged] where the fetched line is not a descendant of the one
   /// held.
-  Future<UpgradeReport> upgrade({bool dryRun = false}) {
-    throw UnimplementedError('Entity.upgrade');
+  Future<UpgradeReport> upgrade({bool dryRun = false}) async {
+    // 1 — the installation, and the genesis it holds. Read as a nullable: the
+    // `genesis` getter throws where this verb contemplates none.
+    final gitDir = gitDirOf(this);
+    final placeRoot = placeOf(this);
+    final held = ambientGit.revParse(gitDir, Entity.genesisRef);
+
+    final declared = ambientGit.remotes(gitDir);
+    if (declared.isEmpty) throw NoRemoteDeclared(name);
+    final remote = declared
+        .firstWhere((r) => r.name == 'origin', orElse: () => declared.first);
+
+    // 2 — the class line, objects only. The installation's origin is
+    // refspec-free by construction, which is what makes this write no ref.
+    final arrived = await ambientGit.fetch(
+      gitDir,
+      remote: remote.name,
+      ref: Entity.genesisRef,
+    );
+    if (arrived == null) {
+      throw GenesisNotAtRemote(name, remote: remote.name);
+    }
+
+    final tables = ArmingTables(gitDir, entity: name);
+    List<Registration> standingManifestLines() =>
+        [for (final r in tables.all) if (r.provenance == Provenance.manifest) r];
+
+    // 3 — a line that did not move is not swapped onto itself: the act is a
+    // refit and reports itself as one.
+    if (arrived == held) {
+      return UpgradeReport(
+        from: held,
+        to: arrived,
+        armed: standingManifestLines(),
+        refit: dryRun ? null : refit(),
+        dryRun: dryRun,
+      );
+    }
+
+    // 4 — two lines from a common ancestor. Nothing was refused and nothing
+    // moved; only a decision ends it.
+    if (held != null &&
+        !ambientGit.isAncestor(gitDir, ancestor: held, descendant: arrived)) {
+      throw GenesisDiverged(local: held, remote: arrived);
+    }
+
+    if (dryRun) {
+      return UpgradeReport(
+        from: held,
+        to: arrived,
+        armed: standingManifestLines(),
+        refit: null,
+        dryRun: true,
+      );
+    }
+
+    // 5 — the swap, against the value read at step 1.
+    final swap = ambientGit.updateRef(
+      gitDir,
+      ref: Entity.genesisRef,
+      newCommit: arrived,
+      expected: held,
+    );
+    if (!swap.moved) {
+      throw GenesisContested(
+        expected: held,
+        found: ambientGit.revParse(gitDir, Entity.genesisRef),
+      );
+    }
+
+    // 6 — the pin and the ref are one act. A genesis that moved while the pin
+    // did not means the place's tree lies about what stands in it, so the swap
+    // is rolled back to the value read and the failure travels.
+    final List<Registration> armed;
+    try {
+      Place(placeRoot).pin(name, arrived.sha);
+      // An entity that declares nothing declares no reactions, and a line that
+      // carries no manifest at all is the ordinary condition of one authored
+      // and never written into — not a fault to roll a good upgrade back on.
+      Manifest? carried;
+      try {
+        carried = manifest;
+      } on Object {
+        carried = null;
+      }
+      armed = tables.replaceProvenance(
+        Provenance.manifest,
+        declared: carried == null
+            ? const []
+            : declaredArmings(carried, entity: name, placeRoot: placeRoot),
+      );
+    } on Object {
+      // Where this installation held no genesis there is nothing to roll back
+      // *to*: undoing the swap would be deleting the ref, and the port offers
+      // no verb for it. The window is real and it is the first installation's
+      // only, which is why it is named here rather than hidden.
+      if (held != null) {
+        ambientGit.updateRef(
+          gitDir,
+          ref: Entity.genesisRef,
+          newCommit: held,
+          expected: arrived,
+        );
+      }
+      rethrow;
+    }
+
+    // 7 — the apparatus, after the content it is derived from.
+    return UpgradeReport(
+      from: held,
+      to: arrived,
+      armed: armed,
+      refit: refit(),
+      dryRun: false,
+    );
   }
 }
 

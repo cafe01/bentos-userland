@@ -13,6 +13,7 @@ library;
 import 'dart:io';
 
 import '../event.dart';
+import '../manifest.dart';
 import 'arming.dart';
 
 /// One line a caller asks to be armed, before an id exists for it.
@@ -32,6 +33,54 @@ final class Arming {
   final EventPattern pattern;
   final List<String> command;
   final bool once;
+}
+
+/// What a manifest declares, read as arming requests — the reading `install`
+/// performs once and `upgrade` performs again over a manifest that moved.
+///
+/// A pure function of the manifest, and it lives here because both callers need
+/// it and neither owns it: the lines it yields are what
+/// [ArmingProvenance.replaceProvenance] is given, so the derivation and the
+/// write belong to one component.
+///
+/// A row that is not a legible event pattern is **complained about, never
+/// dropped in silence**, and never a reason to refuse the whole reading.
+List<Arming> declaredArmings(
+  Manifest declared, {
+  required String entity,
+  required String placeRoot,
+  void Function(String complaint)? warn,
+}) {
+  final armings = <Arming>[];
+  for (final entry in declared.reactions.entries) {
+    final function = entry.key;
+    if (declared.functions[function] == null) {
+      warn?.call(
+        "$entity: '$function' declares reactions and no executable — "
+        'nothing was armed for it',
+      );
+      continue;
+    }
+    for (final text in entry.value) {
+      final EventPattern pattern;
+      try {
+        pattern = EventPattern.parse(text.trim());
+      } on FormatException catch (e) {
+        warn?.call("$entity: '$function' declares on: $text — ${e.message}");
+        continue;
+      }
+      armings.add(Arming(
+        instance: '*',
+        pattern: pattern,
+        // Resolved by the substrate's PATH when the line fires. The vantage is
+        // written out because a hook fires from a working directory nobody
+        // chose, and a bare name would resolve up from wherever that happens
+        // to be.
+        command: ['entity', '-C', placeRoot, 'run', entity, function],
+      ));
+    }
+  }
+  return armings;
 }
 
 extension ArmingProvenance on ArmingTables {
