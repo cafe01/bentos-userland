@@ -78,6 +78,14 @@ final class Site {
         .resolveSymbolicLinksSync());
     Directory('${root.path}/.place').createSync(recursive: true);
     File('${root.path}/.place/place.yaml').writeAsStringSync('name: $label\n');
+    // The site lies inside a repository, because a place does: the pin is a
+    // gitlink in the superproject's index, so `Place._writePin` asks the port
+    // which working tree answers for this directory and returns early when the
+    // answer is none. A site that never declared itself left the fixture with
+    // no pin anywhere — the absent dimension, wearing an implementation
+    // failure's clothes, since every assert about pinning was reading an empty
+    // string that no implementation could have filled.
+    this.git.workTrees.add(root.path);
   }
 
   late final Directory root;

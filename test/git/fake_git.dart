@@ -37,8 +37,31 @@ final class FakeGit implements Git {
   final Map<String, String> _shaByContent = {};
   int _counter = 0;
 
-  Repo _repo(String gitDir) =>
-      repos[gitDir] ?? (throw StateError('no repository at $gitDir'));
+  /// The repository at [gitDir], refusing one whose directory is gone.
+  ///
+  /// A repository is a **directory**, and this register is not it. Keyed by
+  /// path and never pruned, the map outlived the disk: a clone taken from a
+  /// staging directory that was then deleted went on answering out of memory,
+  /// so a fetch from a corpse returned the sha it held at clone time instead of
+  /// failing the way real Git does (exit 128). The stale answer is the
+  /// dangerous shape — it is not a missing gate, it is a green gate over a
+  /// repository that does not exist.
+  ///
+  /// The check is conditional on purpose: a repository registered at a path
+  /// that never was a directory is a *fiction*, and this fake is deliberately
+  /// drivable with fictional paths (`/e.git`) where nothing about the disk is
+  /// under test. What must not survive is a repository that stood on the disk
+  /// and no longer does — so [Repo.onDisk] records what the disk said at
+  /// registration, and only that repository is asked about again.
+  Repo _repo(String gitDir) {
+    final repo = repos[gitDir];
+    if (repo == null) throw StateError('no repository at $gitDir');
+    if (repo.onDisk && !Directory(gitDir).existsSync()) {
+      throw StateError('repository is gone from disk: $gitDir — '
+          'this register outlived the directory, and real Git would refuse');
+    }
+    return repo;
+  }
 
   /// A deterministic object name: the same content always yields the same sha,
   /// and different content never collides. Deterministic on purpose — a race
@@ -50,7 +73,21 @@ final class FakeGit implements Git {
 
   @override
   void init(String gitDir, {bool bare = true}) {
-    repos[gitDir] = Repo(bare: bare);
+    repos[gitDir] = Repo(bare: bare, onDisk: _lay(gitDir));
+  }
+
+  /// Lays the repository's directory down, as `git init` and `git clone` both
+  /// do, and answers whether the disk accepted it. A fictional path the machine
+  /// refuses (`/e.git`) is not an error here — it is a test driving this fake
+  /// with names rather than places, and such a repository is simply never asked
+  /// about the disk again.
+  bool _lay(String gitDir) {
+    try {
+      Directory(gitDir).createSync(recursive: true);
+      return true;
+    } on FileSystemException {
+      return false;
+    }
   }
 
   @override
@@ -379,7 +416,7 @@ final class FakeGit implements Git {
   @override
   Future<void> clone(String source, String gitDir, {bool bare = true}) async {
     final from = _repo(source);
-    repos[gitDir] = Repo(bare: bare)
+    repos[gitDir] = Repo(bare: bare, onDisk: _lay(gitDir))
       ..refs.addAll(from.refs)
       ..commits.addAll(from.commits)
       ..trees.addAll(from.trees)
@@ -426,9 +463,14 @@ final class FakeGit implements Git {
 }
 
 final class Repo {
-  Repo({required this.bare});
+  Repo({required this.bare, this.onDisk = false});
 
   final bool bare;
+
+  /// Whether this repository's directory was actually laid down on the machine.
+  /// A repository that stood on the disk and is later deleted must stop
+  /// answering; one that never was a directory is a fiction and keeps answering.
+  final bool onDisk;
   final Map<String, String> refs = {};
   final Map<String, CommitObj> commits = {};
   final Map<String, Map<String, String>> trees = {};

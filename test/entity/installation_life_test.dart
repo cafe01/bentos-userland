@@ -407,6 +407,15 @@ void main() {
     });
     tearDown(() => site.dispose());
 
+    /// Counts the commits this fixture has minted, so that no two of them are
+    /// the same object. A commit's name is a function of its content — tree,
+    /// parents, message, author — and two calls that agreed on all four minted
+    /// **one** sha, so a divergence written as *they published, we authored*
+    /// produced a single commit with nothing to diverge from. The counter is
+    /// the divergence: two children of one parent are two commits only where
+    /// they say different things.
+    var minted = 0;
+
     /// Extends a repository's class line by one commit — the shape of somebody
     /// having published upstream. [manifest], where given, is the entity.yaml
     /// the new genesis carries, which is what step 6 re-reads.
@@ -422,7 +431,7 @@ void main() {
           gitDir,
           tree: tree,
           parents: [if (held != null) held.sha],
-          message: 'a version published upstream\n',
+          message: 'a version published upstream (${++minted})\n',
         );
         site.git.updateRef(
           gitDir,
@@ -441,7 +450,14 @@ void main() {
             branch: site.git.revParse(gitDir, 'refs/heads/$branch')?.sha,
         };
 
-    String? pin() => Place(downstream.path).lookup(here.name)?.sha;
+    /// Read through the site's own port. A pin is a gitlink in the
+    /// superproject's index, so `Place` asks the *ambient* substrate for it —
+    /// and every assertion here calls this from outside the zone, where the
+    /// ambient substrate is real Git and the temp directory it is handed lies
+    /// in no repository at all. `_readPin` answers `''` for that, so the reads
+    /// were not weak evidence about the pin; they were a different machine's
+    /// answer about a directory it had never heard of.
+    String? pin() => site.run(() => Place(downstream.path).lookup(here.name)?.sha);
 
     File shimOf() => File(p.join(hereGitDir, ArmingTables.hookPath));
 
@@ -559,14 +575,24 @@ void main() {
       late Commit stolen;
       port.afterFetch = () => stolen = advance(hereGitDir);
 
-      await expectLater(
-        run(() => here.upgrade()),
-        throwsA(
-          isA<GenesisContested>()
-              .having((e) => e.expected, 'expected', read)
-              .having((e) => e.found, 'found', stolen),
-        ),
-      );
+      // Caught rather than matched, because a matcher evaluates its arguments
+      // at CONSTRUCTION — before the future has run, and therefore before the
+      // concurrent actor exists. `having(..., stolen)` read the late local at
+      // the instant the expectation was built and died of
+      // LateInitializationError over a refusal the verb raised exactly right.
+      // The value the claim is about is only knowable afterwards, so the
+      // assertion has to be made afterwards.
+      Object? raised;
+      try {
+        await run(() => here.upgrade());
+      } catch (error) {
+        raised = error;
+      }
+
+      expect(raised, isA<GenesisContested>());
+      final refusal = raised as GenesisContested;
+      expect(refusal.expected, read);
+      expect(refusal.found, stolen);
 
       expect(
         site.git.revParse(hereGitDir, Entity.genesisRef),
