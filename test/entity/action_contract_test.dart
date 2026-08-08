@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:bentos_userland/entity.dart';
+import 'package:bentos_userland/src/entity/entity.dart' show gitDirOf;
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -320,6 +321,49 @@ void main() {
         llm.instance('s3').create();
         expect(llm.instance('s3').log, isEmpty);
       });
+    });
+
+    test(
+        'a genesis advanced more than once leaves none of its own commits in '
+        'the log — excluding only the tip would leak the rest', () async {
+      // Genesis re-authored twice *before* the instance forks from it: every
+      // one of those commits is an ancestor of the instance, and only the
+      // present tip is the single sha "exclude the tip" would catch.
+      final gitDir = gitDirOf(llm);
+      Commit advanceGenesis() {
+        final held = site.git.revParse(gitDir, Entity.genesisRef);
+        final work = Directory.systemTemp.createTempSync('entity_genesis-');
+        try {
+          final tree = site.git.writeTree(gitDir, workTree: work.path);
+          final sha = site.git.commitTree(
+            gitDir,
+            tree: tree,
+            parents: [if (held != null) held.sha],
+            message: 'a version published upstream\n',
+          );
+          site.git.updateRef(
+            gitDir,
+            ref: Entity.genesisRef,
+            newCommit: Commit(sha),
+            expected: held,
+          );
+          return Commit(sha);
+        } finally {
+          work.deleteSync(recursive: true);
+        }
+      }
+
+      site.run(advanceGenesis);
+      site.run(advanceGenesis);
+      site.run(() => llm.instance('s4').create());
+
+      await writeAct(site.run(() => llm.instance('s4')), 'prompt', 'hello');
+
+      final log = site.run(() => llm.instance('s4').log);
+      expect(log, hasLength(1), reason: 'genesis was advanced twice after '
+          'the fork point; excluding only its present tip would leave the '
+          'earlier authoring commit standing in as if it were an act');
+      expect(log.single.name, equals('prompt'));
     });
   });
 

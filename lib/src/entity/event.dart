@@ -78,6 +78,34 @@ final class Event {
   String toString() => '$noun.${phase.suffix}@${commit.short}';
 }
 
+/// The environment names the shim exports the occurrence under, and the same
+/// ones `run` lays for a body. One vocabulary, so that a function woken by a
+/// reaction and a function called by hand read their context identically.
+/// **Two registers.** The address is always laid — a function called by hand
+/// through `run` gets it and nothing more, and that absence is its answer to
+/// *why am I running*: nobody woke me. The occurrence is laid only by dispatch,
+/// on a body a subscription woke, so nothing has to go find out where it is or
+/// why it is up.
+abstract final class OccurrenceEnvironment {
+  static const String entity = 'BENTOS_ENTITY';
+  static const String instance = 'BENTOS_INSTANCE';
+  static const String coordinate = 'BENTOS_COORD';
+  static const String place = 'BENTOS_PLACE';
+
+  static const String event = 'BENTOS_EVENT';
+  static const String phase = 'BENTOS_PHASE';
+  static const String noun = 'BENTOS_NOUN';
+
+  /// The act's commit — the value the ref takes.
+  static const String sha = 'BENTOS_SHA';
+
+  /// The value the ref held before it — **the parent**. A gate at `.attempted`
+  /// judges the act where it stands, and where it stands is here: at that phase
+  /// the ref has not moved, so folding at the tip would be leaning on the
+  /// substrate's transaction timing to be right.
+  static const String old = 'BENTOS_OLD';
+}
+
 /// A subscription's selector — an action name (globs allowed) and a phase, as
 /// `prompt.landed`, `*.attempted`, `tool-*.refused`.
 ///

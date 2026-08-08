@@ -66,11 +66,18 @@ final class Instance {
     final at = ambientGit.revParse(gitDir, ref);
     if (at == null) return const [];
     // The walk stops at genesis: the structure an instance was born from is not
-    // one of its acts, which is why birthing leaves no action behind.
-    final origin = ambientGit.revParse(gitDir, Entity.genesisRef)?.sha;
+    // one of its acts, which is why birthing leaves no action behind. Genesis
+    // may itself have been advanced more than once — an entity re-authored
+    // after instances already forked from it — so what is excluded is every
+    // commit reachable from genesis's own tip, never only the single sha it
+    // presently names.
+    final origin = {
+      for (final record in ambientGit.log(gitDir, ref: Entity.genesisRef))
+        record.sha,
+    };
     return [
       for (final record in ambientGit.log(gitDir, ref: ref))
-        if (record.sha != origin)
+        if (!origin.contains(record.sha))
           Action(gitDir: gitDir, ref: ref, commit: Commit(record.sha)),
     ];
   }

@@ -5,7 +5,6 @@ import '../git/git_ambient.dart';
 import '../git/model/commit.dart';
 import 'action.dart';
 import 'arming/arming.dart';
-import 'commands/coordinate.dart';
 import 'deliverer.dart';
 import 'entity.dart';
 import 'event.dart';

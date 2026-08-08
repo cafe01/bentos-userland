@@ -2,6 +2,7 @@ import 'package:args/command_runner.dart';
 
 import '../entity_runner.dart';
 import '../../git/model/commit.dart';
+import '../event.dart';
 import 'coordinate.dart';
 
 /// The base every `entity` verb stands on: the runner it writes through, and

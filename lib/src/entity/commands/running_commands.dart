@@ -4,6 +4,7 @@ import 'package:args/args.dart';
 import 'package:path/path.dart' as p;
 
 import '../entity_runner.dart';
+import '../event.dart';
 import '../manifest.dart';
 import 'coordinate.dart';
 import 'entity_command.dart';
