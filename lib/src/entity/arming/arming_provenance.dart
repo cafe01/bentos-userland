@@ -10,6 +10,8 @@
 /// caller's loop.
 library;
 
+import 'dart:io';
+
 import '../event.dart';
 import 'arming.dart';
 
@@ -52,6 +54,76 @@ extension ArmingProvenance on ArmingTables {
     Provenance provenance, {
     required Iterable<Arming> declared,
   }) {
-    throw UnimplementedError('ArmingTables.replaceProvenance');
+    final requests = declared.toList();
+    // Every command, before one byte is rewritten: a refusal that arrives after
+    // the first table has been written is a partial write with an exception on
+    // top, which is a weaker promise than the one this member makes.
+    for (final request in requests) {
+      ArmingTables.checkCommand(request.command);
+    }
+
+    // Read at the line and not at the registration: a table is a file people
+    // edit, so a comment or a line this reader cannot decode is somebody's and
+    // survives untouched, in place.
+    final kept = <EventPhase, List<String>>{};
+    final removed = <EventPhase, bool>{};
+    for (final phase in EventPhase.values) {
+      final table = tableFor(phase);
+      final List<String> lines =
+          table.existsSync() ? table.readAsLinesSync() : const [];
+      final surviving = [
+        for (final line in lines)
+          if (ArmingTables.decode(line, phase)?.provenance != provenance) line,
+      ];
+      kept[phase] = surviving;
+      removed[phase] = surviving.length != lines.length;
+    }
+
+    // Minted against what survives, so a line this rewrite is about to drop
+    // does not reserve its id against the line replacing it.
+    final taken = {
+      for (final phase in EventPhase.values)
+        for (final line in kept[phase]!) ?ArmingTables.decode(line, phase)?.id,
+    };
+    String mint() {
+      for (var n = 1;; n++) {
+        final candidate = 'r$n';
+        if (taken.add(candidate)) return candidate;
+      }
+    }
+
+    final minted = <Registration>[];
+    for (final request in requests) {
+      final armed = Registration(
+        id: mint(),
+        instance: request.instance,
+        pattern: request.pattern,
+        command: request.command,
+        once: request.once,
+        provenance: provenance,
+      );
+      minted.add(armed);
+      kept[request.pattern.phase]!.add(ArmingTables.encode(armed));
+    }
+
+    for (final phase in EventPhase.values) {
+      final wrote = minted.any((r) => r.pattern.phase == phase);
+      // A rewrite of nothing writes nothing: an empty table is a file that did
+      // not have to exist.
+      if (!wrote && !removed[phase]!) continue;
+      _rewrite(tableFor(phase), kept[phase]!);
+    }
+
+    return minted;
+  }
+
+  /// One table, replaced whole — written beside itself and renamed, so a reader
+  /// crossing the rewrite sees the old set of lines or the new one and never
+  /// neither.
+  void _rewrite(File table, List<String> lines) {
+    table.parent.createSync(recursive: true);
+    final staged = File('${table.path}.rewriting')
+      ..writeAsStringSync(lines.isEmpty ? '' : '${lines.join('\n')}\n');
+    staged.renameSync(table.path);
   }
 }

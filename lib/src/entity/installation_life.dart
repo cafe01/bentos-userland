@@ -1,5 +1,9 @@
+import 'package:path/path.dart' as p;
+
+import 'arming/arming.dart';
 import 'entity.dart';
 import 'event.dart';
+import '../git/git_ambient.dart';
 import '../git/model/commit.dart';
 
 /// The installation's life after its constructor — `refit` and `upgrade`.
@@ -78,7 +82,18 @@ extension InstallationLife on Entity {
   /// `WorktreeNotOurs` where the stage directory holds content this repository
   /// never registered — never discarding it.
   RefitReport refit() {
-    throw UnimplementedError('Entity.refit');
+    final gitDir = gitDirOf(this);
+    // Both halves are already idempotent and already the only authors of what
+    // they write, which is the whole reason this verb is composition and not
+    // machinery: arming rewrites the shim from the running coreutil without
+    // consulting what stood there, and the stage follows `genesis` — so a tree
+    // that fell behind and one that was never put down are the same question.
+    ArmingTables(gitDir, entity: name).ensureArmed();
+    stagedClass.refresh();
+    return RefitReport(
+      shim: p.join(gitDir, ArmingTables.hookPath),
+      stagedAt: ambientGit.revParse(gitDir, Entity.genesisRef),
+    );
   }
 }
 

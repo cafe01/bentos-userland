@@ -277,6 +277,14 @@ final class FakeGit implements Git {
         ..parent.createSync(recursive: true);
       file.writeAsBytesSync(_objects[entry.value]!);
     }
+    // The marker the substrate itself writes, and the reason possession is a
+    // question about the disk rather than about a register: `git worktree list`
+    // keeps listing a directory somebody deleted, and a directory recreated in
+    // its place carries no marker and belongs to nobody. Modelled here because
+    // a double whose register outlives the disk answers *the tree stands at the
+    // tip* about a tree that is not there — which is a green saying nothing
+    // about the machine. [writeTree] already skips `.git`, exactly as Git does.
+    File(p.join(path, '.git')).writeAsStringSync('gitdir: $gitDir\n');
     repo.worktrees[path] = at.sha;
   }
 
@@ -295,19 +303,23 @@ final class FakeGit implements Git {
 
   @override
   String? worktreeRepository(String path) {
-    for (final entry in repos.entries) {
-      if (entry.value.worktrees.containsKey(path)) return entry.key;
-    }
-    return null;
+    // Possession is two claims and the port makes both: the directory says
+    // which repository laid it down, and that repository's register agrees.
+    // Either alone is satisfied by a stranger's directory or by a stale entry.
+    final marker = File(p.join(path, '.git'));
+    if (!marker.existsSync()) return null;
+    final declared = marker.readAsStringSync().trim();
+    if (!declared.startsWith('gitdir: ')) return null;
+    final gitDir = declared.substring('gitdir: '.length);
+    return repos[gitDir]?.worktrees.containsKey(path) ?? false ? gitDir : null;
   }
 
   @override
   Commit? worktreeHead(String path) {
-    for (final repo in repos.values) {
-      final standing = repo.worktrees[path];
-      if (standing != null) return Commit(standing);
-    }
-    return null;
+    final gitDir = worktreeRepository(path);
+    if (gitDir == null) return null;
+    final standing = repos[gitDir]?.worktrees[path];
+    return standing == null ? null : Commit(standing);
   }
 
   // -------------------------------------------------------- the superproject
