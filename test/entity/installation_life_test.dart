@@ -286,16 +286,6 @@ void main() {
       });
     });
 
-    test('the class tree is re-staged at the genesis already held', () {
-      site.run(() {
-        final held = site.git.revParse(gitDir, Entity.genesisRef);
-        Directory(stagePath()).deleteSync(recursive: true);
-        final report = llm.refit();
-        expect(report.stagedAt, held);
-        expect(Directory(stagePath()).existsSync(), isTrue);
-      });
-    });
-
     test('it writes no ref', () {
       site.run(() {
         final before = headsOf();
@@ -359,17 +349,73 @@ void main() {
       });
     });
 
+  });
+
+  group('refit — the apparatus half, against real Git', () {
+    // Two claims [FakeGit] cannot honestly witness, both named in the fixture
+    // audit: a deleted directory, and a stranger's worktree. Both ask what the
+    // possession model is a register OR the disk — and a register-backed
+    // fake either has to be told by hand what the disk holds, or answers a
+    // question about its own bookkeeping rather than about Git. Real Git's
+    // `worktree list` and `rev-parse` are the only honest witness here.
+    const git = ProcessGit();
+    late Directory root;
+    late Entity llm;
+    late String gitDir;
+
+    setUp(() {
+      root = Directory(Directory.systemTemp
+          .createTempSync('entity_material_')
+          .resolveSymbolicLinksSync());
+      Directory(p.join(root.path, '.place')).createSync(recursive: true);
+      File(p.join(root.path, '.place', 'place.yaml'))
+          .writeAsStringSync('name: material\n');
+      runWithGit(git, () {
+        llm = Entity('bentos.llm', from: root.path).create();
+        gitDir = gitDirOf(llm);
+      });
+    });
+    tearDown(() => root.deleteSync(recursive: true));
+
+    String stagePath() => p.join(p.dirname(gitDir), Entity.classDirName);
+
+    test('the class tree is re-staged at the genesis already held', () {
+      runWithGit(git, () {
+        final held = git.revParse(gitDir, Entity.genesisRef);
+        Directory(stagePath()).deleteSync(recursive: true);
+        final report = llm.refit();
+        expect(report.stagedAt, held);
+        expect(Directory(stagePath()).existsSync(), isTrue);
+      });
+    });
+
     test('a stage directory this repository never registered is refused, '
         'never discarded', () {
-      site.run(() {
+      runWithGit(git, () {
         final stage = Directory(stagePath());
         if (stage.existsSync()) stage.deleteSync(recursive: true);
-        stage.createSync(recursive: true);
-        final stranger = File(p.join(stage.path, 'not-ours.txt'))
-          ..writeAsStringSync('somebody else stood here');
+
+        // The hard case the note demands: not a bare directory with a stray
+        // file, but a worktree **real Git itself made**, of a repository of
+        // its own — a `.git` file that resolves to an actual gitdir, real
+        // Git's own answer to "who does this belong to", and that answer is
+        // "not this repository". A register-backed fake would have to be told
+        // by hand that this is alien; real Git already knows, because its own
+        // worktree register was never told about this path at all.
+        final foreignGitDir = p.join(root.path, 'foreign.git');
+        git.init(foreignGitDir, bare: true);
+        final work = Directory.systemTemp.createTempSync('entity_foreign_wt-');
+        File(p.join(work.path, 'not-ours.txt'))
+            .writeAsStringSync('somebody else stood here');
+        final tree = git.writeTree(foreignGitDir, workTree: work.path);
+        final sha =
+            git.commitTree(foreignGitDir, tree: tree, parents: [], message: 'x\n');
+        work.deleteSync(recursive: true);
+        git.worktreeAdd(foreignGitDir, path: stage.path, at: Commit(sha));
+
         expect(() => llm.refit(), throwsA(isA<WorktreeNotOurs>()));
         expect(
-          stranger.existsSync(),
+          File(p.join(stage.path, 'not-ours.txt')).existsSync(),
           isTrue,
           reason: 'the one destructive primitive reachable refuses what is not '
               'in the repository\'s own worktree register',
