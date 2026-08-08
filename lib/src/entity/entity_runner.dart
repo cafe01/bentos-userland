@@ -14,6 +14,7 @@ import 'commands/plumbing_commands.dart';
 import 'commands/reacting_commands.dart';
 import 'commands/running_commands.dart';
 import 'entity.dart';
+import 'installation_life.dart';
 import 'instance.dart';
 
 /// The `entity` coreutil's command runner — the API on the PATH, and the
@@ -58,9 +59,12 @@ final class EntityRunner {
         err = err ?? io.stderr,
         _cwdOverride = currentDirectory,
         _envOverride = environment {
-    _runner = CommandRunner<void>(
+    _runner = _Surface(
       'entity',
       'The WHAT organ — say what a thing is, act on it, and arm what it publishes.',
+      // `this.out`: the bare name here is the constructor's own nullable
+      // parameter, and the field beside it is the resolved sink.
+      sink: this.out,
     )
       ..argParser.addOption(
         'place',
@@ -70,6 +74,8 @@ final class EntityRunner {
       )
       ..addCommand(CreateCommand(this))
       ..addCommand(InstallCommand(this))
+      ..addCommand(RefitCommand(this))
+      ..addCommand(UpgradeCommand(this))
       ..addCommand(WhichCommand(this))
       ..addCommand(InfoCommand(this))
       ..addCommand(PublishCommand(this))
@@ -117,7 +123,7 @@ final class EntityRunner {
   /// the whole answer.
   void writeThrough(List<int> bytes) => err.write(String.fromCharCodes(bytes));
 
-  late final CommandRunner<void> _runner;
+  late final _Surface _runner;
 
   /// The process's answer. **0 ok · 1 not found · 3 refused · 64 usage.**
   ///
@@ -231,6 +237,9 @@ final class EntityRunner {
   /// or an ssh shorthand exactly as written.
   String locate(String source) => locateSource(source, from: cwd);
 
+  /// The surface as a block of text, in the ontology's own order.
+  String get surface => _runner.usage;
+
   Future<void> run(List<String> args) async {
     try {
       await _runner.run(args);
@@ -252,6 +261,30 @@ final class EntityRunner {
       // *I did not touch it* — which a zero could never say.
       err.writeln('entity: barred — $e');
       exitCode = barredCode;
+    } on NoRemoteDeclared catch (e) {
+      // An absence and never a refusal: nothing was declined, and the thing
+      // named is simply not there. The message already names both roads out of
+      // the dead end — `publish` to give it an origin, `refit` for the local
+      // half — and it is printed here because a string that never leaves the
+      // library has not reached the person it was written for.
+      err.writeln('entity: $e');
+      exitCode = notFoundCode;
+    } on GenesisNotAtRemote catch (e) {
+      // The class-level twin of [InstanceNotAtRemote], and classified
+      // identically: the remote holds nothing under that name.
+      err.writeln('entity: $e');
+      exitCode = notFoundCode;
+    } on GenesisContested catch (e) {
+      // The ref moved under the act. Nobody decided anything, and a caller that
+      // re-reads and tries again terminates.
+      err.writeln('entity: contested — $e');
+      exitCode = contestedCode;
+    } on GenesisDiverged catch (e) {
+      // Two lines from a common ancestor. Nothing was refused and nothing will
+      // change by trying again, which is why it cannot share a number with a
+      // contest: a script may loop on that one and must not loop on this.
+      err.writeln('entity: diverged — $e');
+      exitCode = divergedCode;
     } on InstanceNotAtRemote catch (e) {
       // The remote holds nothing under that name. Not a refusal — the same
       // answer this coreutil gives for every other thing it could not find.
@@ -287,5 +320,112 @@ final class EntityRunner {
       if (failed == null) rethrow;
       exitCode = failed;
     }
+  }
+}
+
+/// The runner, with **the surface printed in the ontology's own order** rather
+/// than in the alphabet's.
+///
+/// `args` builds its command list with `names.toList()..sort()`, so the help
+/// screen has always presented the verbs sorted by first letter — an order
+/// nobody designed, in which `refit` and `upgrade` are three verbs apart and
+/// the families the ontology is actually made of do not appear at all. The
+/// verbs are the product's ontology, not this utility's alphabet, and a reader
+/// choosing between two verbs must not have to find the second one somewhere
+/// else in the list.
+///
+/// This overrides ordering and grouping, and **nothing else**: every verb's own
+/// `description` is printed verbatim, and a command that no family below claims
+/// still appears, under [_unclaimed] — a surface that silently dropped a
+/// registered verb would be a worse failure than the one being cured.
+final class _Surface extends CommandRunner<void> {
+  _Surface(super.executableName, super.description, {required this.sink});
+
+  /// Where usage is printed. The base class prints with `print`, which reaches
+  /// the process's own stdout and not the sink this coreutil was handed — so a
+  /// caller holding the streams would receive nothing at all.
+  final StringSink sink;
+
+  /// The families, in the order the surface is written, and the verbs inside
+  /// each in the order a reader meets them — never alphabetical.
+  static const Map<String, List<String>> _families = {
+    'the entity': [
+      'create',
+      'install',
+      'refit',
+      'upgrade',
+      'which',
+      'info',
+      'publish',
+      'remotes',
+    ],
+    'instances': ['new', 'ls', 'log', 'show', 'fetch'],
+    'acting': ['run', 'act', 'read', 'materialize', 'refresh'],
+    'subscribing': ['on', 'once', 'off', 'listeners'],
+    'plumbing': [
+      'resolve',
+      'tip',
+      'path',
+      'work',
+      'commit',
+      'release',
+    ],
+  };
+
+  /// Where a registered verb no family claims is printed. `help` lands here by
+  /// right — it is the utility's own and not one of the ontology's — and so
+  /// does anything registered later and not filed above, which is the point:
+  /// the failure this must never have is a verb that exists and is invisible.
+  static const String _unclaimed = 'the utility itself';
+
+  @override
+  void printUsage() => sink.writeln(usage);
+
+  @override
+  String get usage {
+    final buffer = StringBuffer()
+      ..writeln(description)
+      ..writeln()
+      ..writeln('Usage: $invocation')
+      ..writeln()
+      ..writeln('Global options:')
+      ..writeln(argParser.usage)
+      ..writeln();
+
+    final claimed = {for (final f in _families.values) ...f};
+    final leftovers = commands.keys
+        .where((name) => !claimed.contains(name))
+        .where((name) => !commands[name]!.aliases.contains(name))
+        .toList();
+
+    final groups = <String, List<String>>{
+      for (final entry in _families.entries)
+        entry.key: [
+          for (final verb in entry.value)
+            if (commands.containsKey(verb)) verb,
+        ],
+      if (leftovers.isNotEmpty) _unclaimed: leftovers,
+    };
+
+    final width = commands.keys
+        .map((name) => name.length)
+        .fold(0, (a, b) => a > b ? a : b);
+
+    for (final entry in groups.entries) {
+      if (entry.value.isEmpty) continue;
+      buffer.writeln(entry.key);
+      for (final verb in entry.value) {
+        buffer.writeln(
+          '  ${verb.padRight(width + 2)}${commands[verb]!.description}',
+        );
+      }
+      buffer.writeln();
+    }
+
+    buffer.write(
+      'Run "$executableName help <command>" for more information about a '
+      'command.',
+    );
+    return buffer.toString();
   }
 }

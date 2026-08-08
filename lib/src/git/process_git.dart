@@ -590,6 +590,11 @@ final class ProcessGit implements Git {
     _git(gitDir, ['remote', 'add', name, url]);
   }
 
+  @override
+  void setRemoteUrl(String gitDir, {required String name, required String url}) {
+    _git(gitDir, ['remote', 'set-url', name, url]);
+  }
+
   // --------------------------------------------------------------- the network
 
   @override

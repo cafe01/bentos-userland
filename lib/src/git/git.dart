@@ -270,6 +270,20 @@ abstract interface class Git {
   /// is said elsewhere, and this only records where bytes may travel.
   void addRemote(String gitDir, {required String name, required String url});
 
+  /// Repoints an **already declared** remote at [url] — `git remote set-url`.
+  ///
+  /// Not [addRemote] with a different argument, and the distinction is
+  /// load-bearing rather than stylistic: `git remote add` writes git's default
+  /// fetch refspec, `set-url` writes nothing but the URL. An installation's
+  /// origin is refspec-free by construction, and that premise is what makes a
+  /// named fetch fill `FETCH_HEAD` and write no ref at all. Reaching for
+  /// [addRemote] here — the obvious later simplification, since it would also
+  /// leave the URL right — silently acquires a refspec and takes the premise
+  /// with it.
+  ///
+  /// Throws where [name] is not declared. The caller knows whether it is.
+  void setRemoteUrl(String gitDir, {required String name, required String url});
+
   /// Copies a repository from [source] into [gitDir]. Crosses the network.
   Future<void> clone(String source, String gitDir, {bool bare = true});
 

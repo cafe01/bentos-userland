@@ -2,6 +2,7 @@ import 'package:path/path.dart' as p;
 
 import '../entity.dart';
 import '../entity_runner.dart';
+import '../installation_life.dart';
 import '../event.dart';
 import '../manifest.dart';
 import 'entity_command.dart';
@@ -60,6 +61,87 @@ final class InstallCommand extends EntityCommand {
       warn: (complaint) => cli.err.writeln('entity install: $complaint'),
     );
     cli.out.writeln(entity.name);
+  }
+}
+
+/// `entity refit <name>` — make an installation's **apparatus** current: the
+/// shim rewritten from the running coreutil, the class tree re-staged at the
+/// genesis already held.
+///
+/// **Local, and that word is the whole disambiguation from [UpgradeCommand]**,
+/// which is why it stands in the description where a reader choosing between
+/// the two already is. Nothing here reaches a remote, and none need be
+/// declared.
+///
+/// It takes no `--dry-run`. The flag is `upgrade`'s alone, and refusing it here
+/// as usage is the point: this verb moves nothing a reader would want to
+/// preview, and quietly accepting a flag it ignores would teach the opposite.
+final class RefitCommand extends EntityCommand {
+  RefitCommand(super.cli);
+
+  @override
+  String get name => 'refit';
+
+  @override
+  String get description =>
+      'Rewrite the shim and re-stage the class — local, no network.';
+
+  @override
+  Future<void> run() async {
+    final named = positional('name');
+    final report = cli.entityNamed(named, place: placeOption).refit();
+    cli.out.writeln('shim\t${report.shim}');
+    if (report.stagedAt != null) {
+      cli.out.writeln('staged\t${report.stagedAt!.short}');
+    }
+  }
+}
+
+/// `entity upgrade <name> [--dry-run]` — bring an installation's **content**
+/// forward from the remote it already declares, and then refit.
+///
+/// It takes no source. Pointing an installation at a different origin is a
+/// re-founding and wears `install`'s risk, not this verb's.
+///
+/// **Where the line did not move, it says so and names `refit`** — a reader who
+/// came here for the local half must leave knowing which verb does it without a
+/// network, rather than inferring that from a silent zero.
+final class UpgradeCommand extends EntityCommand {
+  UpgradeCommand(super.cli) {
+    argParser.addFlag(
+      'dry-run',
+      negatable: false,
+      help: 'Report what a real run would, and perform nothing.',
+    );
+  }
+
+  @override
+  String get name => 'upgrade';
+
+  @override
+  String get description =>
+      'Fetch the entity\'s line and advance it — then refit.';
+
+  @override
+  Future<void> run() async {
+    final named = positional('name');
+    final dryRun = argResults!['dry-run'] as bool;
+    final report =
+        await cli.entityNamed(named, place: placeOption).upgrade(dryRun: dryRun);
+
+    if (dryRun) cli.out.writeln('dry-run\tnothing was performed');
+    if (report.advanced) {
+      // The transition, both halves of it: a sha reached with no sha left is
+      // half a sentence, and a reader cannot tell it from a fresh install.
+      cli.out.writeln('genesis\t${report.from?.short ?? '-'}\t${report.to.short}');
+    } else {
+      cli.out.writeln(
+        'genesis\t${report.to.short}\tthe line did not move — '
+        'refit does the local half, without a network',
+      );
+    }
+    cli.out.writeln('armed\t${report.armed.length}');
+    if (report.refit != null) cli.out.writeln('shim\t${report.refit!.shim}');
   }
 }
 

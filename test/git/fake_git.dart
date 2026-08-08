@@ -414,6 +414,20 @@ final class FakeGit implements Git {
   }
 
   @override
+  void setRemoteUrl(String gitDir, {required String name, required String url}) {
+    final remotes = _repo(gitDir).remotes;
+    final at = remotes.indexWhere((r) => r.name == name);
+    if (at < 0) {
+      throw StateError(
+        'no remote named $name in $gitDir — real Git exits 2 here, and a '
+        'set-url that silently declared one would be addRemote wearing '
+        'another name',
+      );
+    }
+    remotes[at] = Remote(name: name, url: url);
+  }
+
+  @override
   Future<void> clone(String source, String gitDir, {bool bare = true}) async {
     final from = _repo(source);
     repos[gitDir] = Repo(bare: bare, onDisk: _lay(gitDir))

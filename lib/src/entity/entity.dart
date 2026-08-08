@@ -214,6 +214,15 @@ final class Entity {
         if (staging.existsSync()) staging.deleteSync(recursive: true);
       }
     }
+    // **Origin is `source`, said once rather than derived from two paths.** The
+    // `--as` path cloned from `source` directly and already agrees; the staged
+    // path cloned from a temp directory it then deleted, so without this line
+    // `remote.origin.url` names a corpse — `git fetch origin` exits 128, and so
+    // does every `publish` and every plain fetch a human runs from inside the
+    // installation. It went unnoticed for the whole of `install`'s life because
+    // nothing ever read back what the constructor wrote; `upgrade` is the first
+    // verb to read it. See [Git.setRemoteUrl] for why this is not `addRemote`.
+    ambientGit.setRemoteUrl(gitDir, name: 'origin', url: source);
     place.register(
       name,
       url: source,

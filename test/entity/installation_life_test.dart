@@ -785,6 +785,59 @@ void main() {
           reason: 'a remote added by the port carries git\'s default refspec, '
               'and the same fetch then updates refs/remotes/origin/*');
     });
+
+    test('a fresh installation can actually fetch from its own origin',
+        () async {
+      final source = foreignRepository(
+        git,
+        scratch.path,
+        dirName: 'source.git',
+        declaredName: 't.origin',
+      );
+      // No `--as`: the staged path, where the clone origin was the temp
+      // directory install then deleted. This is the whole of the defect.
+      final installed = await Entity.install(source, at: there.path);
+      final gitDir = repositoryOf(there.path, installed.name);
+
+      // **The material claim first.** What the config *says* is the weaker
+      // half, and asserting it first would mean the falsifier never reaches
+      // this line — a witness whose strongest assert is unreachable under the
+      // defect it was written for.
+      //
+      // The claim is not what the config says — it is that the substrate can
+      // use it. Before the cure this exited 128, and no assert of ours over a
+      // double could have said so: a dead path is damage, and damage is
+      // asserted against the substrate.
+      //
+      // A ref the source really holds — `refs/heads/main` is what
+      // [foreignRepository] writes, and genesis is minted locally by install
+      // rather than carried by the source. Asking for a ref that is not there
+      // exits 128 too, which is the corpse's own code: the witness would then
+      // be green on the wrong mechanism.
+      final fetched = Process.runSync(
+        'git',
+        ['--git-dir', gitDir, 'fetch', 'origin', 'refs/heads/main'],
+      );
+      expect(
+        fetched.exitCode,
+        0,
+        reason: 'git fetch origin succeeds: ${fetched.stderr}',
+      );
+
+      expect(
+        git.remotes(gitDir).single.url,
+        source,
+        reason: 'origin names the source and not the staging directory',
+      );
+
+      expect(
+        refspecOf(gitDir),
+        isNull,
+        reason: 'the cure is `remote set-url`, which writes the URL and '
+            'nothing else — `remote add` would have left a refspec here and '
+            'taken step 2\'s premise with it',
+      );
+    });
   });
 }
 
@@ -939,6 +992,11 @@ final class _WatchedGit implements Git {
   @override
   void addRemote(String gitDir, {required String name, required String url}) =>
       _inner.addRemote(gitDir, name: name, url: url);
+
+  @override
+  void setRemoteUrl(String gitDir,
+          {required String name, required String url}) =>
+      _inner.setRemoteUrl(gitDir, name: name, url: url);
 
   @override
   Future<void> clone(String source, String gitDir, {bool bare = true}) =>
