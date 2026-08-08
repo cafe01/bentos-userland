@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import '../place/place.dart';
 import 'arming/arming.dart';
+import 'arming/arming_provenance.dart';
 import 'dispatch.dart';
 import 'event.dart';
 import 'transaction.dart';
@@ -244,6 +245,29 @@ final class Entity {
     return installed;
   }
 
+  /// Arms every reaction the manifest declares, through the same rewrite
+  /// [upgrade] re-arms with — so there is one implementation of "arm from a
+  /// manifest" rather than two that must agree by coincidence.
+  void _armDeclared(Place place, {void Function(String complaint)? warn}) {
+    final Manifest declared;
+    try {
+      declared = manifest;
+    } on Object {
+      // No manifest at all is the ordinary condition of a freshly authored
+      // entity, and an entity that declares nothing declares no reactions.
+      return;
+    }
+    ArmingTables(_gitDir, entity: name).replaceProvenance(
+      Provenance.manifest,
+      declared: declaredArmings(
+        declared,
+        entity: name,
+        placeRoot: place.root.path,
+        warn: warn,
+      ),
+    );
+  }
+
   /// Refuses to install over an installation that already stands here.
   ///
   /// **Two states, and neither is ours to overwrite.** A registered name is an
@@ -269,70 +293,6 @@ final class Entity {
         place.root.path,
         unregistered: standing.path,
       );
-    }
-  }
-
-  /// Arms what the manifest declares: for every function that names both an
-  /// executable and the landings it reacts to, one line pointing at `entity
-  /// run`.
-  ///
-  /// **This is why the manifest has a function table at all.** A reaction
-  /// declared in band travels with the entity, so a site that installs it reacts
-  /// without anybody writing a line by hand — and the per-seat `arm` that each
-  /// face used to perform in its own code becomes a *reading*, performed once,
-  /// by the installer.
-  ///
-  /// Armed on `*`, and that is not a lost instance: at install time no instance
-  /// exists, and the one the event lands on reaches the woken command through
-  /// the environment the shim exports. A line that named an instance could only
-  /// ever have been armed after the fact, which is the debt this closes.
-  ///
-  /// It arms **this manifest only**. Composition is transitive and a fused body
-  /// would have to be walked to be armed, but `is:` has no emitter yet — a
-  /// traversal written against nothing is a shape nobody demonstrated.
-  ///
-  /// A row that is not a legible event pattern is **complained about, never
-  /// dropped in silence**: the entity is installed and everything legible is
-  /// armed, because one misspelled reaction is not a reason to refuse a
-  /// platform's ordinary act.
-  void _armDeclared(Place place, {void Function(String complaint)? warn}) {
-    final Manifest declared;
-    try {
-      declared = manifest;
-    } on Object {
-      // No manifest at all is the ordinary condition of a freshly authored
-      // entity, and an entity that declares nothing declares no reactions.
-      return;
-    }
-    final tables = ArmingTables(_gitDir, entity: name);
-    for (final entry in declared.reactions.entries) {
-      final function = entry.key;
-      if (declared.functions[function] == null) {
-        warn?.call(
-          "$name: '$function' declares reactions and no executable — "
-          'nothing was armed for it',
-        );
-        continue;
-      }
-      for (final text in entry.value) {
-        final EventPattern pattern;
-        try {
-          pattern = EventPattern.parse(text.trim());
-        } on FormatException catch (e) {
-          warn?.call("$name: '$function' declares on: $text — ${e.message}");
-          continue;
-        }
-        tables.add(
-          instance: '*',
-          pattern: pattern,
-          // Resolved by the substrate's PATH when the line fires, which is the
-          // same law a hand-armed bare name lives under. The vantage is written
-          // out because a hook fires from a working directory nobody chose, and
-          // a bare name would resolve up from wherever that happens to be.
-          command: ['entity', '-C', place.root.path, 'run', name, function],
-          provenance: Provenance.manifest,
-        );
-      }
     }
   }
 
