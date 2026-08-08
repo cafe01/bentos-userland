@@ -11,6 +11,7 @@ export 'src/entity/action.dart';
 export 'src/entity/entity.dart' hide gitDirOf;
 export 'src/entity/entity_runner.dart';
 export 'src/entity/event.dart';
+export 'src/entity/installation_life.dart';
 export 'src/git/git.dart';
 export 'src/git/git_ambient.dart';
 export 'src/entity/instance.dart';

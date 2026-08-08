@@ -1,6 +1,11 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:bentos_userland/entity.dart';
+// The plot's layout is the arming component's own and stays off the barrel, so
+// the one place that names the hook path reaches it where it lives.
+import 'package:bentos_userland/src/entity/arming/arming.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'cli_harness.dart';
@@ -498,6 +503,195 @@ void main() {
           expect(second.out, isEmpty);
         },
       );
+    });
+  });
+
+  group('entity refit and entity upgrade', () {
+    /// An installation in this place with an origin behind it, and a handle on
+    /// that origin so a test can publish into it. Both sites share one port,
+    /// the way two directories on one disk share a substrate.
+    Future<({Site origin, String name})> installed() async {
+      final origin = Site('origin', site.git);
+      addTearDown(origin.dispose);
+      await Cli(origin).run(['create', 't.thing']);
+      final r = await cli.run(['install', repositoryOf(origin.root.path, 't.thing')]);
+      expect(r.code, 0, reason: r.err);
+      return (origin: origin, name: 't.thing');
+    }
+
+    /// Every red in this group must name the piece it wants, and an exit code
+    /// compared against another number does not: `expected 1, actual 64` says
+    /// nothing about the verb that is missing. This is asserted first, so the
+    /// failure reads as *the surface does not carry this yet*.
+    void onTheSurface(Run r) => expect(
+          r.err,
+          isNot(contains('Could not find a command')),
+          reason: 'the verb is not registered on the coreutil yet',
+        );
+
+    /// Extends the origin's class line by one commit — somebody published.
+    void publish(Site origin, String name, String document) =>
+        _declare(origin, name, document);
+
+    group('the surface', () {
+      test('the two lines stand together, and refit says local, no network',
+          () async {
+        final usage = await cli.run([]);
+        final text = usage.out.isEmpty ? usage.err : usage.out;
+
+        expect(text, contains('refit'),
+            reason: 'the verb is not registered on the coreutil yet');
+        expect(text, contains('upgrade'));
+
+        final refitLine = LineSplitter.split(text)
+            .firstWhere((l) => l.trimLeft().startsWith('refit'),
+                orElse: () => '');
+        expect(
+          refitLine.toLowerCase(),
+          contains('no network'),
+          reason: 'that word is the whole disambiguation between the two '
+              'verbs, and it stands where the reader already is',
+        );
+
+        final lines = LineSplitter.split(text).toList();
+        int at(String verb) =>
+            lines.indexWhere((l) => l.trimLeft().startsWith(verb));
+        expect(
+          (at('upgrade') - at('refit')).abs(),
+          1,
+          reason: 'adjacent: a reader choosing between them must not have to '
+              'find the second one somewhere else in the list',
+        );
+      });
+
+      test('--dry-run is upgrade\'s alone', () async {
+        await installed();
+        final r = await cli.run(['refit', 't.thing', '--dry-run']);
+        onTheSurface(r);
+        expect(
+          r.code,
+          EntityRunner.usageCode,
+          reason: 'refit moves nothing a reader would want to preview, so the '
+              'flag is not quietly accepted and ignored',
+        );
+      });
+    });
+
+    group('refit at the boundary', () {
+      test('an installation refits, locally, and says where the shim went',
+          () async {
+        await installed();
+        final r = await cli.run(['refit', 't.thing']);
+        onTheSurface(r);
+        expect(r.code, 0, reason: r.err);
+        expect(r.out, contains(ArmingTables.hookPath.split('/').last));
+      });
+
+      test('a name that resolves to nothing is not found — exit 1', () async {
+        final r = await cli.run(['refit', 't.absent']);
+        onTheSurface(r);
+        expect(r.code, EntityRunner.notFoundCode);
+        expect(r.code, isNot(EntityRunner.barredCode),
+            reason: 'an absence must not wear a refusal\'s number');
+      });
+
+      test('a stage directory that is not ours is barred — exit 3, and the '
+          'file survives', () async {
+        await installed();
+        final stage = Directory(
+          p.join(p.dirname(repositoryOf(site.root.path, 't.thing')),
+              Entity.classDirName),
+        );
+        if (stage.existsSync()) stage.deleteSync(recursive: true);
+        stage.createSync(recursive: true);
+        final stranger = File(p.join(stage.path, 'not-ours.txt'))
+          ..writeAsStringSync('somebody else stood here');
+
+        final r = await cli.run(['refit', 't.thing']);
+
+        onTheSurface(r);
+        expect(r.code, EntityRunner.barredCode);
+        expect(r.code, isNot(EntityRunner.notFoundCode));
+        expect(stranger.existsSync(), isTrue,
+            reason: 'a refusal that names a directory does not clear it first');
+      });
+    });
+
+    group('upgrade at the boundary', () {
+      test('no origin is not found — exit 1, naming both cures', () async {
+        await cli.run(['create', 't.mine']);
+
+        final r = await cli.run(['upgrade', 't.mine']);
+
+        onTheSurface(r);
+        expect(r.code, EntityRunner.notFoundCode,
+            reason: 'nothing was refused: the thing named is simply not there');
+        expect(r.code, isNot(EntityRunner.barredCode));
+        // **Asserted crossing the boundary, not in Dart.** A message that never
+        // leaves the library has not reached the person it was written for, and
+        // this one has to carry both roads out of the dead end.
+        expect(r.err, contains('publish'));
+        expect(r.err, contains('refit'));
+      });
+
+      test('a line that did not move exits 0 and names refit', () async {
+        await installed();
+
+        final r = await cli.run(['upgrade', 't.thing']);
+
+        expect(r.code, 0, reason: r.err);
+        expect(r.out.toLowerCase(), contains('refit'),
+            reason: 'where nothing came down, the reader is told which verb '
+                'does the local half without a network');
+      });
+
+      test('it reports the transition it performed and the lines that stand',
+          () async {
+        final at = await installed();
+        final before = await cli.run(['info', at.name]);
+        expect(before.code, 0);
+        publish(at.origin, at.name, 'name: t.thing\ntype: bentos.mem\n');
+
+        final r = await cli.run(['upgrade', at.name]);
+
+        expect(r.code, 0, reason: r.err);
+        final held = site.run(() =>
+            Entity(at.name, from: site.root.path).genesis.short);
+        expect(r.out, contains(held),
+            reason: 'the sha reached is half of what a transition is');
+      });
+
+      test('a diverged line is exit 5, and it is not any of the others',
+          () async {
+        final at = await installed();
+        // Two children of one parent: somebody published there, somebody
+        // authored here. Neither line contains the other.
+        publish(at.origin, at.name, 'name: t.thing\n# theirs\n');
+        _declare(site, at.name, 'name: t.thing\n# ours\n');
+
+        final r = await cli.run(['upgrade', at.name]);
+
+        onTheSurface(r);
+        expect(r.code, EntityRunner.divergedCode);
+        expect(r.code, isNot(EntityRunner.contestedCode),
+            reason: 'a script may loop on a contest and must not loop on this');
+        expect(r.code, isNot(EntityRunner.barredCode),
+            reason: 'and it must not read either as a gate having spoken');
+        expect(r.err, contains('diverged'));
+      });
+
+      test('a contested swap is exit 4, and it is not exit 3', () async {
+        // Owed rather than written weakly. The condition is a ref moving
+        // between the read and the swap, which needs a seam inside the port —
+        // and `Cli` types its port as `FakeGit` rather than `Git`, so the
+        // watcher the library-level suite uses cannot be installed behind it.
+        // Widening that one word lives in `cli_harness.dart`, which is not this
+        // slice's territory. Exit 4 is therefore witnessed in Dart and not yet
+        // at the boundary, which is precisely where the vocabulary matters
+        // most: `chat/seams.dart` and `llm/session/entity_primitive.dart` both
+        // read exit 3 today with no branch for 4.
+      }, skip: 'needs Cli to accept a Git rather than a FakeGit — a fixture '
+          'widening in shared territory, named rather than worked around');
     });
   });
 }
