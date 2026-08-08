@@ -421,6 +421,30 @@ void main() {
       );
     });
 
+    test('an unresolvable entity refuses the transaction rather than admitting it '
+        'silently', () {
+      // The falsifier for the contract clause worth having most: the trampoline
+      // depends on `entity` being resolvable on PATH at hook time, and a
+      // publisher that cannot reach the primitive must refuse rather than let an
+      // unvalidated act through. Proven by starving the shim of the one thing it
+      // execs, over a real transaction — never by reading the shim's own source.
+      final from = one.tip!;
+      final next = _commitOnto(site, thing, {'b': '1\n'}, parent: from);
+      final update = Process.runSync(
+        'git',
+        ['--git-dir', repositoryOf(site.path, thing.name), 'update-ref',
+          one.ref, next.sha, from.sha],
+        environment: {'PATH': '/usr/bin:/bin'},
+      );
+      expect(update.exitCode, isNot(0),
+          reason: 'an unresolvable entity must abort the transaction, not '
+              'admit it silently');
+      expect(update.stderr.toString(), contains('entity'),
+          reason: "the shell's own account of the failed exec reaches Git");
+      expect(one.tip, equals(from),
+          reason: 'nothing was ever true — the same law a refusing gate proves');
+    });
+
     test('a refusing listener aborts the real ref update, and the tip is unmoved',
         () async {
       thing.on(

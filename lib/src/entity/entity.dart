@@ -506,7 +506,7 @@ final class Entity {
     if (events.isEmpty) {
       throw ArgumentError.value(events, 'events', 'arm on at least one');
     }
-    final tables = ArmingTables(_gitDir)..ensureArmed();
+    final tables = ArmingTables(_gitDir, entity: name)..ensureArmed();
     Registration? first;
     for (final pattern in events) {
       final armed = tables.add(
