@@ -54,6 +54,13 @@ final class RecallCommand extends Command<void> {
       pages = Reach.from(argResults!).apply(cascade);
     }
 
+    // The page itself was returned — degradation is a disclosure, not a
+    // failure — but a guessed field must never pass for an authored one
+    // silently: named here, and marked again on the render line itself.
+    for (final page in pages) {
+      if (page.isDegraded) _runner.err.writeln(page.describeDegradation());
+    }
+
     _runner.announceBank(store.bank);
     _runner.out.write(RecallRender(RelativeAge(_runner.clock)).render(pages));
 

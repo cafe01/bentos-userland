@@ -32,13 +32,32 @@ final class SurveyRender {
   /// The reach is echoed so the caller can see what it actually asked for.
   static String noMatch(String reach) => 'mem: no pages under $reach.';
 
-  /// Render [pages] (already selected, in composition order) as the map. The
-  /// [vantage] distinguishes an inherited page (its origin differs) so `@place`
-  /// only marks what is not local.
-  String render(List<MemPage> pages, {required Place vantage}) {
-    final buf = StringBuffer()
-      ..writeln(legend)
-      ..writeln();
+  /// The line a bounded map carries under its legend: which slice of the whole
+  /// this is, and — only when a tail actually remains — how to ask for the rest.
+  /// A next-page affordance printed at the end of the map is the same lie as a
+  /// silent truncation, inverted.
+  static String truncation({
+    required int from,
+    required int to,
+    required int total,
+  }) {
+    final line = 'showing $from–$to of $total, hottest first';
+    return to < total ? '$line → mem survey --offset $to' : line;
+  }
+
+  /// Render [pages] (already selected and ordered) as the map. The [vantage]
+  /// distinguishes an inherited page (its origin differs) so `@place` only marks
+  /// what is not local. [notice] heads the map when the caller bounded it —
+  /// before the groups, since a truncated mode group must not be read as
+  /// complete on the way down.
+  String render(
+    List<MemPage> pages, {
+    required Place vantage,
+    String? notice,
+  }) {
+    final buf = StringBuffer()..writeln(legend);
+    if (notice != null) buf.writeln(notice);
+    buf.writeln();
     MemType? lastMode;
     for (final page in pages) {
       final mode = page.fields.type;
@@ -67,6 +86,12 @@ final class SurveyRender {
     final origin = page.origin;
     if (origin != null && origin.root.path != vantage.root.path) {
       cluster.add('@${origin.name}');
+    }
+    // A degraded page must never sit in the map looking exactly like an
+    // authored one — the full disclosure is on stderr, this is the mark that
+    // makes it visible where the map is actually read.
+    if (f.assumptions.isNotEmpty) {
+      cluster.add('⚠${f.assumptions.map((a) => a.field).join(',')}');
     }
 
     return cluster.isEmpty ? core.toString() : '$core  ${cluster.join('  ')}';

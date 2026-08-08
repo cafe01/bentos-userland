@@ -42,6 +42,8 @@ final class RecallRender {
       'a:${f.attention.render()}',
       '${wordCount.count(page.body)} words',
       if (f.modified != null) 'modified ${age.of(f.modified!)} ago',
+      if (f.assumptions.isNotEmpty)
+        '⚠assumed:${f.assumptions.map((a) => a.field).join(',')}',
     ];
     return parts.join('  ·  ');
   }

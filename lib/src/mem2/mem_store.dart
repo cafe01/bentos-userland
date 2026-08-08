@@ -7,8 +7,12 @@ import 'model/attention.dart';
 import 'model/mem_page.dart';
 import 'model/mem_writer.dart';
 
-/// A page the store found on disk and could not read — named on stderr so the
-/// hole in the map is visible to whoever can repair it.
+/// A page the store found on disk and could not read *at all* — an I/O
+/// failure below the parser (permission denied, a decoding error), not a
+/// malformed page: `MemPage.parse` is total and degrades a bad header into an
+/// assumed-fields page rather than throwing, so this is the rarer case where
+/// there was no content to hand the parser in the first place. Named on
+/// stderr so the hole in the map is visible to whoever can repair it.
 final class MemDamage {
   const MemDamage(this.topic, this.path, this.error);
 
@@ -60,10 +64,10 @@ final class MemStore {
     return MemPage.parse(topic, file.readAsStringSync()).withOrigin(place);
   }
 
-  /// Pages a listing could not parse, in encounter order. A malformed file is
-  /// skipped and named rather than thrown, because a listing is read blind at
-  /// every waking: one corrupt page must cost its own gist, never the bank.
-  /// [readAt] keeps throwing — a page asked for by name owes an error.
+  /// Pages a listing could not even read, in encounter order — I/O failures
+  /// only; a malformed page is not skipped any more, it is degraded and
+  /// returned (see [MemPage.isDegraded]), because a listing read blind at
+  /// every waking must never lose a page's prose for a broken header.
   final List<MemDamage> damage = [];
 
   /// Every page under [place]'s store, origin-annotated. A nested topic keeps
@@ -124,7 +128,15 @@ final class MemStore {
   /// and `modified` untouched. Returns the re-read landed page (origin-annotated).
   MemPage refocusPage(MemPage page, Attention attention) {
     final place = page.origin!;
-    writer.refocus(_pageFile(place, page.topic), attention);
+    writer.refocus(_pageFile(place, page.topic), page.topic, attention);
+    return readAt(place, page.topic)!;
+  }
+
+  /// Replace an already-resolved page's gist where it lives — the body bytes
+  /// and `modified` untouched. Returns the landed page (origin-annotated).
+  MemPage registPage(MemPage page, String gist) {
+    final place = page.origin!;
+    writer.regist(_pageFile(place, page.topic), page.topic, gist);
     return readAt(place, page.topic)!;
   }
 

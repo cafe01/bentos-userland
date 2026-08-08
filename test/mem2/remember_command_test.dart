@@ -58,6 +58,28 @@ void main() {
       });
     });
 
+    test('remember over a page with an assumed type/attention refuses to launder the guess', () async {
+      await runInMemoryFs((fs) async {
+        final hab = habitat();
+        hab.seed('/hq/cto', 'degraded', 'just prose, no header');
+
+        final (_, errType, cType) =
+            await run(hab, ['remember', '-p', '/hq/cto', 'degraded', '-A', '0.6'], stdin: 'body');
+        expect(cType, 1);
+        expect(errType, contains('type was assumed'));
+
+        final (_, errAttn, cAttn) =
+            await run(hab, ['remember', '-p', '/hq/cto', 'degraded', '-t', 'semantic'], stdin: 'body');
+        expect(cAttn, 1);
+        expect(errAttn, contains('attention was assumed'));
+
+        final (_, _, cBoth) = await run(hab,
+            ['remember', '-p', '/hq/cto', 'degraded', '-t', 'semantic', '-A', '0.6'], stdin: 'body');
+        expect(cBoth, 0, reason: 'supplying both explicitly repairs the page');
+        expect(read(hab, '/hq/cto', 'degraded'), contains('type: semantic'));
+      });
+    });
+
     test('off-notch --attention is rejected', () async {
       await runInMemoryFs((fs) async {
         final hab = habitat();

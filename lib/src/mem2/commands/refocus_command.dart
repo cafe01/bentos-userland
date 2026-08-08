@@ -82,6 +82,19 @@ final class RefocusCommand extends Command<void> {
 
   List<RefocusChange> _relative(List<MemPage> pages, String by) {
     final delta = Attention.parseDelta(by);
+    // `--by` moves the *current* value, so an assumed base is a guess refined
+    // by a guess — refuse it here and point at `--to`, which overwrites
+    // cleanly regardless of what the prior value was.
+    final assumed = pages.where(
+      (p) => p.fields.assumptions.any((a) => a.field == 'attention' || a.field == 'frontmatter'),
+    );
+    if (assumed.isNotEmpty) {
+      throw FormatException(
+        'refocus --by cannot move an assumed attention '
+        '(${assumed.map((p) => p.topic).join(', ')}) — the base was guessed, '
+        'not read; use --to to set it explicitly instead.',
+      );
+    }
     return [
       for (final p in pages)
         () {

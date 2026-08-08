@@ -88,7 +88,14 @@ final class RememberCommand extends Command<void> {
   MemType? _resolveType(MemPage? existing) {
     final raw = argResults!['type'] as String?;
     if (raw == null) {
-      if (existing != null) return existing.fields.type;
+      if (existing != null) {
+        if (existing.fields.assumptions.any((a) => a.field == 'type' || a.field == 'frontmatter')) {
+          _fail('remember: ${existing.topic}\'s type was assumed, not read — '
+              'pass --type explicitly, or the guess is canonized silently.');
+          return null;
+        }
+        return existing.fields.type;
+      }
       _fail('remember: --type is required on create.');
       return null;
     }
@@ -103,7 +110,14 @@ final class RememberCommand extends Command<void> {
   Attention? _resolveAttention(MemPage? existing) {
     final raw = argResults!['attention'] as String?;
     if (raw == null) {
-      if (existing != null) return existing.fields.attention;
+      if (existing != null) {
+        if (existing.fields.assumptions.any((a) => a.field == 'attention' || a.field == 'frontmatter')) {
+          _fail('remember: ${existing.topic}\'s attention was assumed, not read — '
+              'pass --attention explicitly, or the guess is canonized silently.');
+          return null;
+        }
+        return existing.fields.attention;
+      }
       _fail('remember: --attention is required on create.');
       return null;
     }

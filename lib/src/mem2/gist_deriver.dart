@@ -2,12 +2,19 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' as io;
 
-/// The llm seam: a page body in, its one-line navigation cue out. Injected so
-/// tests stub it and never reach a live model.
+/// The llm seam: a page body in, its one-line cue out. Injected so tests stub
+/// it and never reach a live model.
 typedef GistLlm = Future<String> Function(String body);
 
-/// Derives a page's gist — the single navigation line, *what you'll find if you
-/// open this page* — from its body, by handing the body to the [GistLlm] seam.
+/// Derives a page's gist — the **cue**: the one line an index prints in place
+/// of the page, so its owner can decide which page to open now.
+///
+/// The artifact is a cue and explicitly not a stand-in for the page: a reader
+/// who could act on the line without opening the page was given too much, and
+/// that is the failure the prompt spends most of its words on. The index is the
+/// second-heaviest block in a staged mind and it grows with the bank forever,
+/// so every word here is paid at every waking.
+///
 /// A manual gist wins and skips the seam entirely. A derivation that yields
 /// nothing surfaces as [GistDerivationFailed]: the organ never writes a silent
 /// empty gist.
@@ -16,9 +23,14 @@ final class GistDeriver {
 
   final GistLlm _llm;
 
-  /// The gist for [body]. [manualGist], when given, is returned verbatim and
-  /// the seam is never called. Otherwise the seam derives the line; a thrown
-  /// seam or an empty answer raises [GistDerivationFailed].
+  /// The cue for [body]. [manualGist], when given, is returned verbatim and the
+  /// seam is never called — a hand-written line is the author's own judgement
+  /// about what triggers the reach, and outranks the model's. Otherwise the seam
+  /// derives it; a thrown seam or an empty answer raises [GistDerivationFailed].
+  ///
+  /// No length is enforced here. Length is proportional to substance and a cap
+  /// would truncate a genuinely multi-subject page mid-claim: the discipline
+  /// lives in the prompt, and whether it held is measured over the corpus.
   Future<String> derive(String body, {String? manualGist}) async {
     if (manualGist != null) return manualGist;
 
@@ -50,18 +62,22 @@ final class GistDerivationFailed implements Exception {
 }
 
 const _gistSystem = r'''
-You write the gist of a memory page: the one line that stands in place of the page for a reader who does not open it.
+You write the cue for a memory page: the one line an index prints in place of the page, for the person whose memory this is.
 
-That reader is the person whose memory this is, scanning an index of their own knowledge to decide what to recall now. The line must carry the page's substance — never a description of the page.
+The cue exists to trigger a reach. Its reader is scanning their own map to decide WHICH page to open now — so the line must make that decision possible, and must not make it unnecessary.
 
-- State the page's own claims, in the page's own vocabulary and language. Never write ABOUT the page: no "this page", no "an exploration of", "a discussion of", "covers", "explores", "details", "outlines", "delves into".
-- Open with what the subject IS in a few words, then its load-bearing claims — the laws, distinctions, consequences, pathologies and exceptions a reader would be wrong not to know. If the page leaves a question open, say so: that is often why someone returns to it.
-- One line does not mean short. It is one line because the index prints one line per page — length is set by how much the page actually claims, and 40–80 words is ordinary. Spend every word on a claim: join them with semicolons and dashes rather than connectives, and cut adjectives that carry no fact. Leaving out a load-bearing claim to stay brief is the worst failure of all.
-- Never invent. Every claim in the line must be on the page, in the page's own terms.
-- Prefer the page's concrete nouns to abstract paraphrase. "the client reaches the firm only through a chief" beats "a structured boundary is maintained with external parties". A line that would fit fifty other pages has failed.
-- Output the line and nothing else: no preamble, no quotes, no markdown, no trailing commentary.
+- Name what the page is, in the page's own vocabulary, then give the ONE OR TWO SHARPEST CONCRETE THINGS IT ASSERTS — in the page's own nouns, not the category they belong to. "a moving worktree is not a heartbeat; a static gauge is the real evidence" is a cue. "determining whether work is occurring through indirect readings" is the same sentence with the knowledge removed.
+- Write a sentence about the SUBJECT, never an inventory of nouns. A line that reads as a comma-separated list of topics has failed, however accurate every item in it is.
+- NEVER DESCRIBE THE PAGE'S ASSERTIONS IN THE ABSTRACT. Banned outright: "claims about", "principles", "dynamics", "implications", "considerations", "nuances", "mechanisms of", "the interplay of", "the nature of", "aspects", "factors". Each of these names a category where the page named a thing; a line built from them would fit any page on the subject and therefore identifies none.
+- A page's headings, its links and the values it enumerates are its STRUCTURE, never its substance. Never build the line out of the table of contents: "create, install, publish, remotes, ls, log, show" tells a reader nothing the title did not. The same holds for the names of neighbouring pages — what a page links to is not what it is about.
+- Where the subject is a surface — an API, a command, a schema — say what the surface is for and what is distinctive about its shape. Never list its members.
+- A reader who could act on your line without opening the page has been given too much. That is the opposite failure and it is equally easy to commit.
+- Never write ABOUT the page: no "this page", "covers", "explores", "outlines", "a discussion of".
+- Length follows substance, never a quota: a page carrying one law needs a handful of words, a page carrying several must say so. Most pages land near 20 words and few need more than 40. Do not pad a thin page to look substantial.
+- Never invent, and never reach a verdict the page does not: a page stating a conception is not reported as a list of failures.
+- Output the line and nothing else: no preamble, no quotes, no markdown.
 
-Shape: <what it is> — <the claims that matter>; <the distinction, consequence or open question someone who skipped the page would get wrong>.''';
+Shape: <what it is> — <its sharpest one or two assertions, concretely>.''';
 
 /// How long the seam waits on `llm` before giving up. The derivation is a live
 /// model call over the network with nothing else bounding it, so a stalled

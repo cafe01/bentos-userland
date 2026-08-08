@@ -24,10 +24,30 @@ final class Attention implements Comparable<Attention> {
 
   static final _notch = RegExp(r'^(0\.\d|1\.0)$');
 
-  /// Parse the decimal form (`0.0`–`1.0`). Off-notch input (`0.75`, `1.1`,
-  /// `-0.1`) is a [FormatException] — the boundary that keeps the scale clean.
+  /// The value assumed for a page whose attention could not be read at all —
+  /// missing, or off-grammar past what [parse] accepts. Cold-ward on purpose:
+  /// an unread band is not evidence the page earned a warm or hot mind, so the
+  /// guess must never be able to inflate a page into standing salience nobody
+  /// elected. `0.5` is the coolest notch a plain reach still surfaces without
+  /// a deliberate `--cold`; this default may be lowered but never raised.
+  static final assumedDefault = Attention._(5);
+
+  /// Parse the decimal form (`0.0`–`1.0`), and the near-misses that mean the
+  /// same thing to anyone but a YAML parser: a bare integer (`0`, `1`), a
+  /// leading-dot fraction (`.7`), a trailing zero (`0.70`), a quoted scalar
+  /// (`"0.7"`), and surrounding whitespace. A field whose accepted grammar is
+  /// narrower than what it emits is a defect on its face, so this accepts
+  /// everything [render] could plausibly meet on disk. Only genuinely
+  /// off-notch magnitude (`0.75`, `1.1`, `-0.1`) is a [FormatException].
   factory Attention.parse(String source) {
-    final s = source.trim();
+    var s = source.trim();
+    if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
+      s = s.substring(1, s.length - 1).trim();
+    }
+    if (s == '0' || s == '1') s = '$s.0';
+    if (s.startsWith('.')) s = '0$s';
+    final trailingZeros = RegExp(r'^(0\.\d)0+$').firstMatch(s);
+    if (trailingZeros != null) s = trailingZeros.group(1)!;
     if (!_notch.hasMatch(s)) {
       throw FormatException('off-notch attention: "$source" (expected 0.0–1.0 in 0.1 steps)');
     }

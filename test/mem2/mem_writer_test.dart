@@ -46,7 +46,7 @@ void main() {
         final before = file.readAsStringSync();
         clock = DateTime.utc(2099, 1, 1); // advancing the clock must not leak in
 
-        writer.refocus(file, Attention.parse('0.4'));
+        writer.refocus(file, 'agency/spawn', Attention.parse('0.4'));
         final after = MemPage.parse('agency/spawn', file.readAsStringSync());
 
         expect(after.fields.attention, Attention.parse('0.4'));
@@ -54,6 +54,21 @@ void main() {
         expect(after.fields.modified, DateTime.utc(2026, 7, 2, 10), reason: 'modified untouched');
         expect(file.readAsStringSync(), before.replaceFirst('attention: 0.7', 'attention: 0.4'),
             reason: 'only the attention line moved');
+      });
+    });
+
+    test('refocus falls back to a structural write when there is no attention line', () {
+      runInMemoryFs((fs) {
+        final writer = MemWriter(() => DateTime.utc(2026, 7, 2, 10));
+        final file = File('/store/x.md')..createSync(recursive: true);
+        file.writeAsStringSync('---\ntype: semantic\n---\nbody\n');
+
+        writer.refocus(file, 'x', Attention.parse('0.9'));
+        final after = MemPage.parse('x', file.readAsStringSync());
+
+        expect(after.fields.attention, Attention.parse('0.9'));
+        expect(after.isDegraded, isFalse, reason: 'the guessed field is now the stated one');
+        expect(after.body, 'body');
       });
     });
   });

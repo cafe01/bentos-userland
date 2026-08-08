@@ -5,6 +5,7 @@ import 'package:args/command_runner.dart';
 
 import '../place/place.dart';
 import 'commands/forget_command.dart';
+import 'commands/gist_command.dart';
 import 'commands/recall_command.dart';
 import 'commands/refocus_command.dart';
 import 'commands/remember_command.dart';
@@ -34,13 +35,14 @@ final class MemRunner {
         _environment = environment ?? io.Platform.environment {
     _runner = CommandRunner<void>(
       'mem',
-      "The agent's persistent memory — survey, recall, remember, refocus, forget.",
+      "The agent's persistent memory — survey, recall, remember, refocus, gist, forget.",
     )
       ..addCommand(SurveyCommand(this))
       ..addCommand(RecallCommand(this))
       ..addCommand(RememberCommand(this))
       ..addCommand(RefocusCommand(this))
-      ..addCommand(ForgetCommand(this));
+      ..addCommand(ForgetCommand(this))
+      ..addCommand(GistCommand(this));
 
     _runner.argParser
       ..addOption('bank',

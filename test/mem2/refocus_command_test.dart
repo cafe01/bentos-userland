@@ -91,6 +91,25 @@ void main() {
       });
     });
 
+    test('--by refuses to move an assumed attention; --to still may', () async {
+      await runInMemoryFs((fs) async {
+        final hab = habitat();
+        hab.seed('/hq/cto', 'degraded', '---\ntype: semantic\n---\n\nx\n');
+
+        final (_, errBy, codeBy) =
+            await run(hab, ['refocus', '-p', '/hq/cto', 'degraded', '--by', '0.2']);
+        expect(codeBy, 1);
+        expect(errBy, contains('assumed attention'));
+
+        final (_, _, codeTo) =
+            await run(hab, ['refocus', '-p', '/hq/cto', 'degraded', '--to', '0.6']);
+        expect(codeTo, 0);
+        expect(page(hab, '/hq/cto', 'degraded').fields.attention.render(), '0.6');
+        expect(page(hab, '/hq/cto', 'degraded').isDegraded, isFalse,
+            reason: 'the stated value replaces the guess');
+      });
+    });
+
     test('an empty selection is a clean no-op, not an error', () async {
       await runInMemoryFs((fs) async {
         final hab = habitat();

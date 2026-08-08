@@ -43,7 +43,7 @@ void main() {
       });
     });
 
-    test('one unreadable page costs its own line, never the bank', () async {
+    test('one unparseable page costs its own disclosure, never the bank', () async {
       await runInMemoryFs((fs) async {
         final hab = habitat();
         hab.seed('/hq/cto', 'founders', MemHabitat.page('semantic', '1.0', 'a'));
@@ -52,7 +52,36 @@ void main() {
         final (out, err, code) = await run(hab, ['survey', '-p', '/hq/cto']);
         expect(code, 0);
         expect(out, contains('founders'), reason: 'the rest of the map survives');
-        expect(err, contains('unreadable page broken'));
+        expect(out, contains('broken'), reason: 'a degraded page is still on the map, prose intact');
+        expect(err, contains('degraded page broken'));
+      });
+    });
+
+    test('a bank with every named defect still surveys whole and accepts an unrelated write', () async {
+      await runInMemoryFs((fs) async {
+        final hab = habitat();
+        hab.seed('/hq/cto', 'ok', MemHabitat.page('semantic', '0.5', 'fine'));
+        hab.seed('/hq/cto', 'no-frontmatter', 'just prose, no header at all');
+        hab.seed('/hq/cto', 'bare-int', '---\ntype: semantic\nattention: 1\n---\n\nx\n');
+        hab.seed('/hq/cto', 'no-type', '---\nattention: 0.5\n---\n\ny\n');
+        hab.seed('/hq/cto', 'truncated', '---\ntype: semantic\nattention: 0.5\nno closing fence');
+
+        final (survey, _, surveyCode) = await run(hab, ['survey', '-p', '/hq/cto']);
+        expect(surveyCode, 0);
+        for (final topic in ['ok', 'no-frontmatter', 'bare-int', 'no-type', 'truncated']) {
+          expect(survey, contains(topic), reason: '$topic still on the map');
+        }
+        final bareIntLine = survey.split('\n').firstWhere((l) => l.contains('bare-int'));
+        expect(bareIntLine, isNot(contains('⚠')), reason: 'the widened grammar never degrades');
+
+        final (recall, _, recallCode) = await run(
+            hab, ['recall', '-p', '/hq/cto', 'no-frontmatter', 'no-type', 'truncated']);
+        expect(recallCode, 0);
+        expect(recall, contains('just prose'));
+        expect(recall, contains('y'));
+
+        final (_, _, writeCode) = await run(hab, ['refocus', '-p', '/hq/cto', 'ok', '--to', '0.6']);
+        expect(writeCode, 0, reason: 'an unrelated page still accepts a write');
       });
     });
 
@@ -124,6 +153,110 @@ void main() {
             reason: 'the total never enters the stdout that becomes a mind');
         expect(err, contains('· survey · 1 pages'),
             reason: 'the verb names which register the words are counted in');
+      });
+    });
+
+    /// Five pages whose attention deliberately disagrees with both composition
+    /// order and directory order, so "hottest" can be told from "first".
+    void seedLadder(MemHabitat hab) {
+      hab.seed('/hq/cto', 'aaa-cold', MemHabitat.page('semantic', '0.2', 'a'));
+      hab.seed('/hq/cto', 'bbb-hot', MemHabitat.page('prospective', '1.0', 'b'));
+      hab.seed('/hq/cto', 'ccc-warm', MemHabitat.page('semantic', '0.8', 'c'));
+      hab.seed('/hq/cto', 'ddd-warmer', MemHabitat.page('procedural', '0.9', 'd'));
+      hab.seed('/hq/cto', 'eee-cool', MemHabitat.page('semantic', '0.5', 'e'));
+    }
+
+    test('--limit takes the hottest n, not the first n', () async {
+      await runInMemoryFs((fs) async {
+        final hab = habitat();
+        seedLadder(hab);
+        final (out, _, code) =
+            await run(hab, ['survey', '-p', '/hq/cto', '--limit', '2']);
+        expect(code, 0);
+        expect(out, contains('bbb-hot'));
+        expect(out, contains('ddd-warmer'));
+        // The two hottest are a prospective and a procedural — last and
+        // second-last in composition order — so a map that cut in composition
+        // or directory order would hold aaa-cold instead.
+        expect(out, isNot(contains('aaa-cold')));
+        expect(out, isNot(contains('ccc-warm')));
+      });
+    });
+
+    test('the truncation notice appears when and only when the map was cut',
+        () async {
+      await runInMemoryFs((fs) async {
+        final hab = habitat();
+        seedLadder(hab);
+
+        final (cut, cutErr, _) =
+            await run(hab, ['survey', '-p', '/hq/cto', '--limit', '2']);
+        expect(cut, contains('showing 1–2 of 5, hottest first'));
+        expect(cut, contains('→ mem survey --offset 2'),
+            reason: 'a tail remains, so the affordance is owed');
+        expect(cutErr, contains('· 2 pages'));
+        expect(cutErr, contains('(of 5)'),
+            reason: 'the weight line reports what was rendered, and that it was cut');
+
+        final (whole, wholeErr, _) = await run(hab, ['survey', '-p', '/hq/cto']);
+        expect(whole, isNot(contains('showing')),
+            reason: 'an unbounded map is silent about a bound it does not have');
+        expect(wholeErr, isNot(contains('(of ')));
+
+        final (exact, _, _) =
+            await run(hab, ['survey', '-p', '/hq/cto', '--limit', '5']);
+        expect(exact, isNot(contains('showing')),
+            reason: 'a limit that cuts nothing is not a cut');
+      });
+    });
+
+    test('--offset walks the tail, and the affordance stops at the end', () async {
+      await runInMemoryFs((fs) async {
+        final hab = habitat();
+        seedLadder(hab);
+        final (out, _, code) = await run(
+            hab, ['survey', '-p', '/hq/cto', '--limit', '2', '--offset', '2']);
+        expect(code, 0);
+        expect(out, contains('showing 3–4 of 5, hottest first'));
+        expect(out, contains('→ mem survey --offset 4'));
+        expect(out, contains('ccc-warm'));
+        expect(out, contains('eee-cool'));
+
+        final (tail, _, _) =
+            await run(hab, ['survey', '-p', '/hq/cto', '--offset', '4']);
+        expect(tail, contains('showing 5–5 of 5, hottest first'));
+        expect(tail, isNot(contains('--offset 5')),
+            reason: 'a next-page hint with no next page is the lie inverted');
+      });
+    });
+
+    test('an offset past the end says so, and does not call the bank empty',
+        () async {
+      await runInMemoryFs((fs) async {
+        final hab = habitat();
+        seedLadder(hab);
+        final (_, err, code) =
+            await run(hab, ['survey', '-p', '/hq/cto', '--offset', '99']);
+        expect(code, 0);
+        expect(err, contains('offset 99 is past the end'));
+        expect(err, contains('5 pages'));
+        expect(err, isNot(contains('no pages')));
+      });
+    });
+
+    test('a bound that is not a non-negative number is refused', () async {
+      await runInMemoryFs((fs) async {
+        final hab = habitat();
+        seedLadder(hab);
+        final (_, err, code) =
+            await run(hab, ['survey', '-p', '/hq/cto', '--limit', 'lots']);
+        expect(code, 1);
+        expect(err, contains('--limit takes a non-negative whole number'));
+
+        final (_, negErr, negCode) =
+            await run(hab, ['survey', '-p', '/hq/cto', '--offset', '-3']);
+        expect(negCode, 1);
+        expect(negErr, contains('--offset takes a non-negative whole number'));
       });
     });
 
