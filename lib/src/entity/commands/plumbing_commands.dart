@@ -1,7 +1,10 @@
+import 'dart:convert';
 import 'dart:io';
 
 import '../entity.dart';
 import '../entity_runner.dart';
+import '../event.dart';
+import '../transaction.dart';
 import '../../git/git.dart';
 import '../../git/git_ambient.dart';
 import '../../git/model/actor.dart';
@@ -171,6 +174,64 @@ final class CommitCommand extends EntityCommand {
       ),
     );
   }
+}
+
+/// `entity emit <name> <phase>` — the trampoline's only callee, and the whole
+/// content of "the hook publishes." Reads Git's own `<old> <new> <ref>`
+/// triples off stdin, one per line, and hands them to [Entity.emit] under the
+/// ontology's own phase.
+///
+/// **The phase mapping is this verb's job, not the shim's.** The shim forwards
+/// Git's own word — `prepared`, `committed`, `aborted` — verbatim; translating
+/// it into [EventPhase] happens here, once, so the shim stays six lines with no
+/// vocabulary of its own that could drift from this one.
+///
+/// Nobody but a hook has honest reason to call this by hand: reaching for it
+/// means publishing an event that did not happen. It stands in plumbing for the
+/// same reason `path` does — the surface makes that visible rather than
+/// impossible.
+final class EmitCommand extends EntityCommand {
+  EmitCommand(super.cli);
+
+  @override
+  String get name => 'emit';
+
+  @override
+  String get description =>
+      "Publish a ref transaction into the primitive — the hook's own verb.";
+
+  @override
+  Future<void> run() async {
+    final rest = argResults!.rest;
+    if (rest.length < 2) usageException('emit: <name> <phase> are required');
+    final entity = cli.entityNamed(rest[0], place: placeOption);
+    final phase = _phaseOf(rest[1]);
+
+    final updates = <TransactionRefUpdate>[];
+    await for (final line
+        in stdin.transform(utf8.decoder).transform(const LineSplitter())) {
+      if (line.trim().isEmpty) continue;
+      try {
+        updates.add(TransactionRefUpdate.parse(line));
+      } on FormatException catch (e) {
+        usageException('emit: ${e.message}: "$line"');
+      }
+    }
+
+    cli.exitCode = await entity.emit(phase, updates);
+  }
+
+  /// Git's own word for the phase, mapped to the ontology's. The shim never
+  /// emits a fourth word, and neither should anyone typing this by hand.
+  EventPhase _phaseOf(String word) => switch (word) {
+        'prepared' => EventPhase.attempted,
+        'committed' => EventPhase.landed,
+        'aborted' => EventPhase.refused,
+        _ => usageException(
+            'emit: "$word" is not a transaction phase — '
+            'prepared, committed or aborted',
+          ),
+      };
 }
 
 /// `entity release <path>` — discard a workspace or a materialization.

@@ -1,9 +1,13 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
 import '../arming/arming.dart';
 import '../event.dart';
+import '../journal.dart';
+import '../../git/model/commit.dart';
 import 'entity_command.dart';
 
 /// `entity on <coord> <event>[,<event>] -- <command>` — arm behaviour on what
@@ -139,6 +143,155 @@ final class OffCommand extends EntityCommand {
     if (rest.length < 2) usageException('off: <coord> <id> are required');
     cli.entityNamed(coordinate().entity, place: placeOption).off(rest[1]);
   }
+}
+
+/// `<event>[,<event>]` parsed into a pattern set — the same grammar `on` and
+/// `once` already read, so a stranger types one grammar at both ends of the
+/// wall. [fail] is a verb's own `usageException`, so the offending pattern is
+/// named in that verb's own voice.
+Set<EventPattern> _eventPatterns(String text, Never Function(String) fail) {
+  final patterns = <EventPattern>{};
+  for (final part in text.split(',')) {
+    try {
+      patterns.add(EventPattern.parse(part.trim()));
+    } on FormatException catch (e) {
+      fail(e.message);
+    }
+  }
+  return patterns;
+}
+
+/// `entity listen <name> <event>[,<event>] [--since <sha>]` — a live view of
+/// dispatch, opened when the process asks and closed the moment it stops
+/// listening. Blocks; prints one JSON object per occurrence to stdout, one
+/// line each; evaporates with its process.
+///
+/// **Installation-wide, not instance-scoped.** The journal carries no instance
+/// dimension — [ArmingTables] filters `on`'s table by instance because a line
+/// is armed on one, but an occurrence is matched against patterns alone. A
+/// name is what this verb takes, the same shape [EntityCommand.positional]
+/// already reads for every other class-level verb.
+///
+/// **What crosses is [Event], not the journal's own line shape.** The
+/// journal's `kind` and `entity` fields are bookkeeping for its two-kinds-of-
+/// line design; a reader here gets exactly what a woken body's environment
+/// already carries — instance, noun, phase, commit, parent.
+///
+/// **A cursor the journal no longer holds is [JournalGap], and it is not
+/// caught here.** [EntityRunner.run] maps it to
+/// [EntityRunner.gapCode] — a code of its own, distinct from *not found*:
+/// a gap means occurrences existed and were lost, where *not found* means
+/// nothing was ever there, and a script must branch differently on the two.
+final class ListenCommand extends EntityCommand {
+  ListenCommand(super.cli) {
+    argParser.addOption(
+      'since',
+      help: 'Resume after this occurrence, exclusive.',
+      valueHelp: 'sha',
+    );
+  }
+
+  @override
+  String get name => 'listen';
+
+  @override
+  String get description => 'A live view of what an entity publishes.';
+
+  @override
+  Future<void> run() async {
+    final rest = argResults!.rest;
+    if (rest.length < 2) {
+      usageException('listen: <name> <event> are required');
+    }
+    final entity = cli.entityNamed(rest[0], place: placeOption);
+    final events = _eventPatterns(
+        rest[1], (m) => usageException('listen: $m'));
+    final since = argResults!['since'] as String?;
+
+    final done = Completer<void>();
+    final sub = entity
+        .listen(events, since: since == null ? null : Commit(since))
+        .listen(
+          (event) => cli.out.writeln(jsonEncode(_json(event))),
+          onDone: done.complete,
+          onError: done.completeError,
+        );
+
+    // The process is this reader's whole lifetime — nothing about it is
+    // written down, so SIGINT is what stops it, closing the stream cleanly
+    // rather than leaving a bare kill to do it.
+    final signal = ProcessSignal.sigint.watch().listen((_) {
+      unawaited(sub.cancel());
+      if (!done.isCompleted) done.complete();
+    });
+    try {
+      await done.future;
+    } finally {
+      await signal.cancel();
+    }
+  }
+
+  Map<String, Object?> _json(Event event) => {
+        'instance': event.instance.id,
+        'noun': event.noun,
+        'phase': event.phase.suffix,
+        'commit': event.commit.sha,
+        'parent': event.parent.sha,
+      };
+}
+
+/// `entity deliveries <name> <event>[,<event>] [--limit <n>]` — what dispatch
+/// did: a finite, newest-first read of what happened to what it woke.
+/// `reactor.log`'s replacement, addressed to the line that produced it.
+///
+/// Not blocking, and no `--since`: the question this answers is *what
+/// happened to the act I just took*, never *what is happening now* — that
+/// question is [ListenCommand]'s. Nothing armed, or nothing matching, is
+/// silence and not a failure — the same posture `listeners` already holds.
+final class DeliveriesCommand extends EntityCommand {
+  DeliveriesCommand(super.cli) {
+    argParser.addOption(
+      'limit',
+      help: 'The newest N deliveries, at most.',
+      valueHelp: 'n',
+    );
+  }
+
+  @override
+  String get name => 'deliveries';
+
+  @override
+  String get description => 'What dispatch woke, and what it answered.';
+
+  @override
+  Future<void> run() async {
+    final rest = argResults!.rest;
+    if (rest.length < 2) {
+      usageException('deliveries: <name> <event> are required');
+    }
+    final entity = cli.entityNamed(rest[0], place: placeOption);
+    final events = _eventPatterns(
+        rest[1], (m) => usageException('deliveries: $m'));
+    final limit = argResults!['limit'] as String?;
+
+    for (final line in entity.deliveries(
+      events,
+      limit: limit == null ? null : int.parse(limit),
+    )) {
+      cli.out.writeln(jsonEncode(_json(line)));
+    }
+  }
+
+  Map<String, Object?> _json(DeliveryLine line) => {
+        'instance': line.event.instance.id,
+        'noun': line.event.noun,
+        'phase': line.event.phase.suffix,
+        'commit': line.event.commit.sha,
+        'subscriber': line.subscriber,
+        'command': line.command,
+        'exitCode': line.exitCode,
+        'output': line.output,
+      };
 }
 
 /// One armed argument as a person should read it: bare when it is one word,

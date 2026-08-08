@@ -8,6 +8,7 @@ import 'arming/arming.dart';
 import 'arming/arming_provenance.dart';
 import 'dispatch.dart';
 import 'event.dart';
+import 'journal.dart';
 import 'transaction.dart';
 import '../git/git_ambient.dart';
 import 'instance.dart';
@@ -542,6 +543,31 @@ final class Entity {
 
   /// What is armed here.
   List<Registration> get listeners => ArmingTables(_gitDir).all;
+
+  /// A live view of dispatch: occurrences matching [events], streamed as they
+  /// are appended by any process, forever — the call does not return until the
+  /// caller stops reading it. Nothing about the reader is written down: no
+  /// line, no table entry, nothing outliving the call — which is the whole
+  /// property that makes this different from [on].
+  ///
+  /// With [since], resumes past the occurrence whose commit equals it,
+  /// exclusive, raising [JournalGap] when the journal does not hold it — a gap
+  /// is a distinct answer from silence: occurrences existed and this reader
+  /// lost them, which is not the same fact as nothing having happened.
+  ///
+  /// Carries no instance dimension: the journal is a fact of the installation,
+  /// not of one object in it, exactly as [emit] journals every ref in a
+  /// transaction under one call.
+  Stream<Event> listen(Set<EventPattern> events, {Commit? since}) =>
+      Journal(_gitDir, this).tail(events, since: since);
+
+  /// What dispatch did: a finite, newest-first read of the deliveries recorded
+  /// for [events] — *what happened to the act I just took*, never *what is
+  /// happening now*. An armed body that failed is a line with a non-zero exit
+  /// code and its output beside it, which is the whole content of *an armed
+  /// body no longer fails in silence*.
+  List<DeliveryLine> deliveries(Set<EventPattern> events, {int? limit}) =>
+      Journal(_gitDir, this).deliveries(events, limit: limit);
 
   /// Where bytes may travel. Not who is authoritative — that is declared, never
   /// computed, and `origin` is a default rather than a truth.

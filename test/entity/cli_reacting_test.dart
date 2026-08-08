@@ -237,4 +237,48 @@ void main() {
       expect(r.err, contains('<id>'));
     });
   });
+
+  group('entity listen and entity deliveries — vocabulary', () {
+    // Blocking against a real journal, resuming past a cursor, a killed
+    // process leaving nothing behind — all real-substrate claims, proven in
+    // `subscribing_contract_test.dart`. What is checkable here, cheaply and
+    // without ever opening the stream, is arity and pattern grammar.
+
+    test('listen without an event is a usage fault', () async {
+      final r = await cli.run(['listen', 't.chat']);
+
+      expect(r.code, EntityRunner.usageCode);
+      expect(r.err, contains('<name> <event>'));
+    });
+
+    test('listen on an unreadable pattern is never silently opened', () async {
+      final r = await cli.run(['listen', 't.chat', 'prompt.happened']);
+
+      expect(r.code, EntityRunner.usageCode);
+      expect(r.err, contains('unknown phase'));
+    });
+
+    test('deliveries without an event is a usage fault', () async {
+      final r = await cli.run(['deliveries', 't.chat']);
+
+      expect(r.code, EntityRunner.usageCode);
+      expect(r.err, contains('<name> <event>'));
+    });
+
+    test('deliveries on an unreadable pattern is never silently answered',
+        () async {
+      final r = await cli.run(['deliveries', 't.chat', 'prompt.happened']);
+
+      expect(r.code, EntityRunner.usageCode);
+      expect(r.err, contains('unknown phase'));
+    });
+
+    test('deliveries on an entity nobody armed is silence, not a failure',
+        () async {
+      final r = await cli.run(['deliveries', 't.chat', '*.landed']);
+
+      expect(r.code, 0);
+      expect(r.out, isEmpty);
+    });
+  });
 }

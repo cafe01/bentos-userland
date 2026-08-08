@@ -179,4 +179,25 @@ void main() {
       expect(r.err, contains('-w'));
     });
   });
+
+  group('entity emit — the plumbing that calls into it', () {
+    // Behaviour — a real transaction driving a real dispatch call — is proven
+    // against the substrate in `subscribing_contract_test.dart`. What belongs
+    // here is vocabulary: the arity and the phase word, both readable off the
+    // argument list alone.
+
+    test('without a phase, it is a usage fault', () async {
+      final r = await cli.run(['emit', 't.chat']);
+
+      expect(r.code, EntityRunner.usageCode);
+      expect(r.err, contains('<name> <phase>'));
+    });
+
+    test('a phase that is not Git\'s own word is a usage fault', () async {
+      final r = await cli.run(['emit', 't.chat', 'sideways']);
+
+      expect(r.code, EntityRunner.usageCode);
+      expect(r.err, contains('prepared, committed or aborted'));
+    });
+  });
 }

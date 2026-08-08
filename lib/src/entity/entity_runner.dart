@@ -16,6 +16,7 @@ import 'commands/running_commands.dart';
 import 'entity.dart';
 import 'installation_life.dart';
 import 'instance.dart';
+import 'journal.dart';
 
 /// The `entity` coreutil's command runner — the API on the PATH, and the
 /// **generic client of the platform**: knowing only the interaction model, it
@@ -94,12 +95,15 @@ final class EntityRunner {
       ..addCommand(OnceCommand(this))
       ..addCommand(OffCommand(this))
       ..addCommand(ListenersCommand(this))
+      ..addCommand(ListenCommand(this))
+      ..addCommand(DeliveriesCommand(this))
       ..addCommand(ResolveCommand(this))
       ..addCommand(TipCommand(this))
       ..addCommand(PathCommand(this))
       ..addCommand(WorkCommand(this))
       ..addCommand(CommitCommand(this))
-      ..addCommand(ReleaseCommand(this));
+      ..addCommand(ReleaseCommand(this))
+      ..addCommand(EmitCommand(this));
   }
 
   final StringSink out;
@@ -157,6 +161,15 @@ final class EntityRunner {
   /// change by trying again — a script that loops here loops forever, which is
   /// why this cannot share a number with [contestedCode].
   static const int divergedCode = 5;
+
+  /// Occurrences existed and this reader lost them — [JournalGap], never
+  /// silence and never *nothing happened*. Distinct from [notFoundCode]: that
+  /// says nothing was ever there, this says something was and is gone, and a
+  /// script must branch differently on the two — one resumes from the head
+  /// and shrugs, the other has a hole in its record and may need to
+  /// reconcile. Folding it into [notFoundCode] would be exactly the defect
+  /// our own doctrine names: an exit code that grades the easy condition.
+  static const int gapCode = 6;
 
   static const int usageCode = 64;
 
@@ -290,6 +303,12 @@ final class EntityRunner {
       // answer this coreutil gives for every other thing it could not find.
       err.writeln('entity: $e');
       exitCode = notFoundCode;
+    } on JournalGap catch (e) {
+      // A cursor the journal no longer holds. The distinguishing text is for
+      // a person; the code is for the program, and the program is the whole
+      // reason the journal answers gap instead of silence.
+      err.writeln('entity: $e');
+      exitCode = gapCode;
     } on BodyNotStartable catch (e) {
       // The body never started, so nothing was written and nothing landed —
       // the caller named something that is not there, which is the same answer
