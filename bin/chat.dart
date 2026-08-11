@@ -67,7 +67,7 @@ Future<void> main(List<String> args) async {
     for (final name in names) floor.channel(name, place: anchor),
   ];
 
-  final program = ChatProgram(channels: channels, ticker: PeriodicTicker());
+  final program = ChatProgram(channels: channels, ticker: floor.dispatchTicker(anchor));
   await runApp(ChatApp(program: program));
 }
 

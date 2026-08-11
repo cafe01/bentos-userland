@@ -20,11 +20,11 @@ final class Room {
     String? persistedReadMark,
     List<String>? sentHistory,
     MentionScanner? mentionScanner,
-  })  : transcript = Transcript(readMark: persistedReadMark),
-        activity = Activity(),
-        composer = Composer(sentHistory: sentHistory),
-        mentionScanner = mentionScanner ?? MentionScanner(channel.me),
-        _needsInitialCatchUp = persistedReadMark == null;
+  }) : transcript = Transcript(readMark: persistedReadMark),
+       activity = Activity(),
+       composer = Composer(sentHistory: sentHistory),
+       mentionScanner = mentionScanner ?? MentionScanner(channel.me),
+       _needsInitialCatchUp = persistedReadMark == null;
 
   final Channel channel;
   final Transcript transcript;

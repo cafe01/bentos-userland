@@ -1,8 +1,10 @@
-/// What is on screen, and where the unread line goes.
+/// What is in a room, and where the unread line goes.
 ///
 /// Pure: no `dart:io`, no clock of its own, no framework. A [Transcript] holds
 /// lines in the order they landed — [Channel.history]'s order, never the
-/// order a ULID would sort in — plus the scroll position and the read mark.
+/// order a ULID would sort in — plus the read mark. Where a reader has
+/// scrolled to is not a fact about the conversation and lives in the render
+/// adapter instead, against nocterm's own scroll controller.
 library;
 
 import 'dart:collection';
@@ -69,16 +71,11 @@ final class Transcript {
   /// history. Production never passes it — the default is this transcript's
   /// own growable store.
   Transcript({String? readMark, List<TranscriptLine>? backing})
-      : _readMark = readMark,
-        _lines = backing ?? <TranscriptLine>[];
+    : _readMark = readMark,
+      _lines = backing ?? <TranscriptLine>[];
 
   final List<TranscriptLine> _lines;
   String? _readMark;
-
-  /// Lines from the bottom the viewport has scrolled up by. Zero is
-  /// *following* — the ground the demands forbid moving under a reader who
-  /// has not scrolled away.
-  int _scrollFromBottom = 0;
 
   /// A live view over the backing store, never a copy: a render reading this
   /// once per keystroke must not pay to duplicate a history it is about to
@@ -87,28 +84,11 @@ final class Transcript {
 
   String? get readMark => _readMark;
 
-  bool get isAtBottom => _scrollFromBottom == 0;
-
-  int get scrollFromBottom => _scrollFromBottom;
-
-  /// Appends a line as it lands. A reader scrolled away stays exactly where
-  /// they are — the offset from the bottom grows so the same lines stay in
-  /// view — which is the pure half of "what arrives does not move the
-  /// ground"; the other half is the render adapter not repainting under them.
-  void append(TranscriptLine line) {
-    _lines.add(line);
-    if (_scrollFromBottom > 0) _scrollFromBottom++;
-  }
-
-  void scrollUp(int by) {
-    _scrollFromBottom = (_scrollFromBottom + by).clamp(0, _lines.length);
-  }
-
-  void scrollDown(int by) {
-    _scrollFromBottom = (_scrollFromBottom - by).clamp(0, _lines.length);
-  }
-
-  void scrollToBottom() => _scrollFromBottom = 0;
+  /// Appends a line as it lands. Where the viewport sits while this happens
+  /// is not this class's concern — that is the render adapter's
+  /// `AutoScrollController`, which keeps a reader scrolled away exactly
+  /// where they are on its own.
+  void append(TranscriptLine line) => _lines.add(line);
 
   /// Marks everything currently held as read: the mark becomes the id of the
   /// most recent [SpokenLine], or stays null when nothing has been spoken yet.
@@ -134,7 +114,8 @@ final class Transcript {
     for (var i = _lines.length - 1; i >= 0; i--) {
       final line = _lines[i];
       if (line is! SpokenLine) continue;
-      if (line.message.id == _readMark) return (count: count, boundaryIndex: boundaryIndex);
+      if (line.message.id == _readMark)
+        return (count: count, boundaryIndex: boundaryIndex);
       count++;
       boundaryIndex = i;
     }

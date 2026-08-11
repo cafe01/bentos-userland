@@ -11,7 +11,10 @@
 /// bodies exist, that git signs, that an act lands.
 library;
 
+import 'dart:async';
+
 import 'package:bentos_userland/bentos_chat.dart';
+import 'package:bentos_userland/chat_client.dart' show Ticker;
 import 'package:bentos_userland/entity.dart' show EntityNotInstalled;
 import 'package:test/test.dart';
 
@@ -68,6 +71,29 @@ final class FakeFloor implements ChatFloor {
     if (throwsNotInstalled) throw EntityNotInstalled(chatOntology, place);
     return here;
   }
+
+  @override
+  Ticker dispatchTicker(String place) {
+    vantages.add(place);
+    return _NoopTicker();
+  }
+}
+
+/// No verb of this gate drives a ticker — it judges the face's printed lines
+/// and exit codes, never a live view — so the double is a stub with nothing
+/// behind it.
+final class _NoopTicker implements Ticker {
+  @override
+  Stream<void> get ticks => const Stream.empty();
+
+  @override
+  void nudge() {}
+
+  @override
+  void dispose() {}
+
+  @override
+  bool get connected => true;
 }
 
 /// One invocation of the coreutil, captured whole.

@@ -56,13 +56,11 @@ void main() {
       final session = Session(rooms);
       rooms[0].fold([_spoke('a'), _spoke('b'), _spoke('c'), _spoke('d')]);
       rooms[0].composer.insert('half-typed');
-      rooms[0].transcript.scrollUp(3);
 
       session.switchTo(1);
       session.switchTo(0);
 
       expect(rooms[0].composer.text, 'half-typed');
-      expect(rooms[0].transcript.scrollFromBottom, 3);
     });
 
     test('folding the current room clears its noise immediately', () {

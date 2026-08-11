@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:bentos_userland/entity.dart';
@@ -131,10 +132,22 @@ void main() {
         compiled,
         ['-C', site.path, 'listen', entity.name, 'prompt.landed'],
       );
+      final stdoutLines = process.stdout
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .asBroadcastStream();
 
-      // Long enough that the process is past startup and inside its poll —
-      // short enough the test is not a sleep-driven guess dressed as a wait.
-      await Future<void>.delayed(const Duration(milliseconds: 500));
+      // Readiness is observed, never guessed: a real occurrence is landed
+      // and the test waits for the child to print it. By the time that line
+      // arrives the child has subscribed *and* installed its SIGINT handler
+      // — `ListenCommand.run` sets up both, back to back, before it ever
+      // awaits — so a stdout line is proof the handler is live, which a
+      // fixed sleep could only ever assume and lose under load.
+      final ready = born('ready');
+      final readyNext = commit({'r': '1'}, parent: ready);
+      await entity.emit(EventPhase.landed, [moving('ready', from: ready, to: readyNext)]);
+      await stdoutLines.first.timeout(const Duration(seconds: 10));
+
       // `Process.kill` from a Dart parent does not reliably deliver either,
       // for the same reason — shelling out to `kill` is what actually
       // exercises the claim under test rather than a transport quirk.

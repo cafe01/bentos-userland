@@ -10,7 +10,8 @@ library;
 import 'package:characters/characters.dart';
 
 final class Composer {
-  Composer({List<String>? sentHistory}) : _sent = List.of(sentHistory ?? const []);
+  Composer({List<String>? sentHistory})
+    : _sent = List.of(sentHistory ?? const []);
 
   List<String> _clusters = const [];
 
@@ -37,7 +38,11 @@ final class Composer {
   void insert(String s) {
     _exitHistory();
     final chars = s.characters.toList();
-    _clusters = [..._clusters.take(_cursor), ...chars, ..._clusters.skip(_cursor)];
+    _clusters = [
+      ..._clusters.take(_cursor),
+      ...chars,
+      ..._clusters.skip(_cursor),
+    ];
     _cursor += chars.length;
   }
 

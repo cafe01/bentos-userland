@@ -29,6 +29,9 @@ final class _FakeTicker implements Ticker {
 
   @override
   void dispose() => _controller.close();
+
+  @override
+  bool get connected => true;
 }
 
 void main() {
@@ -88,9 +91,9 @@ void main() {
       await program.start();
       program.session.currentRoom.composer.insert('status?');
 
-      final quit = await program.handleKeyPress(const KeyPress(Key.enter));
+      final effect = await program.handleKeyPress(const KeyPress(Key.enter));
 
-      expect(quit, isFalse);
+      expect(effect.quit, isFalse);
       expect(channel.spoken, ['status?']);
       final reloaded = PersistedState.load(file: stateFile);
       expect(reloaded.of('bentos.chat:fabrica').sentHistory, ['status?']);
@@ -123,9 +126,9 @@ void main() {
       await program.start();
       program.session.currentRoom.composer.insert('/quit');
 
-      final quit = await program.handleKeyPress(const KeyPress(Key.enter));
+      final effect = await program.handleKeyPress(const KeyPress(Key.enter));
 
-      expect(quit, isTrue);
+      expect(effect.quit, isTrue);
       expect(channel.spoken, isEmpty);
       expect(stateFile.existsSync(), isTrue);
     });

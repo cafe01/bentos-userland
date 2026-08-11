@@ -13,8 +13,8 @@ enum Focus { composer, transcript }
 
 final class Session {
   Session(List<Room> rooms, {int current = 0})
-      : rooms = List.of(rooms),
-        _current = current {
+    : rooms = List.of(rooms),
+      _current = current {
     if (this.rooms.isEmpty) {
       throw ArgumentError('a session needs at least one room');
     }

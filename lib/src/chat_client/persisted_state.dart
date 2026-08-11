@@ -16,22 +16,22 @@ final class RoomState {
   final List<String> sentHistory;
 
   factory RoomState.fromJson(Map<String, dynamic> json) => RoomState(
-        readMark: json['readMark'] as String?,
-        sentHistory:
-            (json['sentHistory'] as List<dynamic>? ?? const []).cast<String>(),
-      );
+    readMark: json['readMark'] as String?,
+    sentHistory: (json['sentHistory'] as List<dynamic>? ?? const [])
+        .cast<String>(),
+  );
 
   Map<String, dynamic> toJson() => {
-        if (readMark != null) 'readMark': readMark,
-        'sentHistory': sentHistory,
-      };
+    if (readMark != null) 'readMark': readMark,
+    'sentHistory': sentHistory,
+  };
 }
 
 /// The whole of what this program remembers between runs, keyed by the full
 /// coordinate (`bentos.chat:fabrica`).
 final class PersistedState {
   PersistedState({Map<String, RoomState>? rooms, this.currentCoordinate})
-      : rooms = rooms ?? {};
+    : rooms = rooms ?? {};
 
   final Map<String, RoomState> rooms;
   String? currentCoordinate;
@@ -41,16 +41,17 @@ final class PersistedState {
   factory PersistedState.fromJson(Map<String, dynamic> json) {
     final roomsJson = json['rooms'] as Map<String, dynamic>? ?? const {};
     return PersistedState(
-      rooms: roomsJson
-          .map((k, v) => MapEntry(k, RoomState.fromJson(v as Map<String, dynamic>))),
+      rooms: roomsJson.map(
+        (k, v) => MapEntry(k, RoomState.fromJson(v as Map<String, dynamic>)),
+      ),
       currentCoordinate: json['currentCoordinate'] as String?,
     );
   }
 
   Map<String, dynamic> toJson() => {
-        'rooms': rooms.map((k, v) => MapEntry(k, v.toJson())),
-        if (currentCoordinate != null) 'currentCoordinate': currentCoordinate,
-      };
+    'rooms': rooms.map((k, v) => MapEntry(k, v.toJson())),
+    if (currentCoordinate != null) 'currentCoordinate': currentCoordinate,
+  };
 
   /// `$XDG_STATE_HOME/bentos.chat/state.json`, falling back to
   /// `~/.local/state` — the state counterpart of `llm`'s own config file at

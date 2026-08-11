@@ -37,7 +37,6 @@ final class ScreenModel {
     required this.coordinate,
     required this.topic,
     required this.lines,
-    required this.scrollFromBottom,
     required this.unreadCount,
     required this.unreadBoundaryIndex,
     required this.participants,
@@ -49,12 +48,12 @@ final class ScreenModel {
     required this.focus,
     required this.tabs,
     required this.hotlist,
+    this.dispatchConnected = true,
   });
 
   final String coordinate;
   final String? topic;
   final List<TranscriptLine> lines;
-  final int scrollFromBottom;
   final int unreadCount;
 
   /// The index in [lines] of the first unread line — [Transcript]'s own
@@ -83,15 +82,24 @@ final class ScreenModel {
   final List<RoomTab> tabs;
   final Hotlist hotlist;
 
+  /// Whether the doorbell is actually attached right now — `false` means the
+  /// room bar may be stale until it reconnects, and this is the one fact
+  /// that must show even though everything else in this snapshot still
+  /// looks current.
+  final bool dispatchConnected;
+
   /// A snapshot of [session] as it stands right now.
-  factory ScreenModel.from(Session session, {DateTime? now}) {
+  factory ScreenModel.from(
+    Session session, {
+    DateTime? now,
+    bool dispatchConnected = true,
+  }) {
     final room = session.currentRoom;
     final unread = room.transcript.unreadTail();
     return ScreenModel(
       coordinate: room.coordinate,
       topic: room.topic,
       lines: room.transcript.lines,
-      scrollFromBottom: room.transcript.scrollFromBottom,
       unreadCount: unread.count,
       unreadBoundaryIndex: unread.boundaryIndex,
       participants: room.roster?.participants.toList() ?? const [],
@@ -112,6 +120,7 @@ final class ScreenModel {
           ),
       ],
       hotlist: Hotlist.derive(session),
+      dispatchConnected: dispatchConnected,
     );
   }
 }

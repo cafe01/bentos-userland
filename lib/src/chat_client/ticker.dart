@@ -15,6 +15,13 @@ abstract interface class Ticker {
   void nudge();
 
   void dispose();
+
+  /// Whether the live mechanism behind [ticks] is actually attached right
+  /// now. A cadence that cannot go down on its own — [PeriodicTicker]'s
+  /// clock — is always `true`; a doorbell that can lose its subscription
+  /// answers for real, so a client showing this can say so instead of
+  /// looking current while it has gone deaf.
+  bool get connected;
 }
 
 /// The cadence is a guess, per the design's own admission — two seconds,
@@ -39,4 +46,7 @@ final class PeriodicTicker implements Ticker {
     _timer.cancel();
     _controller.close();
   }
+
+  @override
+  bool get connected => true;
 }

@@ -8,7 +8,11 @@ import 'activity.dart';
 import 'session.dart';
 
 final class HotlistEntry {
-  const HotlistEntry({required this.roomIndex, required this.level, required this.count});
+  const HotlistEntry({
+    required this.roomIndex,
+    required this.level,
+    required this.count,
+  });
 
   final int roomIndex;
   final ActivityLevel level;
@@ -29,7 +33,13 @@ final class Hotlist {
       if (i == session.currentIndex) continue;
       final activity = session.rooms[i].activity;
       if (activity.isQuiet) continue;
-      entries.add(HotlistEntry(roomIndex: i, level: activity.level, count: activity.count));
+      entries.add(
+        HotlistEntry(
+          roomIndex: i,
+          level: activity.level,
+          count: activity.count,
+        ),
+      );
     }
     entries.sort((a, b) {
       final byLevel = b.level.index.compareTo(a.level.index);

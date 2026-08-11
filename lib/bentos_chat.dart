@@ -12,6 +12,7 @@ library;
 export 'src/chat/channel.dart';
 export 'src/chat/cli/chat_runner.dart';
 export 'src/chat/cli/coordinate.dart';
+export 'src/chat/cli/dispatch_ticker.dart';
 export 'src/chat/cli/floor.dart';
 export 'src/chat/cli/render.dart';
 export 'src/chat/construction.dart';

@@ -9,10 +9,12 @@
 library;
 
 import '../../entity/entity.dart';
+import '../../chat_client/ticker.dart';
 import '../channel.dart';
 import '../construction.dart';
 import '../entity_seams.dart';
 import '../seams.dart';
+import 'dispatch_ticker.dart';
 
 abstract interface class ChatFloor {
   /// A channel at [name], anchored at [place], resuming at [cursor].
@@ -25,6 +27,12 @@ abstract interface class ChatFloor {
   /// The channels the installation at [place] carries, sorted. **The ambient
   /// walk's third step**, and it derives from disk rather than reading a store.
   List<String> channels(String place);
+
+  /// A live view of the installation at [place]: fires whenever this
+  /// installation dispatches, in place of a blind cadence. Installation-wide,
+  /// exactly as dispatch itself is — one ticker serves every channel it
+  /// carries.
+  Ticker dispatchTicker(String place);
 }
 
 /// The floor as it really is: the entity primitive underneath, git's own
@@ -59,4 +67,7 @@ final class EntityFloor implements ChatFloor {
   @override
   List<String> channels(String place) =>
       [for (final instance in _entity(place).instances) instance.id]..sort();
+
+  @override
+  Ticker dispatchTicker(String place) => DispatchTicker(_entity(place));
 }

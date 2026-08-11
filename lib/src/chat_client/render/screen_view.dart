@@ -34,9 +34,19 @@ const int _rosterWidthThreshold = 60;
 const int _rosterWidth = 14;
 
 class ChatScreenView extends StatelessComponent {
-  const ChatScreenView({super.key, required this.model});
+  const ChatScreenView({
+    super.key,
+    required this.model,
+    required this.scrollController,
+  });
 
   final ScreenModel model;
+
+  /// The current room's own viewport position — one controller per room,
+  /// held by [ChatApp] so a room left behind keeps its place. Never this
+  /// component's to create: a fresh one here would forget where the reader
+  /// was the moment the room they are in gets rebuilt.
+  final AutoScrollController scrollController;
 
   @override
   Component build(BuildContext context) {
@@ -51,7 +61,12 @@ class ChatScreenView extends StatelessComponent {
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(child: _Transcript(model: model)),
+                  Expanded(
+                    child: _Transcript(
+                      model: model,
+                      controller: scrollController,
+                    ),
+                  ),
                   if (showRoster)
                     SizedBox(
                       width: _rosterWidth.toDouble(),
@@ -79,7 +94,10 @@ class _Header extends StatelessComponent {
     final topic = model.topic;
     return Row(
       children: [
-        Text(model.coordinate, style: const TextStyle(fontWeight: FontWeight.bold)),
+        Text(
+          model.coordinate,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
         if (topic != null) ...[
           const Text('  — '),
           Expanded(
@@ -95,55 +113,66 @@ class _Header extends StatelessComponent {
   }
 }
 
-/// The scrollable buffer, sliced from [ScreenModel.lines] at
-/// [ScreenModel.scrollFromBottom] — the offset [Transcript] already
-/// computed. This component does not decide where the view sits, only how
-/// many rows fit and how a line becomes text.
+/// The scrollable buffer — a [ListView] over [ScreenModel.lines], the unread
+/// marker spliced in as one more item at [ScreenModel.unreadBoundaryIndex].
+/// This component decides nothing about where the viewport sits: [controller]
+/// does, following the bottom on its own while the reader has not scrolled
+/// away, and answering both keyboard scrolling and the mouse wheel — the
+/// wheel needs no wiring here at all, nocterm hit-tests it straight to the
+/// mounted [ListView].
 class _Transcript extends StatelessComponent {
-  const _Transcript({required this.model});
+  const _Transcript({required this.model, required this.controller});
 
   final ScreenModel model;
+  final AutoScrollController controller;
 
   @override
   Component build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final scrolledAway = model.scrollFromBottom > 0;
-        final rows = constraints.maxHeight.isFinite
-            ? constraints.maxHeight.floor() - (scrolledAway ? 1 : 0)
-            : model.lines.length;
-        final visible = _visibleWindow(model.lines, model.scrollFromBottom, rows.clamp(0, 1 << 30));
-        final boundary = model.unreadBoundaryIndex;
+    // `ListView(reverse: true)` places item 0 at the bottom edge, so item 0
+    // must be the newest line — the idiom nocterm inherits from Flutter for
+    // exactly this shape of list. Walked newest-to-oldest once, with the
+    // unread marker spliced in right after the boundary line: that is the
+    // "next" item in this direction, since the marker sits above it —
+    // toward older lines — when read top to bottom.
+    final lines = model.lines;
+    final boundary = model.unreadBoundaryIndex;
+    final items = <Object>[];
+    for (var i = lines.length - 1; i >= 0; i--) {
+      items.add(lines[i]);
+      if (i == boundary) items.add(_unreadMarker);
+    }
 
-        final rowWidgets = <Component>[];
-        for (var i = visible.start; i < visible.end; i++) {
-          if (i == boundary) rowWidgets.add(const _UnreadMarker());
-          rowWidgets.add(_TranscriptRow(line: model.lines[i]));
-        }
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: rowWidgets),
-            ),
-            if (scrolledAway) const _MoreBelowMarker(),
-          ],
-        );
-      },
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: ListView.builder(
+            reverse: true,
+            controller: controller,
+            itemCount: items.length,
+            itemBuilder: (context, i) {
+              final item = items[i];
+              return item == _unreadMarker
+                  ? const _UnreadMarker()
+                  : _TranscriptRow(line: item as TranscriptLine);
+            },
+          ),
+        ),
+        AnimatedBuilder(
+          animation: controller,
+          builder: (context, _) =>
+              controller.isAutoScrollEnabled ? const SizedBox() : const _MoreBelowMarker(),
+        ),
+      ],
     );
   }
 }
 
-/// The window of [lines] a viewport of [rows] shows when its bottom edge
-/// sits [scrollFromBottom] lines back from the end — the same offset
-/// [Transcript.append] grows while a reader is scrolled away, so the lines
-/// already on screen stay exactly where they were.
-({int start, int end}) _visibleWindow(List<TranscriptLine> lines, int scrollFromBottom, int rows) {
-  final end = (lines.length - scrollFromBottom).clamp(0, lines.length);
-  final start = (end - rows).clamp(0, end);
-  return (start: start, end: end);
-}
+/// Marks a slot in the newest-to-oldest item list built by [_Transcript] as
+/// the unread marker rather than a [TranscriptLine] — an `Object` sentinel
+/// instead of a richer type because the list it lives in is transient,
+/// built and consumed within one `build()`.
+const Object _unreadMarker = Object();
 
 class _UnreadMarker extends StatelessComponent {
   const _UnreadMarker();
@@ -176,24 +205,31 @@ class _TranscriptRow extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
+    final text = _lineText(line);
     return switch (line) {
-      SpokenLine(message: final message) => Text(
-          '${_clock(message.spoken)} @${message.author.local}  ${message.body}',
-          overflow: TextOverflow.clip,
-        ),
-      TopicLine(topic: final topic, by: final by, at: final at) => Text(
-          '${_clock(at)}  *  ${by.local} changed topic to "$topic"',
-          overflow: TextOverflow.clip,
-          style: const TextStyle(color: Colors.grey),
-        ),
-      SystemLine(text: final text, at: final at) => Text(
-          '${_clock(at)}  ! $text',
-          overflow: TextOverflow.clip,
-          style: const TextStyle(color: Colors.yellow),
-        ),
+      SpokenLine() => Text(text, overflow: TextOverflow.clip),
+      TopicLine() => Text(
+        text,
+        overflow: TextOverflow.clip,
+        style: const TextStyle(color: Colors.grey),
+      ),
+      SystemLine() => Text(
+        text,
+        overflow: TextOverflow.clip,
+        style: const TextStyle(color: Colors.yellow),
+      ),
     };
   }
 }
+
+/// The prose one [TranscriptLine] draws — the single place that composes it.
+String _lineText(TranscriptLine line) => switch (line) {
+  SpokenLine(message: final message) =>
+    '${_clock(message.spoken)} @${message.author.local}  ${message.body}',
+  TopicLine(topic: final topic, by: final by, at: final at) =>
+    '${_clock(at)}  *  ${by.local} changed topic to "$topic"',
+  SystemLine(text: final text, at: final at) => '${_clock(at)}  ! $text',
+};
 
 String _clock(DateTime at) {
   final local = at.toLocal();
@@ -209,9 +245,7 @@ class _Roster extends StatelessComponent {
   Component build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (final p in participants) ..._participantRows(p),
-      ],
+      children: [for (final p in participants) ..._participantRows(p)],
     );
   }
 
@@ -222,7 +256,13 @@ class _Roster extends StatelessComponent {
     ];
     final reason = p.away;
     if (reason != null && reason.isNotEmpty) {
-      rows.add(Text('  away: $reason', overflow: TextOverflow.clip, style: const TextStyle(color: Colors.grey)));
+      rows.add(
+        Text(
+          '  away: $reason',
+          overflow: TextOverflow.clip,
+          style: const TextStyle(color: Colors.grey),
+        ),
+      );
     }
     return rows;
   }
@@ -239,11 +279,20 @@ class _Bar extends StatelessComponent {
   Component build(BuildContext context) {
     final away = model.awayReason;
     final dot = away == null ? '●' : '○';
-    final presence = away == null ? 'here' : (away.isEmpty ? 'away' : 'away: $away');
+    final presence = away == null
+        ? 'here'
+        : (away.isEmpty ? 'away' : 'away: $away');
     return Row(
       children: [
         for (final tab in model.tabs) ...[_TabSlot(tab: tab), const Text(' ')],
         const Spacer(),
+        if (!model.dispatchConnected) ...[
+          const Text(
+            '⚠ reconnecting',
+            style: TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold),
+          ),
+          const Text('  '),
+        ],
         Text('${model.me} $dot$presence'),
         const Text('  '),
         Text(_clock(model.now)),
@@ -268,7 +317,9 @@ class _TabSlot extends StatelessComponent {
       '[${tab.index + 1}:${tab.name}$suffix]',
       style: TextStyle(
         fontWeight: tab.isCurrent ? FontWeight.bold : null,
-        color: tab.activityLevel == ActivityLevel.mention ? Colors.yellow : null,
+        color: tab.activityLevel == ActivityLevel.mention
+            ? Colors.yellow
+            : null,
       ),
     );
   }
@@ -287,15 +338,28 @@ class _InputLine extends StatelessComponent {
     final focused = model.focus == Focus.composer;
     return Row(
       children: [
-        Text('> ', style: TextStyle(fontWeight: focused ? FontWeight.bold : null)),
-        Expanded(child: _CaretText(text: model.composingText, cursor: model.composingCursor, active: focused)),
+        Text(
+          '> ',
+          style: TextStyle(fontWeight: focused ? FontWeight.bold : null),
+        ),
+        Expanded(
+          child: _CaretText(
+            text: model.composingText,
+            cursor: model.composingCursor,
+            active: focused,
+          ),
+        ),
       ],
     );
   }
 }
 
 class _CaretText extends StatelessComponent {
-  const _CaretText({required this.text, required this.cursor, required this.active});
+  const _CaretText({
+    required this.text,
+    required this.cursor,
+    required this.active,
+  });
 
   final String text;
   final int cursor;
@@ -308,15 +372,19 @@ class _CaretText extends StatelessComponent {
     final clusters = text.characters.toList();
     final before = clusters.take(cursor).join();
     final atCursor = cursor < clusters.length ? clusters[cursor] : ' ';
-    final after = cursor < clusters.length ? clusters.skip(cursor + 1).join() : '';
+    final after = cursor < clusters.length
+        ? clusters.skip(cursor + 1).join()
+        : '';
 
     return RichText(
       overflow: TextOverflow.clip,
-      text: TextSpan(children: [
-        TextSpan(text: before),
-        TextSpan(text: atCursor, style: const TextStyle(reverse: true)),
-        TextSpan(text: after),
-      ]),
+      text: TextSpan(
+        children: [
+          TextSpan(text: before),
+          TextSpan(text: atCursor, style: const TextStyle(reverse: true)),
+          TextSpan(text: after),
+        ],
+      ),
     );
   }
 }
@@ -346,31 +414,70 @@ class _ChatAppState extends State<ChatApp> {
     // on almost every character (measured: ~24ms median, ~34ms worst case,
     // independent of history size — dropping to ~1ms once disabled).
     SchedulerBinding.instance.enableFrameRateLimiting = false;
-    unawaited(component.program.start().then((_) {
-      if (mounted) setState(() {});
-    }));
+    unawaited(
+      component.program.start().then((_) {
+        if (mounted) setState(() {});
+      }),
+    );
     _ticks = component.program.ticker.ticks.listen((_) async {
       await component.program.tick();
       if (mounted) setState(() {});
     });
   }
 
+  /// One [AutoScrollController] per room, coordinate-keyed — the only place
+  /// nocterm may be named, so the only place this state can live. A room
+  /// left behind keeps its own controller, and with it its own place, for
+  /// as long as this app runs.
+  final Map<String, AutoScrollController> _scrollControllers = {};
+
+  AutoScrollController _controllerFor(String coordinate) =>
+      _scrollControllers.putIfAbsent(coordinate, AutoScrollController.new);
+
   @override
   void dispose() {
     _ticks?.cancel();
     component.program.dispose();
+    for (final controller in _scrollControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
   Future<void> _onKey(KeyboardEvent event) async {
     final press = _translate(event);
     if (press == null) return;
-    final quit = await component.program.handleKeyPress(press);
-    if (quit) {
+    final effect = await component.program.handleKeyPress(press);
+    if (effect.quit) {
       shutdownApp();
       return;
     }
+    final scroll = effect.scroll;
+    if (scroll != null)
+      _scroll(
+        _controllerFor(component.program.session.currentRoom.coordinate),
+        scroll,
+      );
     if (mounted) setState(() {});
+  }
+
+  void _scroll(AutoScrollController controller, ScrollStep step) {
+    // `reverse: true` puts the newest line at offset 0, so *up* — toward
+    // older lines — is *growing* offset: the controller's own `scrollUp`
+    // shrinks it and would move the wrong way. This inverts exactly the way
+    // nocterm's own mouse-wheel handler does for a reversed `ListView`
+    // (`RenderListViewport.handleMouseWheel`), so the keyboard and the wheel
+    // agree.
+    switch (step) {
+      case ScrollStep.lineUp:
+        controller.scrollDown(1);
+      case ScrollStep.lineDown:
+        controller.scrollUp(1);
+      case ScrollStep.pageUp:
+        controller.scrollDown(controller.viewportDimension);
+      case ScrollStep.pageDown:
+        controller.scrollUp(controller.viewportDimension);
+    }
   }
 
   @override
@@ -388,7 +495,12 @@ class _ChatAppState extends State<ChatApp> {
         unawaited(_onKey(event));
         return true;
       },
-      child: ChatScreenView(model: component.program.model),
+      child: ChatScreenView(
+        model: component.program.model,
+        scrollController: _controllerFor(
+          component.program.session.currentRoom.coordinate,
+        ),
+      ),
     );
   }
 }

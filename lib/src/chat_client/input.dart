@@ -42,12 +42,29 @@ final class KeyPress {
   final int? index;
 }
 
+/// A move of the transcript viewport, one line or one page. Named here
+/// because [Input] decides *whether* a keypress means "scroll" — `PageUp`
+/// always, `Up`/`Down` only while the transcript is focused — without being
+/// allowed to act on a viewport it cannot import: that decision leaves the
+/// core as this value, and only the render adapter turns it into a call
+/// against the framework's scroll controller.
+enum ScrollStep { lineUp, lineDown, pageUp, pageDown }
+
 /// What handling one [KeyPress] came to.
 final class InputEffect {
-  const InputEffect({this.intent, this.quit = false, this.persistable = false});
+  const InputEffect({
+    this.intent,
+    this.scroll,
+    this.quit = false,
+    this.persistable = false,
+  });
 
   /// An act for the caller to carry out against the channel.
   final Intent? intent;
+
+  /// A viewport move for the render adapter to carry out — never touched
+  /// here, since only it holds the scroll controller. See [ScrollStep].
+  final ScrollStep? scroll;
 
   /// `/quit`, or the framework's own Ctrl+C read as one.
   final bool quit;
@@ -81,25 +98,21 @@ final class Input {
         return const InputEffect(persistable: true);
 
       case Key.pageUp:
-        room.transcript.scrollUp(10);
-        return const InputEffect();
+        return const InputEffect(scroll: ScrollStep.pageUp);
       case Key.pageDown:
-        room.transcript.scrollDown(10);
-        return const InputEffect();
+        return const InputEffect(scroll: ScrollStep.pageDown);
 
       case Key.up:
         if (session.focus == Focus.transcript) {
-          room.transcript.scrollUp(1);
-        } else {
-          composer.historyPrevious();
+          return const InputEffect(scroll: ScrollStep.lineUp);
         }
+        composer.historyPrevious();
         return const InputEffect();
       case Key.down:
         if (session.focus == Focus.transcript) {
-          room.transcript.scrollDown(1);
-        } else {
-          composer.historyNext();
+          return const InputEffect(scroll: ScrollStep.lineDown);
         }
+        composer.historyNext();
         return const InputEffect();
 
       case Key.left:

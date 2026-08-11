@@ -63,7 +63,10 @@ final class ChatProgram {
           sentHistory: _persisted.of(channel.coordinate).sentHistory,
         ),
     ];
-    session = Session(rooms, current: _startIndex(rooms, _persisted.currentCoordinate));
+    session = Session(
+      rooms,
+      current: _startIndex(rooms, _persisted.currentCoordinate),
+    );
   }
 
   final Ticker ticker;
@@ -78,7 +81,8 @@ final class ChatProgram {
     return index < 0 ? 0 : index;
   }
 
-  ScreenModel get model => ScreenModel.from(session);
+  ScreenModel get model =>
+      ScreenModel.from(session, dispatchConnected: ticker.connected);
 
   /// The first read: every room folds its opening state, current or not, so
   /// roster and topic are populated before anything is drawn.
@@ -100,13 +104,14 @@ final class ChatProgram {
     persist();
   }
 
-  /// One keypress, translated and acted on. Returns true when the press
-  /// means the program should quit.
-  Future<bool> handleKeyPress(KeyPress press) async {
+  /// One keypress, translated and acted on. Returns the [InputEffect] it
+  /// resolved to — `quit` for the caller to act on, and `scroll` for the
+  /// render adapter to carry out against a viewport this class never touches.
+  Future<InputEffect> handleKeyPress(KeyPress press) async {
     final effect = input.handle(press, session);
     if (effect.quit) {
       persist();
-      return true;
+      return effect;
     }
     final intent = effect.intent;
     if (intent != null) {
@@ -114,7 +119,7 @@ final class ChatProgram {
       ticker.nudge();
     }
     if (effect.persistable || intent != null) persist();
-    return false;
+    return effect;
   }
 
   Future<void> _dispatch(Intent intent) async {
