@@ -1132,6 +1132,10 @@ final class _WatchedGit implements Git {
       _inner.worktreeAdd(gitDir, path: path, at: at);
 
   @override
+  WorktreeCheckout worktreeCheckout(String path, {required Commit to}) =>
+      _inner.worktreeCheckout(path, to: to);
+
+  @override
   String? worktreeRepository(String path) => _inner.worktreeRepository(path);
 
   @override

@@ -356,6 +356,42 @@ class FakeGit implements Git {
   }
 
   @override
+  WorktreeCheckout worktreeCheckout(String path, {required Commit to}) {
+    final gitDir = worktreeRepository(path);
+    if (gitDir == null) throw StateError('no worktree at $path');
+    final repo = _repo(gitDir);
+    final standing = repo.worktrees[path];
+    final target = repo.trees[repo.commits[to.sha]?.tree] ?? const {};
+    // Modelled at the coarse grain the fake's scope allows: any file whose
+    // bytes on disk no longer match what the *standing* commit's tree put
+    // there is a local change, and any such change refuses the move — never
+    // only the paths the incoming tree happens to touch. Finer than that is
+    // real Git's own merge of three trees, and reimplementing it here is
+    // exactly the growth this double's scope forbids.
+    final onStanding = repo.trees[repo.commits[standing]?.tree] ?? const {};
+    for (final entry in onStanding.entries) {
+      final file = File(p.join(path, entry.key));
+      final onDisk = file.existsSync() ? hashObject(gitDir, file.readAsBytesSync()) : null;
+      if (onDisk != entry.value) {
+        return WorktreeCheckout(
+          moved: false,
+          report: 'local changes to ${entry.key} would be overwritten',
+        );
+      }
+    }
+    final dir = Directory(path);
+    if (dir.existsSync()) dir.deleteSync(recursive: true);
+    dir.createSync(recursive: true);
+    for (final entry in target.entries) {
+      final file = File(p.join(path, entry.key))..parent.createSync(recursive: true);
+      file.writeAsBytesSync(_objects[entry.value]!);
+    }
+    File(p.join(path, '.git')).writeAsStringSync('gitdir: $gitDir\n');
+    repo.worktrees[path] = to.sha;
+    return const WorktreeCheckout(moved: true);
+  }
+
+  @override
   String? worktreeRepository(String path) {
     // Possession is two claims and the port makes both: the directory says
     // which repository laid it down, and that repository's register agrees.

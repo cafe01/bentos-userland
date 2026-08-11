@@ -55,4 +55,22 @@ final class Session {
     room.fold(events);
     if (index == _current) room.enter();
   }
+
+  /// Adds [room] and switches to it — the room-opening half of R3.1/R3.2/R4.3.
+  /// Unlike [switchTo], the room did not exist in [rooms] a moment ago; there
+  /// is no separate "insert" step because a room that is not yet open cannot
+  /// be switched to.
+  void openRoom(Room room) {
+    rooms.add(room);
+    _current = rooms.length - 1;
+    currentRoom.enter();
+  }
+
+  /// Whether the roster is shown full-width in place of the transcript —
+  /// proprioception, not domain: a fact about the viewport, never persisted,
+  /// never read by anything under [Room]. One bit for the whole session, not
+  /// per room: it should not silently un-toggle on a room switch.
+  bool rosterOverlay = false;
+
+  void toggleRosterOverlay() => rosterOverlay = !rosterOverlay;
 }

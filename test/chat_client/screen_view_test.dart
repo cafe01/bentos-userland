@@ -9,7 +9,6 @@ import 'package:bentos_userland/src/chat/model.dart';
 import 'package:bentos_userland/src/chat/outcome.dart';
 import 'package:bentos_userland/src/chat_client/activity.dart';
 import 'package:bentos_userland/src/chat_client/app.dart';
-import 'package:bentos_userland/src/chat_client/hotlist.dart';
 import 'package:bentos_userland/src/chat_client/render/screen_view.dart';
 import 'package:bentos_userland/src/chat_client/screen_model.dart';
 import 'package:bentos_userland/src/chat_client/session.dart';
@@ -62,6 +61,7 @@ ScreenModel _model({
   String? awayReason,
   DateTime? now,
   bool dispatchConnected = true,
+  bool rosterOverlay = false,
 }) {
   return ScreenModel(
     coordinate: coordinate,
@@ -77,7 +77,7 @@ ScreenModel _model({
     now: now ?? DateTime(2026, 8, 7, 14, 32),
     focus: focus,
     tabs: tabs,
-    hotlist: const Hotlist([]),
+    rosterOverlay: rosterOverlay,
     dispatchConnected: dispatchConnected,
   );
 }
@@ -264,6 +264,8 @@ void main() {
             final program = ChatProgram(
               channels: [channel],
               ticker: _NullTicker(),
+              floor: FakeChatFloor(),
+              place: '/fake/place',
             );
             await program.start();
 
@@ -292,6 +294,8 @@ void main() {
             final program = ChatProgram(
               channels: [channel],
               ticker: _NullTicker(),
+              floor: FakeChatFloor(),
+              place: '/fake/place',
             );
             await program.start();
 
@@ -321,6 +325,8 @@ void main() {
           final program = ChatProgram(
             channels: [channel],
             ticker: _NullTicker(),
+            floor: FakeChatFloor(),
+            place: '/fake/place',
           );
           await program.start();
 
@@ -343,6 +349,8 @@ void main() {
           final program = ChatProgram(
             channels: [channel],
             ticker: _NullTicker(),
+            floor: FakeChatFloor(),
+            place: '/fake/place',
           );
           await program.start();
 
@@ -374,7 +382,12 @@ void main() {
           for (var i = 0; i < 40; i++) Spoke(_msg('cafe01', 'line $i', minute: i)),
         ];
         final design = FakeChannel(name: 'design', me: _alfred);
-        final program = ChatProgram(channels: [fabrica, design], ticker: _NullTicker());
+        final program = ChatProgram(
+          channels: [fabrica, design],
+          ticker: _NullTicker(),
+          floor: FakeChatFloor(),
+          place: '/fake/place',
+        );
 
         // `ChatApp.initState` itself calls `program.start()` — calling it
         // again here would fold `fabrica.syncResult` a second time, since
@@ -410,7 +423,12 @@ void main() {
     () async {
       await testNocterm('no frame throttle', (tester) async {
         final channel = FakeChannel(name: 'fabrica', me: _alfred);
-        final program = ChatProgram(channels: [channel], ticker: _NullTicker());
+        final program = ChatProgram(
+          channels: [channel],
+          ticker: _NullTicker(),
+          floor: FakeChatFloor(),
+          place: '/fake/place',
+        );
         await program.start();
 
         await tester.pumpComponent(ChatApp(program: program));

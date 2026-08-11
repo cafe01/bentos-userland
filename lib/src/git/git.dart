@@ -46,6 +46,25 @@ final class RefUpdate {
   final String report;
 }
 
+/// The outcome of an unforced worktree checkout: whether the tree now stands
+/// at the requested commit, and what the substrate said when it declined.
+///
+/// **Mirrors [RefUpdate] for the same reason.** A worktree carrying edits the
+/// checkout would overwrite is Git refusing an ordinary request, not the
+/// command failing to run — so this travels back as a value the caller reads,
+/// never as a thrown fault. Classification stays above the port: what
+/// travels here is the substrate's report, unread.
+final class WorktreeCheckout {
+  const WorktreeCheckout({required this.moved, this.report = ''});
+
+  /// True when the worktree now stands at the requested commit.
+  final bool moved;
+
+  /// What the substrate wrote while declining, verbatim and undecoded of
+  /// meaning. Empty when the worktree moved.
+  final String report;
+}
+
 /// The Git port — **the one abstract type in the entity package**.
 ///
 /// The entity *is* a Git repository and there will be no second implementation
@@ -201,6 +220,22 @@ abstract interface class Git {
   /// substrate's refusal is the last word — a directory Git declined to remove
   /// is never removed by us afterwards.
   void worktreeRemove(String gitDir, {required String path});
+
+  /// Moves the worktree at [path] to [to] — an **unforced** `git checkout`.
+  ///
+  /// Git's own reason to decline is a tree still carrying local changes the
+  /// move would overwrite, and this member does exactly what plain
+  /// `checkout` does: asks, and accepts the answer. Never `--force`, never a
+  /// stash, never a clean — content Git declines to touch is content this
+  /// leaves standing. [worktreeRemove]'s forced discard is a different verb
+  /// for a different caller: releasing a tree nobody is reading from any
+  /// longer, not catching one up.
+  ///
+  /// Returns a [WorktreeCheckout]: moved, or refused with the substrate's own
+  /// account of why. A fault that is not the ordinary refusal — [path] no
+  /// worktree at all, [to] no object this repository holds — still throws:
+  /// only the dirty-tree refusal is a decided outcome.
+  WorktreeCheckout worktreeCheckout(String path, {required Commit to});
 
   /// The repository a standing worktree belongs to — its **common** directory,
   /// never the private one a worktree also has.

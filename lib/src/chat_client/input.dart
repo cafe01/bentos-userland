@@ -25,6 +25,7 @@ enum Key {
   home,
   end,
   roomByIndex,
+  toggleRoster,
 }
 
 final class KeyPress {
@@ -96,6 +97,10 @@ final class Input {
         if (index == null) return const InputEffect();
         session.switchTo(index);
         return const InputEffect(persistable: true);
+
+      case Key.toggleRoster:
+        session.toggleRosterOverlay();
+        return const InputEffect();
 
       case Key.pageUp:
         return const InputEffect(scroll: ScrollStep.pageUp);

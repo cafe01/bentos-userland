@@ -39,14 +39,22 @@ final class TopicLine extends TranscriptLine {
   final DateTime at;
 }
 
+enum SystemLineKind { notice, warning }
+
 /// A notice about this program, never the conversation — a refusal or a
 /// stumble, so that neither is lost to it happening off-screen. Local to
 /// this reader alone: nothing here is spoken into the channel, and nothing
 /// here is persisted.
+///
+/// [kind] defaults to [SystemLineKind.warning], matching every existing
+/// caller (`ActRefused`, `ActStumbled`) — a silent default that changed
+/// their colour would be a behaviour change hiding in a field nobody asked
+/// this page to touch.
 final class SystemLine extends TranscriptLine {
-  const SystemLine(this.text, this.at);
+  const SystemLine(this.text, this.at, {this.kind = SystemLineKind.warning});
 
   final String text;
+  final SystemLineKind kind;
 
   @override
   final DateTime at;

@@ -144,6 +144,10 @@ final class WatchedGit implements Git {
       _inner.worktreeRemove(gitDir, path: path);
 
   @override
+  WorktreeCheckout worktreeCheckout(String path, {required Commit to}) =>
+      _inner.worktreeCheckout(path, to: to);
+
+  @override
   String? worktreeRepository(String path) => _inner.worktreeRepository(path);
 
   @override

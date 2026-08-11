@@ -124,4 +124,71 @@ void main() {
       expect(git.worktreeHead(p.join(scratch.path, 'nowhere')), isNull);
     });
   });
+
+  group('worktreeCheckout', () {
+    test('an unforced move brings the tree to the new commit', () {
+      final repo = enclosing('clean');
+      final gitDir = p.join(repo, '.git');
+      final first = git.revParse(gitDir, 'HEAD')!;
+      File(p.join(repo, 'f.txt')).writeAsStringSync('one');
+      Process.runSync('git', ['-C', repo, 'add', '.']);
+      Process.runSync('git', [
+        '-C', repo,
+        '-c', 'user.email=gate@bentos',
+        '-c', 'user.name=gate',
+        'commit', '--quiet', '-m', 'two',
+      ]);
+      final second = git.revParse(gitDir, 'HEAD')!;
+      final where = p.join(scratch.path, 'standing');
+      git.worktreeAdd(gitDir, path: where, at: first);
+
+      final result = git.worktreeCheckout(where, to: second);
+
+      expect(result.moved, isTrue);
+      expect(result.report, isEmpty);
+      expect(git.worktreeHead(where), second);
+      expect(File(p.join(where, 'f.txt')).readAsStringSync(), 'one');
+    });
+
+    test('a dirty tree declines, and the person’s bytes survive the refusal',
+        () {
+      final repo = enclosing('dirty');
+      final gitDir = p.join(repo, '.git');
+      File(p.join(repo, 'f.txt')).writeAsStringSync('base');
+      Process.runSync('git', ['-C', repo, 'add', '.']);
+      Process.runSync('git', [
+        '-C', repo,
+        '-c', 'user.email=gate@bentos',
+        '-c', 'user.name=gate',
+        'commit', '--quiet', '-m', 'one',
+      ]);
+      final first = git.revParse(gitDir, 'HEAD')!;
+      File(p.join(repo, 'f.txt')).writeAsStringSync('advanced');
+      Process.runSync('git', ['-C', repo, 'add', '.']);
+      Process.runSync('git', [
+        '-C', repo,
+        '-c', 'user.email=gate@bentos',
+        '-c', 'user.name=gate',
+        'commit', '--quiet', '-m', 'two',
+      ]);
+      final second = git.revParse(gitDir, 'HEAD')!;
+      final where = p.join(scratch.path, 'standing');
+      git.worktreeAdd(gitDir, path: where, at: first);
+      // The uncommitted work the refusal exists to protect — a person's own
+      // edit, never landed anywhere else, standing only in this tree.
+      final witness = File(p.join(where, 'f.txt'))
+        ..writeAsStringSync('a person\'s uncommitted edit');
+
+      final result = git.worktreeCheckout(where, to: second);
+
+      expect(result.moved, isFalse);
+      expect(result.report, isNotEmpty);
+      // The claim is about the bytes, so the assert reads the bytes: no
+      // remove-and-restand happened underneath the refusal, and the file
+      // that would have been discarded by the old forced path is still
+      // exactly what was written into it.
+      expect(witness.readAsStringSync(), 'a person\'s uncommitted edit');
+      expect(git.worktreeHead(where), first);
+    });
+  });
 }

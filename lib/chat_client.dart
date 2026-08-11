@@ -6,12 +6,12 @@
 library;
 
 export 'src/chat_client/app.dart';
-export 'src/chat_client/hotlist.dart';
 export 'src/chat_client/input.dart';
 export 'src/chat_client/intent.dart';
 export 'src/chat_client/persisted_state.dart';
 export 'src/chat_client/render/screen_view.dart';
 export 'src/chat_client/room.dart';
+export 'src/chat_client/room_command.dart';
 export 'src/chat_client/screen_model.dart';
 export 'src/chat_client/session.dart';
 export 'src/chat_client/ticker.dart';

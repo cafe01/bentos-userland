@@ -8,7 +8,10 @@ import 'package:bentos_userland/src/chat_client/ticker.dart';
 
 /// A [Channel] with no substrate underneath it — a script for the test to
 /// hand `sync()` results to a [Room] with no `dart:io` anywhere in the tree.
-final class FakeChannel implements Channel {
+///
+/// Not `final`: `_TopicChannel` in `app_test.dart` extends it to override one
+/// method rather than reimplement the whole interface.
+class FakeChannel implements Channel {
   FakeChannel({
     required this.name,
     required Handle me,
@@ -22,6 +25,13 @@ final class FakeChannel implements Channel {
 
   /// What the next [say] returns — a caller sets this before calling.
   ActResult? sayResult;
+
+  /// What the next [join]/[leave]/[away]/[back] returns — a caller sets
+  /// these before calling, same pattern as [sayResult].
+  ActResult? joinResult;
+  ActResult? leaveResult;
+  ActResult? awayResult;
+  ActResult? backResult;
 
   /// Every body a caller [say]s, in order — the suite's window into what was
   /// actually sent.
@@ -49,10 +59,11 @@ final class FakeChannel implements Channel {
   Future<List<Message>> history({DateTime? since, DateTime? until, int? limit, String? at}) async => const [];
 
   @override
-  Future<ActResult> join({String? displayName}) async => Acted('fake-join');
+  Future<ActResult> join({String? displayName}) async =>
+      joinResult ?? Acted('fake-join');
 
   @override
-  Future<ActResult> leave() async => Acted('fake-leave');
+  Future<ActResult> leave() async => leaveResult ?? Acted('fake-leave');
 
   @override
   Future<ActResult> say(String body) async {
@@ -65,10 +76,11 @@ final class FakeChannel implements Channel {
   Future<ActResult> setTopic(String text) async => Acted('fake-topic');
 
   @override
-  Future<ActResult> away([String? reason]) async => Acted('fake-away');
+  Future<ActResult> away([String? reason]) async =>
+      awayResult ?? Acted('fake-away');
 
   @override
-  Future<ActResult> back() async => Acted('fake-back');
+  Future<ActResult> back() async => backResult ?? Acted('fake-back');
 
   @override
   Future<List<ChannelEvent>> sync() async => syncResult;

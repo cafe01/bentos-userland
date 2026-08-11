@@ -96,8 +96,13 @@ final class Materialization {
     final standing = at;
     if (standing == tip) return;
     if (standing != null) {
-      ambientGit.worktreeRemove(gitDir, path: directory.path);
-      ambientGit.worktreeAdd(gitDir, path: directory.path, at: tip);
+      // Unforced: a tree still carrying local changes declines rather than
+      // being remade. The refusal is not raised — the caller asked to be
+      // caught up, not to be told the tree is dirty, and forcing that
+      // question on every ordinary call is what the guard at [at] already
+      // spares a reader who never touched the files. Left standing behind
+      // the tip, exactly as [ref] documents a materialization can lag.
+      ambientGit.worktreeCheckout(directory.path, to: tip);
       return;
     }
     if (directory.existsSync() && directory.listSync().isNotEmpty) {

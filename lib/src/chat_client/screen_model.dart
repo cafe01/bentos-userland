@@ -9,13 +9,11 @@ library;
 import '../chat/handle.dart';
 import '../chat/model.dart';
 import 'activity.dart';
-import 'hotlist.dart';
 import 'session.dart';
 import 'transcript.dart';
 
 /// One slot in the room bar — `[1:fabrica(3!)]` — in stable slot order,
-/// never reordered by noise. [Hotlist] answers *where is the noise*;
-/// this answers *what is in that slot*.
+/// never reordered by noise, drawn straight from each room's own [Activity].
 final class RoomTab {
   const RoomTab({
     required this.index,
@@ -47,7 +45,7 @@ final class ScreenModel {
     required this.now,
     required this.focus,
     required this.tabs,
-    required this.hotlist,
+    required this.rosterOverlay,
     this.dispatchConnected = true,
   });
 
@@ -80,7 +78,10 @@ final class ScreenModel {
 
   final Focus focus;
   final List<RoomTab> tabs;
-  final Hotlist hotlist;
+
+  /// Whether the roster is shown full-width in place of the transcript —
+  /// carried straight through from [Session.rosterOverlay].
+  final bool rosterOverlay;
 
   /// Whether the doorbell is actually attached right now — `false` means the
   /// room bar may be stale until it reconnects, and this is the one fact
@@ -119,7 +120,7 @@ final class ScreenModel {
             activityCount: session.rooms[i].activity.count,
           ),
       ],
-      hotlist: Hotlist.derive(session),
+      rosterOverlay: session.rosterOverlay,
       dispatchConnected: dispatchConnected,
     );
   }

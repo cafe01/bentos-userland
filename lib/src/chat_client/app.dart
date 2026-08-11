@@ -7,11 +7,13 @@ library;
 import 'dart:io';
 
 import '../chat/channel.dart';
+import '../chat/cli/floor.dart';
 import '../chat/outcome.dart';
 import 'input.dart';
 import 'intent.dart';
 import 'persisted_state.dart';
 import 'room.dart';
+import 'room_command.dart';
 import 'screen_model.dart';
 import 'session.dart';
 import 'ticker.dart';
@@ -48,6 +50,8 @@ final class ChatProgram {
   ChatProgram({
     required List<Channel> channels,
     required this.ticker,
+    required this.floor,
+    required this.place,
     this.input = const Input(),
     File? stateFile,
   }) : _stateFile = stateFile {
@@ -71,6 +75,8 @@ final class ChatProgram {
 
   final Ticker ticker;
   final Input input;
+  final ChatFloor floor;
+  final String place;
   final File? _stateFile;
   late final PersistedState _persisted;
   late final Session session;
@@ -136,9 +142,154 @@ final class ChatProgram {
           room.transcript.append(SystemLine(notice.text, DateTime.now()));
         }
       case InvokeCommand():
-        // No verb is wired for v1 — `quit` is handled by Input itself before
-        // an Intent is ever produced.
+        final command = resolveCommand(intent);
+        await _execute(command);
+    }
+  }
+
+  /// One [RoomCommand] carried out. Every arm that calls an act follows the
+  /// landing-renders-once law: `join`/`leave`/`away`/`back` append an
+  /// immediate notice on [Acted] — no [ChannelEvent] exists for any of the
+  /// four — while `setTopic` renders nothing on [Acted] and relies on the
+  /// next [syncAll]'s `TopicChanged`. `Refused`/`Stumbled` always render
+  /// immediately, for every act alike, through the same [ActNotice]
+  /// machinery [Speak] already uses.
+  Future<void> _execute(RoomCommand command) async {
+    switch (command) {
+      case JoinRoom(coordinate: final coordinate, displayName: final displayName):
+        final room = await _roomFor(coordinate);
+        final result = await room.channel.join(displayName: displayName);
+        _renderNotice(room, result, 'joined ${room.coordinate}');
+
+      case LeaveRoom():
+        final room = session.currentRoom;
+        final result = await room.channel.leave();
+        _renderNotice(room, result, 'left ${room.coordinate}');
+
+      case SetAway(reason: final reason):
+        final room = session.currentRoom;
+        final result = await room.channel.away(reason);
+        _renderNotice(room, result, reason == null ? 'away' : 'away: $reason');
+
+      case SetBack():
+        final room = session.currentRoom;
+        final result = await room.channel.back();
+        _renderNotice(room, result, 'back');
+
+      case ShowTopic():
+        final room = session.currentRoom;
+        final topic = await room.channel.topic();
+        room.transcript.append(
+          SystemLine(
+            topic ?? 'no topic set',
+            DateTime.now(),
+            kind: SystemLineKind.notice,
+          ),
+        );
+
+      case SetTopic(text: final text):
+        final room = session.currentRoom;
+        final result = await room.channel.setTopic(text);
+        _renderFailureOnly(room, result);
+
+      case ListChannels():
+        final room = session.currentRoom;
+        final open = session.rooms.map((r) => r.name).toSet();
+        for (final name in floor.channels(place)) {
+          final marker = open.contains(name) ? ' (open)' : '';
+          room.transcript.append(
+            SystemLine(
+              '* $name$marker',
+              DateTime.now(),
+              kind: SystemLineKind.notice,
+            ),
+          );
+        }
+
+      case ShowHelp():
+        final room = session.currentRoom;
+        for (final line in _helpLines) {
+          room.transcript.append(
+            SystemLine(line, DateTime.now(), kind: SystemLineKind.notice),
+          );
+        }
+
+      case UnknownCommand(verb: final verb):
+        final room = session.currentRoom;
+        room.transcript.append(
+          SystemLine('unknown command: /$verb', DateTime.now()),
+        );
+    }
+  }
+
+  static const List<String> _helpLines = [
+    '/join [coordinate] — join the current room, or open and join another',
+    '/leave — leave the current room',
+    '/away [reason] — declare yourself away',
+    '/back — declare yourself back',
+    '/topic [text] — read, or change, the current room\'s topic',
+    '/list — list the channels at this place',
+  ];
+
+  /// The room to act on for `/join`: the current one when [coordinate] is
+  /// null, an already-open room switched to when it names one, or a freshly
+  /// minted one — R3.2 read literally: there is no second branch for "this
+  /// one doesn't exist yet."
+  Future<Room> _roomFor(String? coordinate) async {
+    if (coordinate == null) return session.currentRoom;
+    final index = session.rooms.indexWhere(
+      (room) => room.coordinate == '$chatOntology:$coordinate',
+    );
+    if (index >= 0) {
+      session.switchTo(index);
+      return session.rooms[index];
+    }
+    return _mintRoom(coordinate);
+  }
+
+  /// Mints a [Channel] for [coordinate] via [floor], opens it as a [Room]
+  /// with no persisted state — a genuinely new room has none — and folds one
+  /// [Channel.sync] so it is not blank the instant it is switched to, the
+  /// same initial catch-up every room opened at [start] already performs,
+  /// run once more, on demand, for one room.
+  Future<Room> _mintRoom(String coordinate) async {
+    final channel = floor.channel(coordinate, place: place);
+    final room = Room(channel: channel);
+    session.openRoom(room);
+    final events = await channel.sync();
+    if (events.isNotEmpty) room.fold(events);
+    return room;
+  }
+
+  void _renderNotice(Room room, ActResult result, String noticeText) {
+    switch (result) {
+      case Acted():
+        room.transcript.append(
+          SystemLine(noticeText, DateTime.now(), kind: SystemLineKind.notice),
+        );
+      case Refused(reason: final reason):
+        room.transcript.append(
+          SystemLine(ActRefused(reason).text, DateTime.now()),
+        );
+      case Stumbled(attempts: final attempts):
+        room.transcript.append(
+          SystemLine(ActStumbled(attempts).text, DateTime.now()),
+        );
+    }
+  }
+
+  void _renderFailureOnly(Room room, ActResult result) {
+    switch (result) {
+      case Acted():
         break;
+      case Refused(reason: final reason):
+        room.transcript.append(
+          SystemLine(ActRefused(reason).text, DateTime.now()),
+        );
+      case Stumbled(attempts: final attempts):
+        room.transcript.append(
+          SystemLine(ActStumbled(attempts).text, DateTime.now()),
+        );
     }
   }
 

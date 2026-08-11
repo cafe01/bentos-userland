@@ -437,6 +437,25 @@ final class ProcessGit implements Git {
     _run(['--git-dir=$gitDir', 'worktree', 'prune']);
   }
 
+  @override
+  WorktreeCheckout worktreeCheckout(String path, {required Commit to}) {
+    // Asked from inside the worktree, not by `--git-dir`/`--work-tree`: a
+    // linked worktree carries its own private index, and only Git's own
+    // discovery from the tree itself finds it — the same reason
+    // [worktreeHead] and [currentBranch] are asked this way.
+    final result = _run(['checkout', to.sha], workingDirectory: path);
+    if (result.exitCode == 0) return const WorktreeCheckout(moved: true);
+    // Exit 1 is Git's own line between a decided refusal and a fault: a tree
+    // still carrying local changes exits 1 with "would be overwritten"; an
+    // unknown revision or a directory that is no repository at all exits
+    // 128. Only the first is this member's business — the second is ours to
+    // fix, not the caller's to interpret, and must travel as a fault.
+    if (result.exitCode == 1) {
+      return WorktreeCheckout(moved: false, report: _text(result.stderr).trim());
+    }
+    throw _failure(['checkout', to.sha], result);
+  }
+
   /// The **linked** worktrees this repository has registered, canonical and
   /// absolute — its register of what it may discard.
   ///
