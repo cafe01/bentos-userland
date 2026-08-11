@@ -392,6 +392,36 @@ class FakeGit implements Git {
   }
 
   @override
+  List<String> worktreeDirtyPaths(String path) {
+    final gitDir = worktreeRepository(path);
+    if (gitDir == null) throw StateError('no worktree at $path');
+    final repo = _repo(gitDir);
+    final standing = repo.worktrees[path];
+    final onStanding = repo.trees[repo.commits[standing]?.tree] ?? const {};
+    // Coarse, as [worktreeCheckout] already is: any tracked path whose bytes
+    // no longer match what the standing commit's tree put there is dirty,
+    // whether the change was staged or not — the fake has no index of its
+    // own to tell the two apart. Untracked is the other half: a file on disk
+    // the standing tree never named.
+    final dirty = <String>{};
+    for (final entry in onStanding.entries) {
+      final file = File(p.join(path, entry.key));
+      final onDisk =
+          file.existsSync() ? hashObject(gitDir, file.readAsBytesSync()) : null;
+      if (onDisk != entry.value) dirty.add(entry.key);
+    }
+    final dir = Directory(path);
+    if (dir.existsSync()) {
+      for (final f in dir.listSync(recursive: true).whereType<File>()) {
+        final rel = p.relative(f.path, from: path);
+        if (p.split(rel).first == '.git') continue;
+        if (!onStanding.containsKey(rel)) dirty.add(rel);
+      }
+    }
+    return dirty.toList()..sort();
+  }
+
+  @override
   String? worktreeRepository(String path) {
     // Possession is two claims and the port makes both: the directory says
     // which repository laid it down, and that repository's register agrees.

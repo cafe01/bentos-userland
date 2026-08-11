@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:bentos_userland/entity.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'helpers.dart';
@@ -120,6 +121,44 @@ void main() {
           isEmpty,
           reason: 'refs belong to the installation until they are pushed',
         );
+      });
+    });
+  });
+
+  group('materializedAt', () {
+    test('unmaterialized answers absence, never a throw', () {
+      site.run(() {
+        final e = Entity('bentos.llm', from: site.root.path).create();
+        expect(e.materializedAt, isNull);
+      });
+    });
+
+    test('materialized answers the installation\'s own path', () {
+      site.run(() {
+        final e = Entity('bentos.llm', from: site.root.path).create();
+        final where = p.join(site.root.path, e.name);
+
+        e.materialize(e.genesis, path: where);
+
+        expect(e.materializedAt?.path, where);
+      });
+    });
+
+    test('the path it answers is the one refresh() actually moves', () async {
+      await site.runAsync(() async {
+        final e = Entity('bentos.mem', from: site.root.path).create();
+        final instance = e.instance('main')..create();
+        final where = p.join(site.root.path, e.name);
+        instance.materialize(at: where);
+        expect(e.materializedAt?.path, where);
+
+        await instance.act('write', (w) {
+          File(p.join(w.directory.path, 'f.txt')).writeAsStringSync('x');
+        });
+        final result = instance.materialization(e.materializedAt!.path).refresh();
+
+        expect(result.moved, isTrue);
+        expect(File(p.join(e.materializedAt!.path, 'f.txt')).readAsStringSync(), 'x');
       });
     });
   });

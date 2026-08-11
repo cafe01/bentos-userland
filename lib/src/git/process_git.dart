@@ -456,6 +456,28 @@ final class ProcessGit implements Git {
     throw _failure(['checkout', to.sha], result);
   }
 
+  @override
+  List<String> worktreeDirtyPaths(String path) {
+    final result = _run(['status', '--porcelain'], workingDirectory: path);
+    if (result.exitCode != 0) {
+      throw _failure(['status', '--porcelain'], result);
+    }
+    final paths = <String>[];
+    // Not `_lines`: its trim would eat the status column's own leading
+    // space and shift every field left, corrupting the very columns this
+    // parse depends on.
+    for (final line in _text(result.stdout).split('\n')) {
+      if (line.isEmpty) continue;
+      // `XY<space>path`, or `XY<space>old -> new` for a rename: the field
+      // starts at column 3, and only the arrow's right side is where the
+      // path stands now.
+      final field = line.length > 3 ? line.substring(3) : line;
+      final arrow = field.indexOf(' -> ');
+      paths.add(arrow < 0 ? field : field.substring(arrow + 4));
+    }
+    return paths..sort();
+  }
+
   /// The **linked** worktrees this repository has registered, canonical and
   /// absolute — its register of what it may discard.
   ///

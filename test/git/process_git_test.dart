@@ -191,4 +191,67 @@ void main() {
       expect(git.worktreeHead(where), first);
     });
   });
+
+  group('worktreeDirtyPaths', () {
+    test('a clean tree answers empty', () {
+      final repo = enclosing('spotless');
+      final gitDir = p.join(repo, '.git');
+      final head = git.revParse(gitDir, 'HEAD')!;
+      final where = p.join(scratch.path, 'standing');
+      git.worktreeAdd(gitDir, path: where, at: head);
+
+      expect(git.worktreeDirtyPaths(where), isEmpty);
+    });
+
+    test('a modified tracked file appears', () {
+      final repo = enclosing('modified');
+      final gitDir = p.join(repo, '.git');
+      File(p.join(repo, 'f.txt')).writeAsStringSync('base');
+      Process.runSync('git', ['-C', repo, 'add', '.']);
+      Process.runSync('git', [
+        '-C', repo,
+        '-c', 'user.email=gate@bentos',
+        '-c', 'user.name=gate',
+        'commit', '--quiet', '-m', 'one',
+      ]);
+      final head = git.revParse(gitDir, 'HEAD')!;
+      final where = p.join(scratch.path, 'standing');
+      git.worktreeAdd(gitDir, path: where, at: head);
+      File(p.join(where, 'f.txt')).writeAsStringSync('edited by hand');
+
+      expect(git.worktreeDirtyPaths(where), ['f.txt']);
+    });
+
+    test('a staged file appears', () {
+      final repo = enclosing('staged');
+      final gitDir = p.join(repo, '.git');
+      File(p.join(repo, 'f.txt')).writeAsStringSync('base');
+      Process.runSync('git', ['-C', repo, 'add', '.']);
+      Process.runSync('git', [
+        '-C', repo,
+        '-c', 'user.email=gate@bentos',
+        '-c', 'user.name=gate',
+        'commit', '--quiet', '-m', 'one',
+      ]);
+      final head = git.revParse(gitDir, 'HEAD')!;
+      final where = p.join(scratch.path, 'standing');
+      git.worktreeAdd(gitDir, path: where, at: head);
+      File(p.join(where, 'f.txt')).writeAsStringSync('staged edit');
+      Process.runSync('git', ['-C', where, 'add', '.']);
+
+      expect(git.worktreeDirtyPaths(where), ['f.txt']);
+    });
+
+    test('an untracked file appears, and names the path rather than prose',
+        () {
+      final repo = enclosing('untracked');
+      final gitDir = p.join(repo, '.git');
+      final head = git.revParse(gitDir, 'HEAD')!;
+      final where = p.join(scratch.path, 'standing');
+      git.worktreeAdd(gitDir, path: where, at: head);
+      File(p.join(where, 'new.txt')).writeAsStringSync('never committed');
+
+      expect(git.worktreeDirtyPaths(where), ['new.txt']);
+    });
+  });
 }

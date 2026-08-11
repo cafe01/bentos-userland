@@ -237,6 +237,17 @@ abstract interface class Git {
   /// only the dirty-tree refusal is a decided outcome.
   WorktreeCheckout worktreeCheckout(String path, {required Commit to});
 
+  /// The paths that carry a person's uncommitted work in the worktree at
+  /// [path] — tracked and modified, staged, or untracked alike. `git status
+  /// --porcelain`, underneath, with nothing decided about what the paths
+  /// mean: that judgment belongs to whoever asked, one storey up. Empty
+  /// means clean, never a special case a caller must test for separately.
+  ///
+  /// Asked from inside the worktree, exactly as [worktreeCheckout] is and
+  /// for the same reason: a linked worktree's status is a fact about the
+  /// tree standing at [path], not about the repository by name.
+  List<String> worktreeDirtyPaths(String path);
+
   /// The repository a standing worktree belongs to — its **common** directory,
   /// never the private one a worktree also has.
   ///

@@ -412,6 +412,29 @@ final class Entity {
     );
   }
 
+  /// Where this installation is presently standing as a human-facing worktree
+  /// — the same directory `place materialize` brings it down to — or null
+  /// when nothing of ours stands there.
+  ///
+  /// **The one path a caller may read in place without holding the
+  /// repository.** [gitDirOf] and [placeOf] stay unreachable to every
+  /// consumer outside this package; this answers the question they exist to
+  /// withhold, at the altitude a consumer is allowed to ask it: not *where is
+  /// the repository* but *where, if anywhere, can a person already open this
+  /// and grep it*. The walk is [_installation]'s own — reused, never redone —
+  /// and the location is the registration's own convention (`path: name`),
+  /// never composed twice by two callers guessing the same layout.
+  ///
+  /// Live, like every derived member: another process materializing or
+  /// releasing the tree is seen on the next read, never cached.
+  Directory? get materializedAt {
+    final installation = _installation;
+    final path = p.join(installation.place, name);
+    return ambientGit.worktreeRepository(path) == installation.gitDir
+        ? Directory(path)
+        : null;
+  }
+
   /// The directory the class's own tree stands in, beside the repository — the
   /// **stage**, and the one place a caller looks for the executables the
   /// manifest names.

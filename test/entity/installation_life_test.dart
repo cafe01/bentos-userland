@@ -1136,6 +1136,9 @@ final class _WatchedGit implements Git {
       _inner.worktreeCheckout(path, to: to);
 
   @override
+  List<String> worktreeDirtyPaths(String path) => _inner.worktreeDirtyPaths(path);
+
+  @override
   String? worktreeRepository(String path) => _inner.worktreeRepository(path);
 
   @override
