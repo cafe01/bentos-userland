@@ -61,7 +61,7 @@ final class EntityTree implements ChatTree {
 
   @override
   List<ChatAct> log() => [
-        for (final action in instance.log)
+        for (final action in instance.log())
           ChatAct(
             commit: action.commit.sha,
             noun: action.name,
@@ -74,7 +74,7 @@ final class EntityTree implements ChatTree {
 
   @override
   List<String> added(String commit) {
-    for (final action in instance.log) {
+    for (final action in instance.log()) {
       if (action.commit.sha != commit) continue;
       return [
         for (final change in action.diff().changes)

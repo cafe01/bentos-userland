@@ -10,7 +10,7 @@ import 'dart:io';
 import 'package:bentos_userland/bentos_chat.dart';
 import 'package:test/test.dart';
 
-import 'face_test.dart' show FakeFloor, Run;
+import 'face_test.dart' show FakeFloor, FakeTicker, Run;
 
 void main() {
   late FakeFloor floor;
@@ -153,6 +153,71 @@ void main() {
       final json = jsonDecode(cursorFile.readAsStringSync()) as Map;
       final cursors = json['cursors'] as Map;
       expect(cursors.keys, contains('bentos.chat:fabrica'));
+    });
+  });
+
+  group('the doorbell', () {
+    // Every test above drives the default `_NoopTicker`, whose `ticks` never
+    // fires — proving the timeout and the burst window, never a real wake.
+    // This group is the one that proves the wait actually answers to a tick.
+
+    test('a dispatch tick wakes the wait, and nothing but a tick ever does',
+        () async {
+      await seated();
+      // Drains the join itself, so the batch the real assertion sees below
+      // is purely what the doorbell wakes it for, not this setup's own
+      // event.
+      await run(['monitor', '--wait', '--timeout', '0.1']);
+
+      final ticker = FakeTicker();
+      floor.ticker = ticker;
+
+      // No --timeout: with nothing landed and no tick, this waits forever —
+      // bounding it below is what proves the tick is what ends it, not a
+      // cadence a poll-based wait would still have found it on.
+      final pending = run(['monitor', '--wait']);
+
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await run(['say', 'woke by the doorbell']);
+      ticker.tick();
+
+      // The mandatory burst-settle window (1s) still applies after the
+      // tick — this bound clears that comfortably while staying well under
+      // the 2s a poll on the default `--interval` would have taken to
+      // notice the same message.
+      final result = await pending.timeout(const Duration(milliseconds: 1300));
+      expect(result.exitCode, 0);
+      expect(result.out, contains('woke by the doorbell'));
+    });
+
+    test(
+        'a dispatch outage is reported on stderr, never stdout, and the '
+        'wall-clock timeout still fires while it is down', () async {
+      // Unseated on purpose: an unborn channel yields nothing from `sync`,
+      // so the only thing this run can possibly end on is the timeout.
+      final ticker = FakeTicker();
+      floor.ticker = ticker;
+
+      final pending = run(['monitor', '--wait', '--timeout', '0.3']);
+
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      ticker.connected = false;
+      ticker.tick(); // the same nudge a real reconnect fires on going down
+
+      final result = await pending.timeout(const Duration(seconds: 2));
+      expect(result.exitCode, 6);
+      expect(result.out, isEmpty);
+      expect(result.err, contains('disconnected'));
+    });
+
+    test('the ticker is disposed once the wait ends', () async {
+      await seated();
+      final ticker = FakeTicker();
+      floor.ticker = ticker;
+
+      await run(['monitor', '--wait', '--timeout', '0.2']);
+
+      expect(ticker.disposed, isTrue);
     });
   });
 }

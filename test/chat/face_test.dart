@@ -72,10 +72,15 @@ final class FakeFloor implements ChatFloor {
     return here;
   }
 
+  /// What [dispatchTicker] hands back — a [_NoopTicker] until a fixture
+  /// swaps in a [FakeTicker] it can drive by hand, since most verbs judged
+  /// here never touch the doorbell at all.
+  Ticker ticker = _NoopTicker();
+
   @override
   Ticker dispatchTicker(String place) {
     vantages.add(place);
-    return _NoopTicker();
+    return ticker;
   }
 }
 
@@ -94,6 +99,32 @@ final class _NoopTicker implements Ticker {
 
   @override
   bool get connected => true;
+}
+
+/// A doorbell a test can ring by hand: [tick] fires one, and [connected] is
+/// settable so a fixture can prove what a consumer does with a flip, not just
+/// with a fresh occurrence.
+final class FakeTicker implements Ticker {
+  final _controller = StreamController<void>.broadcast();
+
+  @override
+  Stream<void> get ticks => _controller.stream;
+
+  void tick() => _controller.add(null);
+
+  @override
+  void nudge() => tick();
+
+  @override
+  bool connected = true;
+
+  bool disposed = false;
+
+  @override
+  void dispose() {
+    disposed = true;
+    _controller.close();
+  }
 }
 
 /// One invocation of the coreutil, captured whole.
@@ -489,6 +520,52 @@ void main() {
 
       expect(result.exitCode, 64);
       expect(result.err, contains('--interval'));
+    });
+
+    test('given, --interval is accepted but warns it no longer paces anything',
+        () async {
+      final result = await run(['monitor', '--once', '--interval', '5']);
+
+      expect(result.exitCode, 0);
+      expect(result.err, contains('--interval'));
+    });
+
+    test('unmentioned, --interval draws no warning', () async {
+      final result = await run(['monitor', '--once']);
+
+      expect(result.err, isEmpty);
+    });
+
+    test('the watch wakes on a dispatch tick, not on a fixed cadence',
+        () async {
+      await seated();
+      final ticker = FakeTicker();
+      floor.ticker = ticker;
+
+      final out = StringBuffer();
+      final face = ChatRunner(
+        out: out,
+        err: StringBuffer(),
+        currentDirectory: '/campus',
+        environment: const {},
+        readStdin: () async => '',
+        floor: floor,
+      );
+      final pending = face.run(['monitor']);
+
+      // Let the watch perform its initial sync and start waiting on the
+      // doorbell before anything lands.
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await run(['say', 'woke by the doorbell']);
+      ticker.tick();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(out.toString(), contains('woke by the doorbell'));
+
+      // Closing the doorbell is the only way this loop, given no --once,
+      // ever returns — proving the wait afterward and freeing the future.
+      ticker.dispose();
+      await pending.timeout(const Duration(seconds: 2));
     });
   });
 }

@@ -18,11 +18,12 @@ import '../../chat_client/ticker.dart';
 /// [settle] of the first is folded into the same tick, the same burst-window
 /// shape `bentos.chat monitor --wait` already uses.
 ///
-/// **The replay is not hidden, only tamed.** `Entity.listen` starts at the
-/// top of the journal with no way to ask for its live tip — a real gap on
-/// the primitive's surface, not a thing this class works around by inventing
-/// one. Coalescing bounds the cost of that replay to one burst of ticks
-/// rather than eliminating it.
+/// **A fresh subscribe starts at the live tip, not genesis.** `Entity.listen`
+/// with no `since` opens at the journal's current end — only occurrences
+/// after that call are seen — so the class this doc used to describe, one
+/// that had to tame a full replay on every reconnect, no longer exists. What
+/// [settle] still earns its keep on is the ordinary case: several occurrences
+/// landing together warrant one look, not one per line.
 ///
 /// **The stream can die, and the doorbell must not die with it.**
 /// `Entity.listen`'s own contract ends its stream on the first fault — a
@@ -34,8 +35,8 @@ import '../../chat_client/ticker.dart';
 /// reader closes its controller in a `finally` either way — is followed by a
 /// fresh subscribe after a wait that widens on repeated failure and resets
 /// the moment one lands. Reconnecting opens with no `since` on purpose: a
-/// fresh `Entity.listen` replays from the top, the same replay [settle]
-/// already tames, and it is what makes a `JournalGap` harmless to this
+/// fresh `Entity.listen` starts at the tip rather than resuming a cursor this
+/// reader never kept, and it is what makes a `JournalGap` harmless to this
 /// reader specifically — nothing here consumes the stream for its content,
 /// only for *look again*, and the program's own `tick` resyncs from git
 /// rather than from the delta it missed.
