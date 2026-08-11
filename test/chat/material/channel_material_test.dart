@@ -14,13 +14,6 @@
 ///
 ///     dart test -t material test/chat/material
 ///
-/// > The one thing this gate does **not** assert is who signed the commits.
-/// > `entity commit` given no `--actor` writes `unknown <unknown@entity.local>`
-/// > instead of letting git's cascade answer, so the content carries a handle
-/// > the commit contradicts. That seam has exactly one auditor — gate 6 of
-/// > `bentos.chat/test/gates.sh` — and it goes green by itself when the
-/// > primitive stops inventing an author. Mirroring it here would double the
-/// > maintenance and blur which gate is the seam.
 @Tags(['material'])
 library;
 
@@ -177,6 +170,32 @@ void main() {
     expect(await channel.leave(), isA<Acted>());
     expect((await channel.roster()).participants, isEmpty);
     expect((await channel.history()).single.body, 'raising the install gate');
+  });
+
+  test(
+      'the commit is signed under the identity the content declares, never '
+      "whatever GIT_AUTHOR_*/GIT_COMMITTER_* the caller's own environment "
+      'happens to carry', () async {
+    speakAs('Alfred', 'alfred@bentos.life');
+    final channel = open('fabrica');
+    await channel.join(displayName: 'Alfred');
+    await channel.say('who signed this?');
+
+    final repo = _run('entity', ['path', 'bentos.chat'], at: plot.path).trim();
+    expect(
+      _run('git', ['-C', repo, 'log', '-1', '--format=%an <%ae>', 'fabrica'],
+          at: plot.path).trim(),
+      'Alfred <alfred@bentos.life>',
+      reason: 'the commit must be signed under the identity `git config` '
+          'declares — the same read the content is written from — never '
+          'whatever the ambient environment happens to carry',
+    );
+
+    final check = await ProcessBodies(
+      place: plot.path,
+      coordinate: 'bentos.chat:fabrica',
+    ).run('check', const [], attempts: 1);
+    expect(check.exitCode, 0, reason: check.stderr);
   });
 
   test('a non-member moves nothing, not even itself', () async {

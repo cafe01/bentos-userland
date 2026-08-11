@@ -14,6 +14,7 @@ import '../entity/entity.dart';
 import '../entity/instance.dart';
 import '../git/model/commit.dart';
 import 'handle.dart';
+import 'ontology.dart';
 import 'seams.dart';
 
 /// Reads a channel through the primitive, **in process**: a spawn per read
@@ -115,13 +116,47 @@ final class ProcessBodies implements ChatBodies {
     final result = await Process.run(
       executable,
       ['-C', place, 'run', coordinate, function, ...arguments],
-      environment: {attemptsVariable: '$attempts'},
+      environment: {attemptsVariable: '$attempts', ..._signerEnvironment()},
     );
     return BodyOutcome(
       exitCode: result.exitCode,
       stdout: '${result.stdout}',
       stderr: '${result.stderr}',
     );
+  }
+
+  /// Pins the commit's signer to **the same read** the body uses to declare
+  /// the speaker, so the two can no longer be two facts that happen to agree.
+  ///
+  /// The body writes `--actor` to nobody: `entity commit` given none falls
+  /// back to whatever `GIT_AUTHOR_*`/`GIT_COMMITTER_*` the ambient environment
+  /// carries, which is a cascade the caller's own shell can pollute — a stale
+  /// export, a CI harness simulating participants by variable rather than by
+  /// config — and disagrees with `git config`, which is what the identity
+  /// written into the content is read from. Setting those variables here,
+  /// from this same [GitIdentity] read, forces every hop underneath (the
+  /// body, and the `entity commit` it shells out to in turn) to sign under
+  /// exactly what was declared, whatever else the environment carries — an
+  /// explicit override always wins over an inherited one.
+  ///
+  /// Empty when git has no identity to speak under at all: the write then
+  /// refuses downstream exactly as it always did, and inventing one here
+  /// would be putting words in nobody's mouth.
+  Map<String, String> _signerEnvironment() {
+    final Identity identity;
+    try {
+      identity = GitIdentity.of(Entity(chatOntology, from: place));
+    } on NoIdentity {
+      return const {};
+    }
+    final name = identity.displayName ?? '';
+    final email = identity.handle.email;
+    return {
+      'GIT_AUTHOR_NAME': name,
+      'GIT_AUTHOR_EMAIL': email,
+      'GIT_COMMITTER_NAME': name,
+      'GIT_COMMITTER_EMAIL': email,
+    };
   }
 }
 
@@ -130,9 +165,10 @@ final class ProcessBodies implements ChatBodies {
 /// standing in. Asking the working directory would answer for whatever
 /// repository the caller is inside, which is a different substrate.
 ///
-/// It mirrors `lib.sh`'s own `_identity`, deliberately: two readers of one
-/// cascade, and neither compensates for the floor inventing an author when none
-/// is passed. The day the primitive stops inventing one, nothing here changes.
+/// It mirrors `lib.sh`'s own `_identity`, deliberately: two readers of the
+/// same cascade, both `git config` and neither the ambient environment — which
+/// is exactly why [ProcessBodies] does not stop at reading this and stating
+/// it, but hands it back down as the explicit signer for every body it runs.
 final class GitIdentity implements Identity {
   GitIdentity._(this.handle, this.displayName);
 
