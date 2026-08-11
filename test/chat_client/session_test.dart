@@ -94,6 +94,48 @@ void main() {
       session.focusComposer();
       expect(session.focus, Focus.composer);
     });
+
+    test('openRoom appends the room and switches to it', () {
+      final session = Session([Room(channel: FakeChannel(name: 'fabrica', me: _me))]);
+      final design = Room(channel: FakeChannel(name: 'design', me: _me));
+
+      session.openRoom(design);
+
+      expect(session.rooms, hasLength(2));
+      expect(session.currentIndex, 1);
+      expect(session.currentRoom.name, 'design');
+    });
+
+    test('openRoom enters the new room, clearing any noise it opened with', () {
+      final session = Session([Room(channel: FakeChannel(name: 'fabrica', me: _me))]);
+      final design = Room(channel: FakeChannel(name: 'design', me: _me));
+      design.fold(const []); // discharge its own initial catch-up
+      design.fold([_spoke('a')]);
+      expect(design.activity.isQuiet, isFalse);
+
+      session.openRoom(design);
+
+      expect(design.activity.isQuiet, isTrue);
+    });
+
+    test('rosterOverlay starts off and toggles independently of the room shown', () {
+      final session = Session([
+        Room(channel: FakeChannel(name: 'fabrica', me: _me)),
+        Room(channel: FakeChannel(name: 'design', me: _me)),
+      ]);
+      expect(session.rosterOverlay, isFalse);
+
+      session.toggleRosterOverlay();
+      expect(session.rosterOverlay, isTrue);
+
+      // Switching rooms is a different axis and must not reset the toggle —
+      // it answers "what is this screen showing", not "what is this room".
+      session.switchTo(1);
+      expect(session.rosterOverlay, isTrue);
+
+      session.toggleRosterOverlay();
+      expect(session.rosterOverlay, isFalse);
+    });
   });
 }
 

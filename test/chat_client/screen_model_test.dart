@@ -61,18 +61,13 @@ void main() {
       expect(model.tabs[2].activityCount, 1);
     });
 
-    test('hotlist mirrors Hotlist.derive and excludes the current room', () {
-      final session = Session([
-        Room(channel: FakeChannel(name: 'fabrica', me: _me)),
-        Room(channel: FakeChannel(name: 'design', me: _me)),
-      ]);
-      session.fold(1, const []); // discharge room 1's initial catch-up
-      session.fold(1, [_spoke('a', body: '@alfred there')]);
+    test('rosterOverlay mirrors the session flag it was taken from', () {
+      final session = Session([Room(channel: FakeChannel(name: 'fabrica', me: _me))]);
+      session.toggleRosterOverlay();
 
       final model = ScreenModel.from(session);
 
-      expect(model.hotlist.entries, hasLength(1));
-      expect(model.hotlist.entries.single.roomIndex, 1);
+      expect(model.rosterOverlay, isTrue);
     });
 
     test('unreadCount and participants come from the current room', () {

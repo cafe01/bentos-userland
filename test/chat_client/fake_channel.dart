@@ -1,7 +1,10 @@
 import 'package:bentos_userland/src/chat/channel.dart';
+import 'package:bentos_userland/src/chat/cli/floor.dart';
 import 'package:bentos_userland/src/chat/handle.dart';
 import 'package:bentos_userland/src/chat/model.dart';
 import 'package:bentos_userland/src/chat/outcome.dart';
+import 'package:bentos_userland/src/chat/seams.dart';
+import 'package:bentos_userland/src/chat_client/ticker.dart';
 
 /// A [Channel] with no substrate underneath it — a script for the test to
 /// hand `sync()` results to a [Room] with no `dart:io` anywhere in the tree.
@@ -82,6 +85,51 @@ final class _EmptyRoster implements Roster {
 
   @override
   bool contains(Handle handle) => false;
+}
+
+/// A [ChatFloor] with no substrate underneath it — the counterpart of
+/// [FakeChannel] for whatever `App` needs beyond the rooms it started with:
+/// minting a channel for a coordinate nobody opened yet, and answering which
+/// coordinates a place carries.
+final class FakeChatFloor implements ChatFloor {
+  FakeChatFloor({Map<String, Channel>? channels, List<String>? available})
+    : _channels = channels ?? {},
+      available = available ?? (channels?.keys.toList() ?? const []);
+
+  final Map<String, Channel> _channels;
+
+  /// What [channels] answers — set independently of [_channels] because a
+  /// coordinate can be listed as existing without this suite ever minting a
+  /// live [Channel] for it.
+  final List<String> available;
+
+  /// Every place a channel was resolved from — the suite's window into
+  /// whether the vantage a new room opens at is the one the session itself
+  /// stands on.
+  final List<String> requestedPlaces = [];
+
+  void register(Channel channel) => _channels[channel.name] = channel;
+
+  @override
+  Channel channel(String name, {required String place, String? cursor}) {
+    requestedPlaces.add(place);
+    final existing = _channels[name];
+    if (existing == null) {
+      throw StateError('FakeChatFloor: no channel registered for $name');
+    }
+    return existing;
+  }
+
+  @override
+  ChatBodies bodies(String name, {required String place}) =>
+      throw UnimplementedError('not exercised by the client suite');
+
+  @override
+  List<String> channels(String place) => List.of(available);
+
+  @override
+  Ticker dispatchTicker(String place) =>
+      throw UnimplementedError('not exercised by the client suite');
 }
 
 final class FakeRoster implements Roster {

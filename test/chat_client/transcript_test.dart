@@ -143,6 +143,20 @@ void main() {
       },
     );
 
+    test('a SystemLine defaults to warning, matching every existing caller', () {
+      final line = SystemLine('refused: not a member', DateTime(2026));
+      expect(line.kind, SystemLineKind.warning);
+    });
+
+    test('a SystemLine can be authored as a notice explicitly', () {
+      final line = SystemLine(
+        'you joined bentos.chat:design',
+        DateTime(2026),
+        kind: SystemLineKind.notice,
+      );
+      expect(line.kind, SystemLineKind.notice);
+    });
+
     test(
       'a caller needing both count and boundary pays for one pass, not two',
       () {

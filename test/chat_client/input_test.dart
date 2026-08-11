@@ -163,5 +163,20 @@ void main() {
         expect(down.scroll, ScrollStep.pageDown);
       },
     );
+
+    test('toggleRoster flips the session flag directly, not as an effect', () {
+      final session = _session();
+      expect(session.rosterOverlay, isFalse);
+
+      final effect = input.handle(const KeyPress(Key.toggleRoster), session);
+
+      expect(session.rosterOverlay, isTrue);
+      expect(effect.scroll, isNull);
+      expect(effect.intent, isNull);
+      expect(effect.persistable, isFalse);
+
+      input.handle(const KeyPress(Key.toggleRoster), session);
+      expect(session.rosterOverlay, isFalse);
+    });
   });
 }
