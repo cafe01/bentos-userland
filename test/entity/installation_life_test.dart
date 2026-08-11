@@ -945,6 +945,59 @@ void main() {
       );
     });
   });
+
+  group('install then upgrade, against real Git', () {
+    // The round trip the defect actually broke: a fresh installation, then the
+    // first verb ever to read what install wrote. FakeGit's `upgrade — the
+    // content half` group above proves the seven-step order; it cannot witness
+    // this, because it never clones anything and so has no staging directory
+    // to delete out from under itself.
+    const git = ProcessGit();
+    late Directory scratch;
+    late Directory there;
+
+    setUp(() {
+      scratch = Directory(Directory.systemTemp
+          .createTempSync('entity_upgrade_real_')
+          .resolveSymbolicLinksSync());
+      there = Directory(p.join(scratch.path, 'there'))
+        ..createSync(recursive: true);
+      Directory(p.join(there.path, '.place')).createSync(recursive: true);
+      File(p.join(there.path, '.place', 'place.yaml'))
+          .writeAsStringSync('name: there\n');
+    });
+    tearDown(() {
+      if (scratch.existsSync()) scratch.deleteSync(recursive: true);
+    });
+
+    test('upgrade reaches the origin install recorded, not the staging '
+        'directory install deleted', () async {
+      final source = foreignRepository(
+        git,
+        scratch.path,
+        dirName: 'source.git',
+        declaredName: 't.upgrade',
+      );
+      final installed =
+          await runWithGitAsync(git, () => Entity.install(source, at: there.path));
+
+      // Before the cure, origin named the already-deleted staging clone, and
+      // `git fetch` on a corpse path fails as a raw process error — this
+      // installation would never even reach `upgrade`'s own refusals. After
+      // it, origin is reachable, so the fetch succeeds and upgrade refuses for
+      // an ordinary content reason instead: this source never minted a
+      // `genesis` ref, only `main`.
+      await runWithGitAsync(git, () async {
+        await expectLater(
+          installed.upgrade(),
+          throwsA(isA<GenesisNotAtRemote>()),
+          reason: 'origin names the source and the remote answers — a corpse '
+              'origin would have thrown before upgrade ever classified the '
+              'failure as its own',
+        );
+      });
+    });
+  });
 }
 
 const _oldSha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';

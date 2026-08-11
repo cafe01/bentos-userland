@@ -136,6 +136,14 @@ final class CommitCommand extends EntityCommand {
       ..addOption('parent', help: 'The value the ref must still hold.')
       ..addOption('actor', help: 'The identity written as the author.')
       ..addOption(
+        'actor-email',
+        help: 'The address written beside --actor. Requires --actor. Absent, '
+            'a placeholder is derived — harmless, since nothing reads meaning '
+            'into the address — but a caller that means to state a real one '
+            'and cannot could only omit --actor entirely, leaving the ambient '
+            'environment to sign instead.',
+      )
+      ..addOption(
         'say',
         help: 'The legible sentence, stored and never interpreted.',
         valueHelp: 'phrase',
@@ -160,6 +168,10 @@ final class CommitCommand extends EntityCommand {
     final coord = coordinate();
     final instance = cli.instanceAt(coord, place: placeOption);
     final actor = argResults!['actor'] as String?;
+    final actorEmail = argResults!['actor-email'] as String?;
+    if (actorEmail != null && actor == null) {
+      usageException('commit: --actor-email requires --actor');
+    }
     final workspace = Workspace(
       directory: Directory(cli.locate(area)),
       gitDir: gitDirOf(instance.entity),
@@ -169,7 +181,7 @@ final class CommitCommand extends EntityCommand {
     cli.report(
       workspace.commit(
         rest[1],
-        actor: actor == null ? null : Actor(actor),
+        actor: actor == null ? null : Actor(actor, email: actorEmail),
         say: argResults!['say'] as String?,
       ),
     );

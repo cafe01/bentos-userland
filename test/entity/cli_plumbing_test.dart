@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:bentos_userland/entity.dart';
+import 'package:bentos_userland/src/git/process_git.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'cli_harness.dart';
@@ -198,6 +200,93 @@ void main() {
 
       expect(r.code, EntityRunner.usageCode);
       expect(r.err, contains('prepared, committed or aborted'));
+    });
+  });
+
+  group('--actor-email, against real Git', () {
+    // FakeGit models no environment, so it cannot witness a claim about what
+    // wins when a caller's stated actor and the ambient `GIT_AUTHOR_*` disagree
+    // — only real Git signs anything. And `Platform.environment` is fixed for
+    // the life of this process, so the poisoned half is a child born dirty, the
+    // same device `construction_test.dart`'s poisoned-port gate uses.
+    const git = ProcessGit();
+    late Directory scratch;
+    late Directory root;
+
+    setUp(() async {
+      scratch = Directory(Directory.systemTemp
+          .createTempSync('entity_actor_email_')
+          .resolveSymbolicLinksSync());
+      root = Directory(p.join(scratch.path, 'site'))..createSync(recursive: true);
+      Directory(p.join(root.path, '.place')).createSync(recursive: true);
+      File(p.join(root.path, '.place', 'place.yaml'))
+          .writeAsStringSync('name: site\n');
+      await runWithGitAsync(git, () async {
+        final runner =
+            EntityRunner(out: StringBuffer(), err: StringBuffer(), currentDirectory: root.path);
+        await runner.run(['create', 't.chat']);
+        await runner.run(['new', 't.chat', 'c1']);
+      });
+    });
+    tearDown(() {
+      if (scratch.existsSync()) scratch.deleteSync(recursive: true);
+    });
+
+    Future<Run> here(List<String> args) async {
+      final out = StringBuffer();
+      final err = StringBuffer();
+      final runner = EntityRunner(out: out, err: err, currentDirectory: root.path);
+      await runWithGitAsync(git, () => runner.run(args));
+      return (out: out.toString(), err: err.toString(), code: runner.exitCode);
+    }
+
+    test(
+        'a commit whose stated actor and whose ambient environment disagree '
+        'is signed as the stated actor', () async {
+      final opened = await here(['work', 't.chat:c1']);
+      final parts = opened.out.trim().split('\t');
+      File(p.join(parts[0], '1.txt')).writeAsStringSync('hi');
+
+      // Before `--actor-email` existed, an honest caller who would not sign
+      // under a fabricated `alice@entity.local` had only one door left: omit
+      // `--actor` entirely — and this poisoned ambient is exactly what then
+      // signed the commit instead.
+      final child = await Process.run(
+        Platform.resolvedExecutable,
+        [
+          'run', 'test/entity/tools/forged_actor_port.dart',
+          root.path, 't.chat:c1', 'prompt', parts[0], parts[1],
+          'alice', 'alice@real',
+        ],
+        workingDirectory: Directory.current.path,
+        environment: {
+          'GIT_AUTHOR_NAME': 'mallory',
+          'GIT_AUTHOR_EMAIL': 'mallory@evil',
+          'GIT_COMMITTER_NAME': 'mallory',
+          'GIT_COMMITTER_EMAIL': 'mallory@evil',
+        },
+      );
+      expect(child.exitCode, 0, reason: '${child.stderr}');
+
+      final landed = git.showCommit(
+        repositoryOf(root.path, 't.chat'),
+        Commit((child.stdout as String).trim()),
+      );
+      expect(landed.author.name, 'alice');
+      expect(landed.author.email, 'alice@real');
+    });
+
+    test('--actor-email without --actor is a usage fault', () async {
+      final opened = await here(['work', 't.chat:c1']);
+      final parts = opened.out.trim().split('\t');
+
+      final r = await here([
+        'commit', 't.chat:c1', 'prompt',
+        '-w', parts[0], '--parent', parts[1], '--actor-email', 'nobody@nowhere',
+      ]);
+
+      expect(r.code, EntityRunner.usageCode);
+      expect(r.err, contains('--actor-email'));
     });
   });
 }

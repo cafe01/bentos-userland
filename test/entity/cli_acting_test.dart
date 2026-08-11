@@ -158,6 +158,16 @@ void main() {
       final r = await cli.run(['invoke', 't.chat:c1', 'prompt']);
       expect(r.code, EntityRunner.usageCode);
     });
+
+    test('--actor-email without --actor is a usage fault', () async {
+      final r = await cli.run([
+        'act', 't.chat:c1', 'prompt', '--actor-email', 'nobody@nowhere',
+        '--', ...writes('1.txt', 'hello'),
+      ]);
+
+      expect(r.code, EntityRunner.usageCode);
+      expect(r.err, contains('--actor-email'));
+    });
   });
 
   group('entity read', () {

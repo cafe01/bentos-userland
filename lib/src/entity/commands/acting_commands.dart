@@ -19,6 +19,14 @@ final class ActCommand extends EntityCommand {
     argParser
       ..addOption('actor', help: 'The identity written as the author.')
       ..addOption(
+        'actor-email',
+        help: 'The address written beside --actor. Requires --actor. Absent, '
+            'a placeholder is derived — harmless, since nothing reads meaning '
+            'into the address — but a caller that means to state a real one '
+            'and cannot could only omit --actor entirely, leaving the ambient '
+            'environment to sign instead.',
+      )
+      ..addOption(
         'say',
         help: 'The legible sentence, stored and never interpreted.',
         valueHelp: 'phrase',
@@ -41,6 +49,10 @@ final class ActCommand extends EntityCommand {
     }
 
     final actor = argResults!['actor'] as String?;
+    final actorEmail = argResults!['actor-email'] as String?;
+    if (actorEmail != null && actor == null) {
+      usageException('act: --actor-email requires --actor');
+    }
     final result = await cli.instanceAt(coordinate(), place: placeOption).act(
       rest[1],
       (workspace) async {
@@ -75,7 +87,7 @@ final class ActCommand extends EntityCommand {
         await Future.wait(said);
         if (code != 0) throw _BodyFailed(code);
       },
-      actor: actor == null ? null : Actor(actor),
+      actor: actor == null ? null : Actor(actor, email: actorEmail),
       say: argResults!['say'] as String?,
     );
     cli.report(result);
