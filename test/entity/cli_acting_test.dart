@@ -335,6 +335,23 @@ void main() {
       expect(r.code, EntityRunner.usageCode);
       expect(r.err, contains('<path>'));
     });
+
+    test('a hand-edited face declines the move and says so, leaving the '
+        'edit untouched', () async {
+      final where = await face();
+      await cli.run(['act', 't.chat:c1', 'reply', '--', ...writes('1.txt', 'second')]);
+      File('$where/1.txt').writeAsStringSync('hand-edited, uncommitted');
+
+      final r = await cli.run(['refresh', 't.chat:c1', where]);
+
+      // Barred like every other decided refusal this coreutil reports as
+      // itself — never a silent success that left the tree exactly where it
+      // stood. The wiring must not discard the substrate's own decline.
+      expect(r.code, EntityRunner.barredCode);
+      expect(r.err, contains('would be overwritten'));
+      expect(File('$where/1.txt').readAsStringSync(), 'hand-edited, uncommitted',
+          reason: 'a decline never touches the edit it declined over');
+    });
   });
 }
 

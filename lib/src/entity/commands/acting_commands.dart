@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import '../../git/model/actor.dart';
+import '../entity_runner.dart';
 import 'entity_command.dart';
 
 /// `entity act <coord> <action> [--actor <a>] [--say <phrase>] -- <command>` —
@@ -232,7 +233,16 @@ final class RefreshCommand extends EntityCommand {
     final path = cli.locate(rest[1]);
     final standing = cli.instanceAt(coordinate(), place: placeOption);
     final face = standing.materialization(path);
-    face.refresh();
+    final outcome = face.refresh();
+    if (!outcome.moved) {
+      // A decided refusal, not a stumble: the tree carries changes the move
+      // would overwrite, and it is left exactly as it stands. Barred, like
+      // every other decline this coreutil reports as itself rather than as a
+      // success that happened to change nothing.
+      cli.err.writeln('entity: barred — tree stands behind the line: ${outcome.report}');
+      cli.exitCode = EntityRunner.barredCode;
+      return;
+    }
     cli.out.writeln(face.at?.sha ?? '');
   }
 }

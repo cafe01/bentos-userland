@@ -88,27 +88,36 @@ final class Materialization {
   ///   what it does not own to make room for itself is one bad path away from
   ///   deleting a stranger's work, and the caller who put those files there is
   ///   the only one who knows what they are.
-  void refresh() {
+  ///
+  /// Returns the [WorktreeCheckout] the unforced move produced when the tree
+  /// stood ours and behind — `moved: true` for every other path, since
+  /// nothing there was ever in question. **The decline is a value, never
+  /// swallowed**: a caller that reads only `moved` gets today's behaviour
+  /// back, and a caller that must tell a lag from a real advance — `entity
+  /// refresh`'s own report chief among them — reads `report` for the
+  /// substrate's own account of what stands in the way.
+  WorktreeCheckout refresh() {
     final following = ref;
-    if (following == null) return;
+    if (following == null) return const WorktreeCheckout(moved: true);
     final tip = ambientGit.revParse(gitDir, following);
-    if (tip == null) return;
+    if (tip == null) return const WorktreeCheckout(moved: true);
     final standing = at;
-    if (standing == tip) return;
+    if (standing == tip) return const WorktreeCheckout(moved: true);
     if (standing != null) {
       // Unforced: a tree still carrying local changes declines rather than
       // being remade. The refusal is not raised — the caller asked to be
       // caught up, not to be told the tree is dirty, and forcing that
       // question on every ordinary call is what the guard at [at] already
       // spares a reader who never touched the files. Left standing behind
-      // the tip, exactly as [ref] documents a materialization can lag.
-      ambientGit.worktreeCheckout(directory.path, to: tip);
-      return;
+      // the tip, exactly as [ref] documents a materialization can lag, and
+      // reported to whoever asked rather than dropped on the floor here.
+      return ambientGit.worktreeCheckout(directory.path, to: tip);
     }
     if (directory.existsSync() && directory.listSync().isNotEmpty) {
       throw WorktreeNotOurs(directory.path, repository: gitDir);
     }
     ambientGit.worktreeAdd(gitDir, path: directory.path, at: tip);
+    return const WorktreeCheckout(moved: true);
   }
 
   /// Discards the worktree and deregisters it. Public here — unlike in
