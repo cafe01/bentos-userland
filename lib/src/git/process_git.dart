@@ -332,7 +332,12 @@ final class ProcessGit implements Git {
       '%H%x00%P%x00%an%x00%ae%x00%aI%x00%B%x00%x1e';
 
   @override
-  List<RawCommit> log(String gitDir, {required String ref, int? limit}) {
+  List<RawCommit> log(
+    String gitDir, {
+    required String ref,
+    int? limit,
+    List<String> excluding = const [],
+  }) {
     final result = _run([
       '--git-dir=$gitDir',
       'log',
@@ -340,6 +345,7 @@ final class ProcessGit implements Git {
       if (limit != null) '--max-count=$limit',
       '--format=$_logFormat',
       ref,
+      if (excluding.isNotEmpty) ...['--not', ...excluding],
     ]);
     if (result.exitCode != 0) return const [];
     return _parseLog(_text(result.stdout));

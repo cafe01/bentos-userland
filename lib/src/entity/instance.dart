@@ -5,10 +5,12 @@ import 'package:path/path.dart' as p;
 
 import 'action.dart';
 import 'entity.dart';
+import 'event.dart';
 import '../git/git_ambient.dart';
 import 'materialization.dart';
 import '../git/model/actor.dart';
 import '../git/model/commit.dart';
+import '../place/place.dart';
 import 'workspace.dart';
 
 /// One object of the class — a ref, whose state is the tree at that ref. A
@@ -61,24 +63,32 @@ final class Instance {
   /// The acts of this instance, newest first. Reading an instance's events in
   /// sequence *is* reading its log under another name, which is why an actor's
   /// context comes free with the medium.
-  List<Action> get log {
+  ///
+  /// With [since], only the acts **after** it — a caller that has already read
+  /// up to a commit it holds pays for the delta and not for the whole history:
+  /// the walk is `ref`'s first-parent chain, and it stops descending the
+  /// instant it meets [since] rather than continuing to genesis. [since] need
+  /// not be this instance's own act; any commit on its first-parent chain
+  /// works, which is what makes a fork's inherited past a legal cursor too.
+  ///
+  /// The walk always also stops at genesis: the structure an instance was born
+  /// from is not one of its acts, which is why birthing leaves no action
+  /// behind. Genesis may itself have been advanced more than once — an entity
+  /// re-authored after instances already forked from it — so what is excluded
+  /// is every commit reachable from genesis's own tip, never only the single
+  /// sha it presently names. Excluding it stays in force even with [since]:
+  /// nothing guarantees the cursor postdates the latest genesis advance.
+  List<Action> log({Commit? since}) {
     final gitDir = _gitDir;
     final at = ambientGit.revParse(gitDir, ref);
     if (at == null) return const [];
-    // The walk stops at genesis: the structure an instance was born from is not
-    // one of its acts, which is why birthing leaves no action behind. Genesis
-    // may itself have been advanced more than once — an entity re-authored
-    // after instances already forked from it — so what is excluded is every
-    // commit reachable from genesis's own tip, never only the single sha it
-    // presently names.
-    final origin = {
-      for (final record in ambientGit.log(gitDir, ref: Entity.genesisRef))
-        record.sha,
-    };
     return [
-      for (final record in ambientGit.log(gitDir, ref: ref))
-        if (!origin.contains(record.sha))
-          Action(gitDir: gitDir, ref: ref, commit: Commit(record.sha)),
+      for (final record in ambientGit.log(
+        gitDir,
+        ref: ref,
+        excluding: [Entity.genesisRef, if (since != null) since.sha],
+      ))
+        Action(gitDir: gitDir, ref: ref, commit: Commit(record.sha)),
     ];
   }
 
@@ -160,6 +170,70 @@ final class Instance {
       ref: ref,
       expectedTip: at,
     );
+  }
+
+  /// Runs the entity's declared [function] with the context already laid —
+  /// **not `invoke`**: nothing here validates a noun, honours a deposit, or
+  /// reads an `on:` row. What this resolves is the file the manifest names,
+  /// and what it does with it is exec and nothing else. The instance travels
+  /// **verbatim** in `BENTOS_INSTANCE` — never looked up, never required to
+  /// be born, since a function that needs it to exist finds that out itself.
+  ///
+  /// Transparent, not replaced: this stays the child's parent and inherits
+  /// all three streams, stdin included — a body that reads must not hang.
+  /// The child's exit code rides back on [ProcessResult.exitCode], unedited.
+  ///
+  /// Refuses by throwing — [FunctionNotDeclared], [FunctionNotExecutable],
+  /// [ClassNotStaged], [ClassStale] — carrying the facts a caller formats a
+  /// cure from, never the sentence itself: only whoever knows this
+  /// installation's place can spell one.
+  Future<ProcessResult> run(String function, {List<String> args = const []}) async {
+    final declared = entity.manifest;
+    if (!declared.functions.containsKey(function)) {
+      throw FunctionNotDeclared(entity.name, function);
+    }
+    final exec = declared.functions[function];
+    if (exec == null) {
+      throw FunctionNotExecutable(entity.name, function);
+    }
+
+    final staged = entity.stagedClass;
+    final standing = staged.at;
+    final holds = entity.genesis;
+    if (standing == null) {
+      final blocked =
+          staged.directory.existsSync() && staged.directory.listSync().isNotEmpty;
+      throw ClassNotStaged(entity.name, staged.directory, blocked: blocked);
+    }
+    if (standing != holds) {
+      throw ClassStale(entity.name, standing: standing, holds: holds);
+    }
+
+    final program = p.join(staged.directory.path, exec);
+    final Process child;
+    try {
+      child = await Process.start(
+        program,
+        args,
+        environment: {
+          OccurrenceEnvironment.place: Place(p.dirname(_gitDir)).root.path,
+          OccurrenceEnvironment.entity: entity.name,
+          OccurrenceEnvironment.instance: id,
+          OccurrenceEnvironment.coordinate: '${entity.name}:$id',
+        },
+        mode: ProcessStartMode.inheritStdio,
+      );
+    } on ProcessException catch (e) {
+      throw ExecutableUnavailable(
+        entity.name,
+        function: function,
+        exec: exec,
+        stagedAt: staged.directory,
+        message: e.message,
+      );
+    }
+    final code = await child.exitCode;
+    return ProcessResult(child.pid, code, '', '');
   }
 
   /// Puts the instance into the materialized condition: a persistent worktree
@@ -270,6 +344,83 @@ final class InstanceNotAtRemote implements Exception {
 
   @override
   String toString() => 'no such instance $instance at $remote';
+}
+
+/// [Instance.run] was asked for a function [entity]'s manifest does not
+/// declare at all.
+final class FunctionNotDeclared implements Exception {
+  const FunctionNotDeclared(this.entity, this.function);
+
+  final String entity;
+  final String function;
+
+  @override
+  String toString() => "$entity declares no function '$function'";
+}
+
+/// [Instance.run] was asked for a function the manifest declares with no
+/// executable — a declaration with nothing to exec.
+final class FunctionNotExecutable implements Exception {
+  const FunctionNotExecutable(this.entity, this.function);
+
+  final String entity;
+  final String function;
+
+  @override
+  String toString() => "$entity declares '$function' with no executable";
+}
+
+/// [Instance.run] found no class tree standing at [directory] — the
+/// executables the manifest declares are not on disk. [blocked] is whether
+/// something other than this installation's own stage already occupies the
+/// directory, which changes the cure from *stand it up* to *move it aside
+/// first*.
+final class ClassNotStaged implements Exception {
+  const ClassNotStaged(this.entity, this.directory, {required this.blocked});
+
+  final String entity;
+  final Directory directory;
+  final bool blocked;
+
+  @override
+  String toString() => '$entity has no class tree at ${directory.path}';
+}
+
+/// [Instance.run] found the class tree staged, but not at the commit this
+/// installation's genesis presently holds — running it would execute bodies
+/// this place does not declare.
+final class ClassStale implements Exception {
+  const ClassStale(this.entity, {required this.standing, required this.holds});
+
+  final String entity;
+  final Commit standing;
+  final Commit holds;
+
+  @override
+  String toString() =>
+      '$entity stands at ${standing.short} and this installation holds ${holds.short}';
+}
+
+/// [Instance.run] resolved the function and found the class tree current, but
+/// starting the executable itself failed — the rare case where the manifest
+/// and the staged commit agree and the disk still does not.
+final class ExecutableUnavailable implements Exception {
+  const ExecutableUnavailable(
+    this.entity, {
+    required this.function,
+    required this.exec,
+    required this.stagedAt,
+    required this.message,
+  });
+
+  final String entity;
+  final String function;
+  final String exec;
+  final Directory stagedAt;
+  final String message;
+
+  @override
+  String toString() => "cannot run '$function': $message";
 }
 
 /// A private directory of this installation's own, under [kind], freshly named.

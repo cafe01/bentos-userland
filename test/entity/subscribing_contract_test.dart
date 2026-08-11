@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -143,10 +144,26 @@ void main() {
       // — `ListenCommand.run` sets up both, back to back, before it ever
       // awaits — so a stdout line is proof the handler is live, which a
       // fixed sleep could only ever assume and lose under load.
-      final ready = born('ready');
-      final readyNext = commit({'r': '1'}, parent: ready);
-      await entity.emit(EventPhase.landed, [moving('ready', from: ready, to: readyNext)]);
-      await stdoutLines.first.timeout(const Duration(seconds: 10));
+      //
+      // `listen` now starts at the journal's live tip, not its top, so a
+      // single emit racing the child's own startup can land before the child
+      // has subscribed and be missed. The retry keeps landing occurrences
+      // until one is seen, rather than guessing a delay long enough to win
+      // the race once.
+      var readyTip = born('ready');
+      var caught = false;
+      for (var attempt = 0; !caught && attempt < 20; attempt++) {
+        final next = commit({'r': '$attempt'}, parent: readyTip);
+        await entity.emit(EventPhase.landed, [moving('ready', from: readyTip, to: next)]);
+        readyTip = next;
+        try {
+          await stdoutLines.first.timeout(const Duration(milliseconds: 500));
+          caught = true;
+        } on TimeoutException {
+          // Not yet subscribed — land another and try again.
+        }
+      }
+      expect(caught, isTrue, reason: 'the child never showed as listening');
 
       // `Process.kill` from a Dart parent does not reliably deliver either,
       // for the same reason — shelling out to `kill` is what actually

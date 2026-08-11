@@ -162,31 +162,38 @@ void main() {
   });
 
   group('tail — the endless read', () {
-    test('streams the occurrences already written', () async {
+    test('does not replay what was already written', () async {
       journal.appendOccurrence(occurrence(event('prompt', commit: 'a1')));
+
+      final stream = journal
+          .tail({EventPattern.parse('prompt.landed')}, poll: _fast)
+          .take(1)
+          .toList();
+
+      await Future<void>.delayed(_fast * 3);
       journal.appendOccurrence(occurrence(event('prompt', commit: 'a2')));
 
-      final seen = await journal
-          .tail({EventPattern.parse('prompt.landed')}, poll: _fast)
-          .take(2)
-          .toList();
-      expect(seen.map((e) => e.commit.sha), ['a1', 'a2']);
-      expect(seen.first.instance.id, 'demo');
-      expect(seen.first.instance.entity.name, 'bentos.llm');
-      expect(seen.first.parent.sha, 'bbbb');
+      final seen = await stream.timeout(_patience);
+      expect(seen.map((e) => e.commit.sha), ['a2']);
+      expect(seen.single.instance.id, 'demo');
+      expect(seen.single.instance.entity.name, 'bentos.llm');
+      expect(seen.single.parent.sha, 'bbbb');
     });
 
     test('the pattern set selects, by noun glob and by phase', () async {
+      final stream = journal.tail({
+        EventPattern.parse('tool-*.landed'),
+        EventPattern.parse('prompt.attempted'),
+      }, poll: _fast).take(1).toList().timeout(_patience);
+
+      await Future<void>.delayed(_fast * 3);
       journal.appendOccurrence(occurrence(event('prompt', commit: 'a1')));
       journal.appendOccurrence(occurrence(
           event('tool-result', commit: 'a2', phase: EventPhase.attempted)));
       journal.appendOccurrence(occurrence(event('tool-result', commit: 'a3')));
       journal.appendOccurrence(occurrence(event('prompt', commit: 'a4')));
 
-      final seen = await journal.tail({
-        EventPattern.parse('tool-*.landed'),
-        EventPattern.parse('prompt.attempted'),
-      }, poll: _fast).take(1).toList().timeout(_patience);
+      final seen = await stream;
       expect(seen.map((e) => e.commit.sha), ['a3']);
     });
 
@@ -199,6 +206,13 @@ void main() {
     // This green mark says the reader does not consult the table; it says
     // nothing about the writer's order.
     test('an unarmed installation is fully visible', () async {
+      final stream = journal
+          .tail({EventPattern.parse('*.landed')}, poll: _fast)
+          .take(1)
+          .toList()
+          .timeout(_patience);
+
+      await Future<void>.delayed(_fast * 3);
       journal.appendOccurrence(occurrence(event('prompt', commit: 'a1')));
       expect(
         Directory('$gitDir/${ArmingTables.tablesDirName}')
@@ -207,23 +221,22 @@ void main() {
         ['journal'],
       );
 
-      final seen = await journal
-          .tail({EventPattern.parse('*.landed')}, poll: _fast)
-          .take(1)
-          .toList()
-          .timeout(_patience);
+      final seen = await stream;
       expect(seen.single.commit.sha, 'a1');
     });
 
     test('deliveries are not occurrences and never surface here', () async {
-      journal.appendDelivery(delivery(event('prompt', commit: 'd1')));
-      journal.appendOccurrence(occurrence(event('prompt', commit: 'a1')));
-
-      final seen = await journal
+      final stream = journal
           .tail({EventPattern.parse('*.landed')}, poll: _fast)
           .take(1)
           .toList()
           .timeout(_patience);
+
+      await Future<void>.delayed(_fast * 3);
+      journal.appendDelivery(delivery(event('prompt', commit: 'd1')));
+      journal.appendOccurrence(occurrence(event('prompt', commit: 'a1')));
+
+      final seen = await stream;
       expect(seen.single.commit.sha, 'a1');
     });
 
@@ -239,12 +252,13 @@ void main() {
     // Endless is the whole difference from `deliveries`, and it is what makes
     // `listen` a live view rather than a question.
     test('growth after the call is streamed', () async {
-      journal.appendOccurrence(occurrence(event('prompt', commit: 'a1')));
       final stream = journal
           .tail({EventPattern.parse('*.landed')}, poll: _fast)
           .take(2)
           .toList();
 
+      await Future<void>.delayed(_fast * 3);
+      journal.appendOccurrence(occurrence(event('prompt', commit: 'a1')));
       await Future<void>.delayed(_fast * 3);
       journal.appendOccurrence(occurrence(event('prompt', commit: 'a2')));
 
@@ -412,13 +426,18 @@ void main() {
           throwsFormatException);
     });
 
-    test('a line naming a kind nobody writes', () {
-      poison('{"kind":"rumour","instance":"demo","noun":"prompt",'
-          '"phase":"landed","commit":"a2","parent":"b"}');
-      expect(
-        journal.tail({EventPattern.parse('*.landed')}, poll: _fast),
+    test('a line naming a kind nobody writes', () async {
+      final stream = journal.tail({EventPattern.parse('*.landed')}, poll: _fast);
+      final matched = expectLater(
+        stream,
         emitsThrough(emitsError(isA<FormatException>())),
       );
+
+      await Future<void>.delayed(_fast * 3);
+      poison('{"kind":"rumour","instance":"demo","noun":"prompt",'
+          '"phase":"landed","commit":"a2","parent":"b"}');
+
+      await matched.timeout(_patience);
     });
 
     test('a line naming a phase that does not exist', () {

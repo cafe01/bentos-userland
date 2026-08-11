@@ -174,14 +174,18 @@ final class Journal {
   /// nothing outliving the call, which is the whole property `listen` exists to
   /// have.
   ///
-  /// With no [since], starts at the top of the file. With one, scans forward
-  /// for the occurrence whose commit equals it and streams everything
-  /// **after** — a full-file scan, stated as the cost rather than hidden behind
-  /// an offset or a timestamp that would not survive a rewrite. **The scan runs
-  /// over every occurrence, not only the matching ones**: the cursor is
-  /// denominated in an occurrence's own sha, and an occurrence exists whether or
-  /// not this reader's patterns select it. Reaches the end having never found
-  /// it: raises [JournalGap], never silently falls back to the top or the tail.
+  /// With no [since], starts at the file's current end — only occurrences
+  /// appended from this call on are streamed. History is what the finite read
+  /// is for; this is the events surface, so its default is what arrives next.
+  ///
+  /// With [since], the call is a **resumption**: scans forward for the
+  /// occurrence whose commit equals it and streams everything **after** — a
+  /// full-file scan, stated as the cost rather than hidden behind an offset or
+  /// a timestamp that would not survive a rewrite. **The scan runs over every
+  /// occurrence, not only the matching ones**: the cursor is denominated in an
+  /// occurrence's own sha, and an occurrence exists whether or not this
+  /// reader's patterns select it. Reaches the end having never found it:
+  /// raises [JournalGap], never silently falls back to the top or the tail.
   ///
   /// Growth is read by polling the file's length on the reader's own [poll]
   /// cadence — which is what lets [file] stay an ordinary file with no socket,
@@ -214,7 +218,9 @@ final class Journal {
     var remainder = '';
     var last = since;
     try {
-      var consumed = since == null ? 0 : _scanForCursor(since);
+      var consumed = since == null
+          ? (file.existsSync() ? file.lengthSync() : 0)
+          : _scanForCursor(since);
       while (live()) {
         final length = file.existsSync() ? file.lengthSync() : 0;
 

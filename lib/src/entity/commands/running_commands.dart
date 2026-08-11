@@ -1,12 +1,9 @@
 import 'dart:io';
 
 import 'package:args/args.dart';
-import 'package:path/path.dart' as p;
 
 import '../entity_runner.dart';
-import '../event.dart';
-import '../manifest.dart';
-import 'coordinate.dart';
+import '../instance.dart';
 import 'entity_command.dart';
 
 /// `entity run <coord> <function> [args...]` — a caller names a verb and the
@@ -83,36 +80,14 @@ final class RunCommand extends EntityCommand {
     if (arguments.isNotEmpty && arguments.first == '--') arguments.removeAt(0);
 
     final entity = cli.entityNamed(coord.entity, place: placeOption);
-    // The manifest is read from the ref, always: one source for the contract,
-    // and the same commit the bytes below are required to have come from.
-    final Manifest declared = entity.manifest;
+    final instance = entity.instance(coord.instance);
 
-    if (!declared.functions.containsKey(wanted)) {
-      // Absence, and not usage: the caller spelled a verb this entity does not
-      // have, which is the same answer as any other thing we could not find.
-      cli.err.writeln(
-        "entity run: ${entity.name} declares no function '$wanted'",
-      );
-      cli.exitCode = EntityRunner.notFoundCode;
-      return;
-    }
-    final exec = declared.functions[wanted];
-    if (exec == null) {
-      cli.err.writeln(
-        "entity run: ${entity.name} declares '$wanted' with no executable",
-      );
-      cli.exitCode = EntityRunner.notFoundCode;
-      return;
-    }
-
-    final staged = entity.stagedClass;
-    final standing = staged.at;
-    final holds = entity.genesis;
-    // Resolved here and not only where the child is started, because a refusal
-    // that names a cure has to name the **vantage** too: a bare name resolves by
-    // walking up from wherever the reader is standing, and a cure retyped from
-    // another directory finds another installation, answers zero, and moves
-    // nothing. Which is exactly what it did the first time it was tried by hand.
+    // Resolved here, not by [Instance.run]: a refusal that names a cure has to
+    // name the **vantage** too, and only the CLI has one. A bare name resolves
+    // by walking up from wherever the reader is standing, and a cure retyped
+    // from another directory finds another installation, answers zero, and
+    // moves nothing — which is exactly what it did the first time it was tried
+    // by hand.
     final place = cli.installedAt(coord.entity, place: placeOption);
     // The one line every refusal below ends on. **A refusal that names no cure
     // is refused by halves**: the guard is right to stop, and a reader left
@@ -120,68 +95,46 @@ final class RunCommand extends EntityCommand {
     // states are cured by the same act — make this directory be the genesis
     // this installation holds — and a second spelling would rot apart from the
     // first.
-    final cure = 'entity -C ${place.path} refresh ${entity.name}:$_genesisId '
-        '${staged.directory.path}';
+    String cure(Directory stagedAt) =>
+        'entity -C ${place.path} refresh ${entity.name}:$_genesisId ${stagedAt.path}';
 
-    if (standing == null) {
-      final blocked = staged.directory.existsSync() &&
-          staged.directory.listSync().isNotEmpty;
+    try {
+      final result = await instance.run(wanted, args: arguments);
+      cli.exitCode = result.exitCode;
+    } on FunctionNotDeclared catch (e) {
+      // Absence, and not usage: the caller spelled a verb this entity does not
+      // have, which is the same answer as any other thing we could not find.
+      cli.err.writeln('entity run: $e');
+      cli.exitCode = EntityRunner.notFoundCode;
+    } on FunctionNotExecutable catch (e) {
+      cli.err.writeln('entity run: $e');
+      cli.exitCode = EntityRunner.notFoundCode;
+    } on ClassNotStaged catch (e) {
       cli.err.writeln([
-        if (blocked)
-          'entity run: ${entity.name} has no class tree at '
-              '${staged.directory.path} — a directory this installation never '
-              'registered stands there'
-        else
-          'entity run: ${entity.name} has no class tree at '
-              '${staged.directory.path}',
+        'entity run: $e'
+            '${e.blocked ? ' — a directory this installation never registered stands there' : ''}',
         'the executables it declares are not on disk',
-        if (blocked) 'move what stands there aside, then: $cure' else 'stand it up: $cure',
+        e.blocked ? 'move what stands there aside, then: ${cure(e.directory)}'
+            : 'stand it up: ${cure(e.directory)}',
       ].join('\n  '));
       cli.exitCode = EntityRunner.notFoundCode;
-      return;
-    }
-    if (standing != holds) {
+    } on ClassStale catch (e) {
       // **Never repaired here.** A verb that quietly makes itself right runs
       // bodies this place does not declare, exits zero, and tells nobody — the
       // one failure worse than not running at all.
       cli.err.writeln([
-        'entity run: ${entity.name} stands at ${standing.short} and this '
-            'installation holds ${holds.short}',
+        'entity run: $e',
         'running it would execute bodies this place does not declare',
-        'bring it forward: $cure',
+        'bring it forward: ${cure(entity.stagedClass.directory)}',
       ].join('\n  '));
       cli.exitCode = EntityRunner.notFoundCode;
-      return;
-    }
-
-    final program = p.join(staged.directory.path, exec);
-    final Process child;
-    try {
-      child = await Process.start(
-        program,
-        arguments,
-        environment: {
-          OccurrenceEnvironment.place: place.path,
-          OccurrenceEnvironment.entity: entity.name,
-          OccurrenceEnvironment.instance: coord.instance,
-          OccurrenceEnvironment.coordinate: '${coord.entity}:${coord.instance}',
-        },
-        // The caller's own, untouched: context arrives by environment, so
-        // relocating the body would be this verb inventing a fact nobody asked
-        // it to invent.
-        workingDirectory: cli.cwd,
-        mode: ProcessStartMode.inheritStdio,
-      );
-    } on ProcessException catch (e) {
+    } on ExecutableUnavailable catch (e) {
       cli.err.writeln([
-        "entity run: cannot run '$wanted': ${e.message}",
-        '${entity.name} declares it at $exec, looked for in '
-            '${staged.directory.path}',
+        'entity run: $e',
+        '${e.entity} declares it at ${e.exec}, looked for in ${e.stagedAt.path}',
       ].join('\n  '));
       cli.exitCode = EntityRunner.notFoundCode;
-      return;
     }
-    cli.exitCode = await child.exitCode;
   }
 
   /// The branch name the class stands on, as a coordinate spells it. Named here

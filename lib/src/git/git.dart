@@ -169,8 +169,17 @@ abstract interface class Git {
   /// The commit a ref points at, or null when the ref does not exist.
   Commit? revParse(String gitDir, String rev);
 
-  /// The commits reachable from [ref], newest first.
-  List<RawCommit> log(String gitDir, {required String ref, int? limit});
+  /// The commits reachable from [ref] but not from any of [excluding], newest
+  /// first — the incremental path: a caller already holding a commit it has
+  /// seen names it here and pays only for what lies beyond it, since a
+  /// first-parent walk stops descending the moment it meets ground the
+  /// exclusion already covers.
+  List<RawCommit> log(
+    String gitDir, {
+    required String ref,
+    int? limit,
+    List<String> excluding = const [],
+  });
 
   /// One commit's record.
   RawCommit showCommit(String gitDir, Commit commit);

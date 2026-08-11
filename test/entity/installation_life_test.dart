@@ -1057,8 +1057,13 @@ final class _WatchedGit implements Git {
   Commit? revParse(String gitDir, String rev) => _inner.revParse(gitDir, rev);
 
   @override
-  List<RawCommit> log(String gitDir, {required String ref, int? limit}) =>
-      _inner.log(gitDir, ref: ref, limit: limit);
+  List<RawCommit> log(
+    String gitDir, {
+    required String ref,
+    int? limit,
+    List<String> excluding = const [],
+  }) =>
+      _inner.log(gitDir, ref: ref, limit: limit, excluding: excluding);
 
   @override
   RawCommit showCommit(String gitDir, Commit commit) =>

@@ -266,11 +266,28 @@ class FakeGit implements Git {
   }
 
   @override
-  List<RawCommit> log(String gitDir, {required String ref, int? limit}) {
+  List<RawCommit> log(
+    String gitDir, {
+    required String ref,
+    int? limit,
+    List<String> excluding = const [],
+  }) {
     final repo = _repo(gitDir);
+    // Mirrors `--first-parent --not`: every exclusion's own first-parent chain
+    // is ground the walk below must not cross.
+    final excluded = <String>{};
+    for (final exclusion in excluding) {
+      var at = revParse(gitDir, exclusion)?.sha;
+      while (at != null && excluded.add(at)) {
+        final obj = repo.commits[at];
+        at = (obj == null || obj.parents.isEmpty) ? null : obj.parents.first;
+      }
+    }
     final out = <RawCommit>[];
     var at = revParse(gitDir, ref)?.sha;
-    while (at != null && (limit == null || out.length < limit)) {
+    while (at != null &&
+        !excluded.contains(at) &&
+        (limit == null || out.length < limit)) {
       final obj = repo.commits[at];
       if (obj == null) break;
       out.add(_raw(at, obj));

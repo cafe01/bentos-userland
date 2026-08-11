@@ -106,7 +106,7 @@ final class LogCommand extends EntityCommand {
 
   @override
   Future<void> run() async {
-    for (final act in cli.instanceAt(coordinate(), place: placeOption).log) {
+    for (final act in cli.instanceAt(coordinate(), place: placeOption).log()) {
       cli.out.writeln(
         [
           act.commit.sha,
@@ -138,7 +138,7 @@ final class ShowCommand extends EntityCommand {
     final instance = cli.instanceAt(coordinate(), place: placeOption);
     // The second argument selects by object name, which is what a log line
     // hands back. An action's identity *is* its commit.
-    final selected = instance.log.where((a) => a.commit.sha.startsWith(rest[1]));
+    final selected = instance.log().where((a) => a.commit.sha.startsWith(rest[1]));
     if (selected.isEmpty) {
       cli.err.writeln('entity show: no act ${rest[1]} of ${coordinate()}');
       cli.exitCode = EntityRunner.notFoundCode;

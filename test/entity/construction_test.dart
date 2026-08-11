@@ -461,7 +461,7 @@ void main() {
       expect(one.tip, equals(standing), reason: 'nothing was ever true');
       // Refusal leaves no residue on the ref and the object survives, orphaned —
       // which is what makes a `.refused` payload readable at all.
-      expect(one.log, isEmpty);
+      expect(one.log(), isEmpty);
     });
 
     test('the action noun is read back off a real commit object', () async {
@@ -630,7 +630,7 @@ void main() {
       // And it knows what it holds without looking at a file: the class, its
       // objects, and their acts, all read at the refs.
       expect([for (final i in theirs().instances) i.id], equals(['one']));
-      expect(theirs().instance('one').log.single.name, equals('note'));
+      expect(theirs().instance('one').log().single.name, equals('note'));
     });
 
     test('fetch brings the other site\'s line down and advances the ref', () async {

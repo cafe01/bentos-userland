@@ -40,7 +40,7 @@ void main() {
     test('from genesis by default — empty the way a constructor leaves one', () {
       site.run(() {
         expect(llm.instance('s1').tip, isNotNull);
-        expect(llm.instance('s1').log, isEmpty);
+        expect(llm.instance('s1').log(), isEmpty);
       });
     });
 
@@ -53,12 +53,12 @@ void main() {
       site.run(() {
         final tip = llm.instance('s1').tip!;
         llm.instance('s2').create(from: tip);
-        expect(llm.instance('s2').log.length, 1);
+        expect(llm.instance('s2').log().length, 1);
       });
       await writeAct(site.run(() => llm.instance('s2')), 'reply', 'answer');
       site.run(() {
-        expect(llm.instance('s1').log.length, 1, reason: 'instances do not interfere');
-        expect(llm.instance('s2').log.length, 2);
+        expect(llm.instance('s1').log().length, 1, reason: 'instances do not interfere');
+        expect(llm.instance('s2').log().length, 2);
       });
     });
   });
@@ -319,7 +319,7 @@ void main() {
     test('birthing an instance is not an act and leaves no action', () {
       site.run(() {
         llm.instance('s3').create();
-        expect(llm.instance('s3').log, isEmpty);
+        expect(llm.instance('s3').log(), isEmpty);
       });
     });
 
@@ -359,11 +359,79 @@ void main() {
 
       await writeAct(site.run(() => llm.instance('s4')), 'prompt', 'hello');
 
-      final log = site.run(() => llm.instance('s4').log);
+      final log = site.run(() => llm.instance('s4').log());
       expect(log, hasLength(1), reason: 'genesis was advanced twice after '
           'the fork point; excluding only its present tip would leave the '
           'earlier authoring commit standing in as if it were an act');
       expect(log.single.name, equals('prompt'));
+    });
+  });
+
+  group('the incremental read — since', () {
+    test('a delta of only what landed after the cursor', () async {
+      final instance = site.run(() => llm.instance('s1'));
+      await writeAct(instance, 'prompt', 'one', file: 'messages/1.txt');
+      await writeAct(instance, 'reply', 'two', file: 'messages/2.txt');
+      final cursor = site.run(() => llm.instance('s1').log().first.commit);
+      await writeAct(instance, 'note', 'three', file: 'messages/3.txt');
+
+      site.run(() {
+        final full = llm.instance('s1').log();
+        final delta = llm.instance('s1').log(since: cursor);
+        expect(full, hasLength(3), reason: 'the whole history, for reference');
+        expect(delta.map((a) => a.commit.sha), [full.first.commit.sha],
+            reason: 'exactly the one act that landed after the cursor');
+      });
+    });
+
+    test('empty when the cursor already is the tip', () async {
+      await writeAct(site.run(() => llm.instance('s1')), 'prompt', 'hello');
+      site.run(() {
+        final tip = llm.instance('s1').log().first.commit;
+        expect(llm.instance('s1').log(since: tip), isEmpty);
+      });
+    });
+
+    test('a fork accepts a commit from the parent\'s line as a legal cursor',
+        () async {
+      await writeAct(site.run(() => llm.instance('s1')), 'prompt', 'hello');
+      final forkPoint = site.run(() => llm.instance('s1').tip!);
+      site.run(() => llm.instance('s2').create(from: forkPoint));
+      await writeAct(site.run(() => llm.instance('s2')), 'reply', 'answer');
+
+      site.run(() {
+        final delta = llm.instance('s2').log(since: forkPoint);
+        expect(delta.single.name, 'reply',
+            reason: 'the inherited past is not new, only what s2 itself did');
+      });
+    });
+
+    test('still excludes genesis with a cursor given', () async {
+      final gitDir = gitDirOf(llm);
+      final held = site.run(() => site.git.revParse(gitDir, Entity.genesisRef));
+      final work = Directory.systemTemp.createTempSync('entity_genesis-');
+      try {
+        site.run(() {
+          final tree = site.git.writeTree(gitDir, workTree: work.path);
+          final sha = site.git.commitTree(gitDir,
+              tree: tree, parents: [if (held != null) held.sha], message: 'x\n');
+          site.git.updateRef(gitDir,
+              ref: Entity.genesisRef, newCommit: Commit(sha), expected: held);
+        });
+      } finally {
+        work.deleteSync(recursive: true);
+      }
+      site.run(() => llm.instance('s5').create());
+      final first =
+          await writeAct(site.run(() => llm.instance('s5')), 'prompt', 'hi');
+      final cursor = (first as Landed).action.commit;
+      site.run(() {
+        // A cursor that happens to equal genesis's own tip must still resolve
+        // to an empty delta, never to genesis's authoring commit surfacing as
+        // an act because the explicit genesis exclusion was dropped in favour
+        // of the cursor.
+        expect(llm.instance('s5').log(since: cursor), isEmpty);
+      });
     });
   });
 
