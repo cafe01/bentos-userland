@@ -666,7 +666,11 @@ exit 1
           ]);
 
       await entity.emit(phase, [moving('demo', from: tip, to: next)]);
-      await _settles(dump);
+      // The redirection creates the file before `env | grep | sort` has
+      // written a byte into it — the same race already fixed above for the
+      // journal-reading body, missed here. `_settles` on existence alone
+      // reads an empty file under contention.
+      await _settlesUntil(() => dump.existsSync() && dump.readAsStringSync().trim().isNotEmpty);
 
       return {
         for (final line in dump.readAsLinesSync())
