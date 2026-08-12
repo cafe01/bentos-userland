@@ -49,11 +49,12 @@ final class EntityFloor implements ChatFloor {
   @override
   Channel channel(String name, {required String place, String? cursor}) {
     final entity = _entity(place);
+    final identity = GitIdentity.of(entity);
     return construct(
       name: name,
-      bodies: bodies(name, place: place),
+      acts: EntityActs(entity.instance(name), identity: identity),
       tree: EntityTree(entity.instance(name)),
-      identity: GitIdentity.of(entity),
+      identity: identity,
       ticker: () => DispatchTicker(entity),
       cursor: cursor,
     );

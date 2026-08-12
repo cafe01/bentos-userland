@@ -71,6 +71,11 @@ final class FakeTree implements ChatTree {
     _head = null;
   }
 
+  /// Births the ref at an empty structure, with no act of its own — mirroring
+  /// `Instance.create()`: [tip] answers non-null and [log] stays empty until
+  /// the first act lands.
+  void birth() => _head ??= 'genesis-tip';
+
   @override
   String? tip() => _head;
 
@@ -106,145 +111,136 @@ final class FakeTree implements ChatTree {
   List<String> added(String commit) => _added[commit] ?? const [];
 }
 
+/// The area one [FakeActs.attempt] writes into — a plain map, snapshotted from
+/// the tree at the attempt's start so a gate and a writer see the same world a
+/// real materialized worktree would hand them.
+final class _FakeArea implements ChatArea {
+  _FakeArea(Map<String, String> base) : files = Map.of(base);
+
+  final Map<String, String> files;
+  final Set<String> removed = {};
+
+  @override
+  void write(String path, String content) {
+    files[path] = content;
+    removed.remove(path);
+  }
+
+  @override
+  void removeTree(String path) {
+    files.removeWhere((key, _) => key == path || key.startsWith('$path/'));
+    removed.add(path);
+  }
+
+  @override
+  bool exists(String path) =>
+      files.keys.any((key) => key == path || key.startsWith('$path/'));
+}
+
+/// One attempt at an act, captured whole — so a fixture can prove the loop's
+/// own shape: how many attempts it took, and with what.
+final class ActAttempt {
+  const ActAttempt(this.noun, this.gated);
+
+  final String noun;
+  final bool gated;
+}
+
+/// The in-process act bracket, doubled over a [FakeTree] — the seam
+/// [LocalChannel] now opens itself, with no shell and no spawn behind it.
+final class FakeActs implements ChatActs {
+  FakeActs(this.tree);
+
+  final FakeTree tree;
+
+  /// Who these acts commit as. The real seam reads git's own cascade; the
+  /// double is told, because the seam under test is the library's and not
+  /// git's.
+  FakeIdentity identity = FakeIdentity();
+  String channel = 'fabrica';
+
+  /// Every attempt made, in order — so a fixture can prove the retry loop's
+  /// own shape rather than merely its outcome.
+  final List<ActAttempt> attempts = [];
+
+  /// Forces the next [count] attempts at [noun] to answer [ChatContested] —
+  /// the fixture that proves the caller's loop retries, and counts.
+  void contestNext(String noun, int count) => _contests[noun] = count;
+  final Map<String, int> _contests = {};
+
+  /// Forces the next attempt at [noun] to answer [ChatGateRefused], whatever
+  /// the real gate would have said — for the one shape the membership gate
+  /// itself cannot produce: a floor-level refusal unrelated to a seat.
+  void barNext(String noun, String reason) => _bars[noun] = reason;
+  final Map<String, String> _bars = {};
+
+  List<ActAttempt> attemptsAt(String noun) =>
+      attempts.where((a) => a.noun == noun).toList();
+
+  @override
+  bool get born => tree.tip() != null;
+
+  @override
+  void ensureBorn() {
+    if (!born) tree.birth();
+  }
+
+  @override
+  ChatActOutcome attempt(
+    String noun, {
+    required void Function(ChatArea area) write,
+    String? Function(ChatArea area)? gate,
+    String? say,
+  }) {
+    attempts.add(ActAttempt(noun, gate != null));
+    if (!born) {
+      throw StateError('not born: $chatOntology:$channel');
+    }
+    final left = _contests[noun] ?? 0;
+    if (left > 0) {
+      _contests[noun] = left - 1;
+      return const ChatContested();
+    }
+    final barred = _bars.remove(noun);
+    if (barred != null) return ChatGateRefused(barred);
+
+    final area = _FakeArea(tree.files);
+    final refusal = gate?.call(area);
+    if (refusal != null) return ChatGateRefused(refusal);
+    write(area);
+    final delta = <String, String>{
+      for (final entry in area.files.entries)
+        if (tree.files[entry.key] != entry.value) entry.key: entry.value,
+    };
+    final act = tree.land(
+      noun: noun,
+      authorName: identity.displayName ?? '',
+      authorEmail: identity.handle.email,
+      writes: delta,
+      removes: area.removed.toList(),
+      sentence: say,
+    );
+    return ChatLanded(act.commit);
+  }
+}
+
 /// One invocation of a body.
 final class BodyCall {
   const BodyCall(this.function, this.arguments, this.attempts);
 
   final String function;
   final List<String> arguments;
-
-  /// The bound this call carried down — what the library set
-  /// [attemptsVariable] to in the child's environment.
   final int attempts;
 }
 
-/// What a body does when it is run.
-typedef BodyHandler = BodyOutcome Function(List<String> arguments, FakeTree tree);
-
-/// The entity's embarked functions, doubled.
+/// The entity's own declared functions, doubled — `check` alone runs through
+/// this seam now, since it carries no seat and is not a [Channel] method.
 final class FakeBodies implements ChatBodies {
-  FakeBodies(this.tree) {
-    // The two functions the entity actually ships that write. They land real
-    // acts, so a reading claim asserted after an act is asserted against a tree
-    // an act really changed.
-    handlers['join'] = (arguments, tree) {
-      final display = _valueOf(arguments, '--name');
-      final seat = '$participantsPath/${identity.handle.local}';
-      final act = tree.land(
-        noun: 'membership',
-        authorName: identity.displayName ?? '',
-        authorEmail: identity.handle.email,
-        writes: {
-          '$seat/joined': '2026-08-06T12:00:00Z\n',
-          if (display != null) '$seat/name': '$display\n',
-        },
-        sentence: 'join · ${identity.handle}',
-      );
-      return BodyOutcome(exitCode: 0, stdout: act.commit);
-    };
-    // The gate every writing body but `join` asks, against the tree as it then
-    // stands — a member is a seat, and a seat is a directory.
-    BodyOutcome? refusedUnlessSeated(String function) {
-      final seat = '$participantsPath/${identity.handle.local}';
-      if (tree.files.keys.any((k) => k.startsWith('$seat/'))) return null;
-      return BodyOutcome(
-        exitCode: bodyRefused,
-        stderr: '$function: refused — ${identity.handle} is not in '
-            'bentos.chat:$channel (join first)',
-      );
-    }
-
-    // Leaving tears the seat down whole and touches nothing else: what was said
-    // stays said, because the roster and the transcript answer two different
-    // questions.
-    handlers['leave'] = (arguments, tree) {
-      final refusal = refusedUnlessSeated('leave');
-      if (refusal != null) return refusal;
-      final act = tree.land(
-        noun: 'membership',
-        authorName: identity.displayName ?? '',
-        authorEmail: identity.handle.email,
-        removes: ['$participantsPath/${identity.handle.local}'],
-        sentence: 'leave · ${identity.handle}',
-      );
-      return BodyOutcome(exitCode: 0, stdout: act.commit);
-    };
-    handlers['topic'] = (arguments, tree) {
-      final refusal = refusedUnlessSeated('topic');
-      if (refusal != null) return refusal;
-      final act = tree.land(
-        noun: 'topic',
-        authorName: identity.displayName ?? '',
-        authorEmail: identity.handle.email,
-        writes: {topicPath: '${arguments.first}\n'},
-        sentence: 'topic · ${identity.handle} · "${arguments.first}"',
-      );
-      return BodyOutcome(exitCode: 0, stdout: act.commit);
-    };
-    // The field EXISTS when the participant is away and its contents are the
-    // reason, which may be empty — so a reason nobody gave is an empty file and
-    // never a missing one.
-    handlers['away'] = (arguments, tree) {
-      final refusal = refusedUnlessSeated('away');
-      if (refusal != null) return refusal;
-      final act = tree.land(
-        noun: 'presence',
-        authorName: identity.displayName ?? '',
-        authorEmail: identity.handle.email,
-        writes: {
-          '$participantsPath/${identity.handle.local}/away':
-              arguments.isEmpty ? '' : arguments.first,
-        },
-        sentence: 'away · ${identity.handle}',
-      );
-      return BodyOutcome(exitCode: 0, stdout: act.commit);
-    };
-    handlers['back'] = (arguments, tree) {
-      final refusal = refusedUnlessSeated('back');
-      if (refusal != null) return refusal;
-      final act = tree.land(
-        noun: 'presence',
-        authorName: identity.displayName ?? '',
-        authorEmail: identity.handle.email,
-        removes: ['$participantsPath/${identity.handle.local}/away'],
-        sentence: 'back · ${identity.handle}',
-      );
-      return BodyOutcome(exitCode: 0, stdout: act.commit);
-    };
-    handlers['say'] = (arguments, tree) {
-      final body = arguments.first;
-      final refusal = refusedUnlessSeated('say');
-      if (refusal != null) return refusal;
-      final id = '01K${(tree.acts.length + 1).toString().padLeft(3, '0')}';
-      final act = tree.land(
-        noun: 'message',
-        authorName: identity.displayName ?? '',
-        authorEmail: identity.handle.email,
-        writes: {
-          '$messagesPath/2026/08/06/$id.md':
-              'author: ${identity.displayName} <${identity.handle.email}>\n'
-                  'spoken: ${(spokenTimes.isEmpty ? '2026-08-06T12:00:00Z' : spokenTimes.removeAt(0))}\n'
-                  '\n$body\n',
-        },
-        sentence: 'say · ${identity.handle} · "$body"',
-      );
-      return BodyOutcome(exitCode: 0, stdout: act.commit);
-    };
-  }
+  FakeBodies(this.tree);
 
   final FakeTree tree;
-  final Map<String, BodyHandler> handlers = {};
   final List<BodyCall> calls = [];
-
-  /// Who these bodies commit as. The bodies read git's own cascade; the double
-  /// is told, because the seam under test is the library's and not git's.
-  FakeIdentity identity = FakeIdentity();
-  String channel = 'fabrica';
-
-  /// Spoken times handed out in order, so a fixture can make the order of
-  /// arrival and the order of the clock **disagree** — which is the only shape
-  /// in which the transcript's ordering claim means anything.
-  final List<String> spokenTimes = [];
+  final Map<String, BodyOutcome> _answers = {};
 
   /// Makes [function] answer flatly, whatever it is asked.
   void answers(
@@ -253,7 +249,7 @@ final class FakeBodies implements ChatBodies {
     String stdout = '',
     String stderr = '',
   }) =>
-      handlers[function] = (_, _) =>
+      _answers[function] =
           BodyOutcome(exitCode: exitCode, stdout: stdout, stderr: stderr);
 
   List<BodyCall> callsTo(String function) =>
@@ -266,19 +262,7 @@ final class FakeBodies implements ChatBodies {
     required int attempts,
   }) async {
     calls.add(BodyCall(function, arguments, attempts));
-    final handler = handlers[function];
-    if (handler == null) {
-      return BodyOutcome(
-        exitCode: 1,
-        stderr: "entity run: bentos.chat declares no function '$function'",
-      );
-    }
-    return handler(arguments, tree);
-  }
-
-  static String? _valueOf(List<String> arguments, String flag) {
-    final at = arguments.indexOf(flag);
-    return at < 0 || at + 1 >= arguments.length ? null : arguments[at + 1];
+    return _answers[function] ?? const BodyOutcome(exitCode: 0);
   }
 }
 
@@ -306,6 +290,19 @@ final class FakeTicker implements Ticker {
     disposed = true;
     _controller.close();
   }
+}
+
+/// The wall clock, doubled — one reading handed out per call, so a fixture
+/// can make the order of arrival and the order of the clock **disagree**,
+/// which is the only shape in which the transcript's ordering claim means
+/// anything. Falls back to a fixed instant once the queue runs dry.
+final class FakeClock {
+  final List<DateTime> _queue = [];
+  DateTime fallback = DateTime.utc(2026, 8, 6, 12);
+
+  void push(DateTime instant) => _queue.add(instant);
+
+  DateTime call() => _queue.isEmpty ? fallback : _queue.removeAt(0);
 }
 
 final class FakeIdentity implements Identity {

@@ -14,21 +14,25 @@ import 'support/doubles.dart';
 
 void runChannelContract(ChannelConstruction construct) {
   late FakeTree tree;
-  late FakeBodies bodies;
+  late FakeActs acts;
   late FakeIdentity identity;
   late FakeTicker ticker;
+  late FakeClock clock;
 
   Channel open({String? cursor, int attempts = defaultAttempts}) => construct(
         name: 'fabrica',
-        bodies: bodies,
+        acts: acts,
         tree: tree,
         identity: identity,
         ticker: () => ticker,
         cursor: cursor,
         attempts: attempts,
+        clock: clock.call,
       );
 
-  /// A member, so that speaking is not refused by the gate.
+  /// A member, so that speaking is not refused by the gate. It births the
+  /// channel too, exactly as a real `join` would — a channel with a seat in it
+  /// is a channel that exists.
   void seated([String local = 'alfred']) => tree.land(
         noun: 'membership',
         authorName: 'Alfred',
@@ -42,8 +46,9 @@ void runChannelContract(ChannelConstruction construct) {
   setUp(() {
     tree = FakeTree();
     identity = FakeIdentity();
-    bodies = FakeBodies(tree)..identity = identity;
+    acts = FakeActs(tree)..identity = identity;
     ticker = FakeTicker();
+    clock = FakeClock();
   });
 
   group('the address, and who is speaking', () {
@@ -61,16 +66,19 @@ void runChannelContract(ChannelConstruction construct) {
     });
   });
 
-  group('acting maps the body\'s own words', () {
-    test('exit 0 is Acted, at the commit the body printed', () async {
+  group('acting opens the bracket and reads what it landed', () {
+    test('landing is Acted, at the commit the act made', () async {
       seated();
       final result = await open().say('green');
       expect(result, isA<Acted>());
       expect((result as Acted).commit, isNotEmpty);
     });
 
-    test('exit 3 is Refused, carrying the floor\'s words verbatim', () async {
-      // Nobody seated: the one gate of this application.
+    test("the gate's no is Refused, carrying the floor's words verbatim",
+        () async {
+      // Born, but nobody seated: the one gate of this application, and not
+      // the birth of the channel — the two must not be confused.
+      tree.birth();
       final result = await open().say('let me in');
       expect(result, isA<Refused>());
       expect(
@@ -79,87 +87,93 @@ void runChannelContract(ChannelConstruction construct) {
       );
     });
 
-    test('exit 75 is Stumbled, and never a refusal', () async {
-      bodies.answers('say', exitCode: bodyStumbled, stderr: 'the ref moved');
+    test('exhausting the bound is Stumbled, and never a refusal', () async {
+      seated();
+      acts.contestNext('message', defaultAttempts);
       expect(await open().say('green'), isA<Stumbled>());
     });
 
     test('a stumble reports the bound this caller set', () async {
-      bodies.answers('say', exitCode: bodyStumbled);
+      seated();
+      acts.contestNext('message', 3);
       final result = await open(attempts: 3).say('green');
       expect((result as Stumbled).attempts, 3);
     });
-
-    test('any other failure is neither a decision nor a lost race', () async {
-      bodies.answers('say', exitCode: bodyUsage, stderr: 'say: nothing to say');
-      expect(open().say(''), throwsA(isA<ChatFailure>()));
-    });
   });
 
-  group('the bound travels down, and the library does not retry', () {
-    test('every act hands the bodies the bound', () async {
+  group('the loop lives here, and it lives here alone', () {
+    // THE DISJOINT CLAIM. The retry used to live in the entity's own embarked
+    // shell body; that face is retired, and the library now opens the
+    // bracket itself — which means it, and only it, may retry. A second loop
+    // under this one would multiply the bound and make the reported attempt
+    // count a lie, and nothing but counting attempts can see it.
+    test('a contested attempt is retried, up to the bound, and no further',
+        () async {
       seated();
+      acts.contestNext('message', 2);
+      final result = await open(attempts: 5).say('green');
+      expect(result, isA<Acted>());
+      expect(acts.attemptsAt('message'), hasLength(3));
+    });
+
+    test('exhausting the bound makes exactly that many attempts, not one '
+        'more and not two loops\' worth', () async {
+      seated();
+      acts.contestNext('message', 5);
       await open(attempts: 5).say('green');
-      expect(bodies.callsTo('say').single.attempts, 5);
+      expect(acts.attemptsAt('message'), hasLength(5));
     });
 
-    test('the default bound is the one the bodies default to', () async {
+    test('a landed attempt is not retried again', () async {
       seated();
       await open().say('green');
-      expect(bodies.callsTo('say').single.attempts, defaultAttempts);
-    });
-
-    // THE DISJOINT CLAIM. The retry lives in the body — one loop, minting the
-    // ULID before it so every attempt writes the same bytes at the same path.
-    // A second loop here would multiply the bound and make the reported
-    // attempt count a lie, and nothing but a call count can see it.
-    test('a stumble is not retried again by the library', () async {
-      bodies.answers('say', exitCode: bodyStumbled);
-      await open().say('green');
-      expect(bodies.callsTo('say'), hasLength(1));
+      expect(acts.attemptsAt('message'), hasLength(1));
     });
 
     test('a refusal is a decision, and a decision is never retried', () async {
-      bodies.answers('say', exitCode: bodyRefused, stderr: 'refused');
+      tree.birth();
+      acts.barNext('message', 'refused by a gate');
       await open().say('green');
-      expect(bodies.callsTo('say'), hasLength(1));
+      expect(acts.attemptsAt('message'), hasLength(1));
     });
   });
 
-  group('writing goes through the bodies, reading does not', () {
-    test('joining runs the entity\'s own function', () async {
+  group('writing opens the bracket, reading does not', () {
+    test('joining lands a membership act', () async {
       await open().join(displayName: 'Alfred');
-      expect(bodies.callsTo('join'), hasLength(1));
+      expect(acts.attemptsAt('membership'), hasLength(1));
     });
 
-    test('the display name travels as the body\'s flag', () async {
+    test('the display name lands in the seat', () async {
       await open().join(displayName: 'Alfred');
-      expect(bodies.callsTo('join').single.arguments, ['--name', 'Alfred']);
+      expect(tree.files['$participantsPath/alfred/name'], 'Alfred\n');
     });
 
-    test('speaking passes the text and nothing about who is speaking', () async {
+    test('speaking lands the text under the caller\'s own seat', () async {
       seated();
       await open().say('green');
-      expect(bodies.callsTo('say').single.arguments, ['green']);
+      final path = tree.files.keys
+          .singleWhere((k) => k.startsWith('$messagesPath/'));
+      expect(tree.files[path], contains('green'));
     });
 
-    test('the roster spawns no process', () async {
+    test('the roster opens no bracket', () async {
       seated();
       await open().roster();
-      expect(bodies.calls, isEmpty);
+      expect(acts.attempts, isEmpty);
     });
 
-    test('the transcript spawns no process', () async {
+    test('the transcript opens no bracket', () async {
       seated();
       await open().history();
-      expect(bodies.calls, isEmpty);
+      expect(acts.attempts, isEmpty);
     });
 
-    test('the topic spawns no process', () async {
+    test('the topic opens no bracket', () async {
       seated();
       tree.files[topicPath] = 'the install gate\n';
       await open().topic();
-      expect(bodies.calls, isEmpty);
+      expect(acts.attempts, isEmpty);
     });
   });
 
@@ -228,10 +242,9 @@ void runChannelContract(ChannelConstruction construct) {
     // and fails this one, which is the only reason it is written.
     setUp(() {
       seated();
-      bodies.spokenTimes.addAll([
-        '2026-08-06T12:05:00Z', // spoken later, arrived first
-        '2026-08-06T12:01:00Z',
-      ]);
+      clock
+        ..push(DateTime.parse('2026-08-06T12:05:00Z')) // spoken later, arrived first
+        ..push(DateTime.parse('2026-08-06T12:01:00Z'));
     });
 
     test('position is arrival and not the clock', () async {
@@ -312,10 +325,10 @@ void runChannelContract(ChannelConstruction construct) {
   });
 
   group('leaving', () {
-    test('it runs the entity\'s own function', () async {
+    test('it lands a membership act', () async {
       seated();
       await open().leave();
-      expect(bodies.callsTo('leave').single.arguments, isEmpty);
+      expect(acts.attemptsAt('membership'), hasLength(1));
     });
 
     test('the seat is gone from the roster', () async {
@@ -345,6 +358,9 @@ void runChannelContract(ChannelConstruction construct) {
     });
 
     test('leaving a channel you are not in is refused', () async {
+      // Born (someone else's channel), but this caller has no seat in it —
+      // the gate's refusal, never the birth check's.
+      tree.birth();
       expect(await open().leave(), isA<Refused>());
     });
 
@@ -358,10 +374,10 @@ void runChannelContract(ChannelConstruction construct) {
   });
 
   group('the topic', () {
-    test('setting it passes the text and nothing else', () async {
+    test('setting it writes the text and nothing else', () async {
       seated();
       await open().setTopic('the install gate');
-      expect(bodies.callsTo('topic').single.arguments, ['the install gate']);
+      expect(tree.files[topicPath], 'the install gate\n');
     });
 
     test('it reads back as the file, trimmed', () async {
@@ -382,15 +398,19 @@ void runChannelContract(ChannelConstruction construct) {
     });
 
     test('a non-member does not set it', () async {
+      tree.birth();
       expect(await open().setTopic('mine now'), isA<Refused>());
     });
   });
 
   group('presence is declared or absent, never simulated', () {
-    test('a reason travels as the body\'s argument', () async {
+    test('a reason lands in the away file', () async {
       seated();
       await open().away('at the dentist');
-      expect(bodies.callsTo('away').single.arguments, ['at the dentist']);
+      expect(
+        tree.files['$participantsPath/alfred/away'],
+        'at the dentist',
+      );
     });
 
     test('and reads back as the reason', () async {
@@ -408,7 +428,7 @@ void runChannelContract(ChannelConstruction construct) {
       seated();
       final channel = open();
       await channel.away();
-      expect(bodies.callsTo('away').single.arguments, isEmpty);
+      expect(tree.files['$participantsPath/alfred/away'], '');
       final participant = (await channel.roster()).byHandle('alfred')!;
       expect(participant.isAway, isTrue);
       expect(participant.away, '');
@@ -431,6 +451,7 @@ void runChannelContract(ChannelConstruction construct) {
     });
 
     test('a non-member declares nothing about itself', () async {
+      tree.birth();
       expect(await open().away(), isA<Refused>());
       expect(await open().back(), isA<Refused>());
     });
@@ -488,9 +509,9 @@ void runChannelContract(ChannelConstruction construct) {
       seated();
       final channel = open();
       await channel.say('green');
-      bodies.calls.clear();
+      acts.attempts.clear();
       await channel.sync();
-      expect(bodies.calls, isEmpty);
+      expect(acts.attempts, isEmpty);
     });
 
     test('an unborn channel has nothing to yield, and that is not an error',

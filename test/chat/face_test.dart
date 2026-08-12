@@ -26,6 +26,11 @@ final class FakeFloor implements ChatFloor {
   FakeFloor({this.here = const ['fabrica']});
 
   final tree = FakeTree();
+  late final FakeActs actsDouble = FakeActs(tree)..identity = identityDouble;
+  final identityDouble = FakeIdentity();
+
+  /// `check` alone still runs through [ChatBodies] — it carries no seat and
+  /// is not a [Channel] method.
   late final FakeBodies bodyDouble = FakeBodies(tree);
 
   /// What the place carries — **the ambient walk's third step**, and the only
@@ -49,14 +54,17 @@ final class FakeFloor implements ChatFloor {
   Channel channel(String name, {required String place, String? cursor}) {
     opened.add(name);
     vantages.add(place);
-    bodyDouble.channel = name;
+    actsDouble.channel = name;
     return channelConstruction(
       name: name,
-      bodies: bodyDouble,
+      acts: actsDouble,
       tree: tree,
-      identity: bodyDouble.identity,
+      identity: identityDouble,
       ticker: () => ticker,
       cursor: cursor,
+      // Fixed, so the printed lines this gate judges do not move with the
+      // wall clock — the same instant the retired shell's doubles hard-coded.
+      clock: () => DateTime.utc(2026, 8, 6, 12),
     );
   }
 
@@ -155,7 +163,10 @@ void main() {
     });
 
     test('a refusal exits 3, in the floor\'s own words on stderr', () async {
-      // Nobody joined: the membership gate is the one gate this application has.
+      // Born (someone else's channel), but nobody joined under this identity:
+      // the membership gate is the one gate this application has, and it must
+      // not be confused with the channel's own birth.
+      floor.tree.birth();
       final result = await run(['say', 'hello']);
 
       expect(result.exitCode, 3);
@@ -168,7 +179,7 @@ void main() {
       // channel must not read as a hostile one at the exact boundary where a
       // script reads it.
       await seated();
-      floor.bodyDouble.answers('say', exitCode: 75);
+      floor.actsDouble.contestNext('message', defaultAttempts);
 
       final result = await run(['say', 'hello']);
 
@@ -182,18 +193,6 @@ void main() {
 
       expect(result.exitCode, 64);
       expect(result.err, contains('yell'));
-    });
-
-    test('a body that failed for neither reason keeps its own number', () async {
-      await seated();
-      floor.bodyDouble.answers('say', exitCode: 64, stderr: 'say: bad call');
-
-      final result = await run(['say', 'hello']);
-
-      // Not 3, not 75, and not an invention of ours: whoever wrote that program
-      // knows what its codes mean.
-      expect(result.exitCode, 64);
-      expect(result.err, contains('bad call'));
     });
   });
 
@@ -212,7 +211,8 @@ void main() {
       test('$what is reported under bentos.chat', () async {
         if (what == 'no channel anywhere') floor.here = const [];
         if (what == 'a refusal with no words') {
-          floor.bodyDouble.answers('say', exitCode: 3);
+          floor.tree.birth();
+          floor.actsDouble.barNext('message', '');
         }
 
         final result = await run(args, env: env);
@@ -227,7 +227,7 @@ void main() {
     test('a stumble too, since it is the line a busy channel prints most',
         () async {
       await seated();
-      floor.bodyDouble.answers('say', exitCode: 75);
+      floor.actsDouble.contestNext('message', defaultAttempts);
 
       final result = await run(['say', 'hello']);
 
@@ -325,8 +325,8 @@ void main() {
       await run(['say', 'raising the install gate']);
 
       expect(
-        floor.bodyDouble.callsTo('say').last.arguments,
-        contains('raising the install gate'),
+        floor.tree.files.values,
+        anyElement(contains('raising the install gate')),
       );
     });
 
@@ -336,10 +336,7 @@ void main() {
       final result = await run(['say'], stdin: 'from a pipe\n');
 
       expect(result.exitCode, 0);
-      expect(
-        floor.bodyDouble.callsTo('say').last.arguments,
-        contains('from a pipe'),
-      );
+      expect(floor.tree.files.values, anyElement(contains('from a pipe')));
     });
 
     test('an empty pipe is a usage problem and never an empty utterance',
@@ -349,7 +346,7 @@ void main() {
       final result = await run(['say'], stdin: '');
 
       expect(result.exitCode, 64);
-      expect(floor.bodyDouble.callsTo('say'), isEmpty);
+      expect(floor.actsDouble.attemptsAt('message'), isEmpty);
     });
 
     test('a bare topic reads instead of writing', () async {
@@ -360,7 +357,7 @@ void main() {
 
       expect(result.lines.single, 'the install gate');
       // One write, and the read added none.
-      expect(floor.bodyDouble.callsTo('topic'), hasLength(1));
+      expect(floor.actsDouble.attemptsAt('topic'), hasLength(1));
     });
   });
 

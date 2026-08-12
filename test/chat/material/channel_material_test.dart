@@ -56,14 +56,12 @@ void main() {
   /// The channel as any caller builds one: the two seams over the real floor.
   Channel open(String name, {String? cursor}) {
     final entity = Entity('bentos.chat', from: plot.path);
+    final identity = GitIdentity.of(entity);
     return channelConstruction(
       name: name,
-      bodies: ProcessBodies(
-        place: plot.path,
-        coordinate: 'bentos.chat:$name',
-      ),
+      acts: EntityActs(entity.instance(name), identity: identity),
       tree: EntityTree(entity.instance(name)),
-      identity: GitIdentity.of(entity),
+      identity: identity,
       ticker: () => DispatchTicker(entity),
       cursor: cursor,
     );

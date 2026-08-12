@@ -1,14 +1,16 @@
 /// The channel, built over the two seams.
 ///
-/// Everything here is folding: an act is one call to a body and one reading of
-/// its exit code, and a read is one walk of the tree the layout describes.
-/// Nothing in this file retries, and nothing in it decides — the retry lives in
-/// the entity's own `lib.sh`, and the only decision this application makes is
-/// the membership gate, which is asked inside that loop where it means
-/// something.
+/// Reading is one walk of the tree the layout describes. Acting **opens the
+/// bracket in process**: a private area, a membership gate asked of that same
+/// area, a writer, a compare-and-swap — looped here, bounded by [_attempts],
+/// and nowhere else. It used to live in the entity's own embarked shell body,
+/// inherited by spawning a process and mapping its exit codes; that face is
+/// retired, and every writer this file owns (`join`, `say`, `leave`, `topic`,
+/// `away`, `back`) is what the shell's own bodies wrote, moved here whole.
 library;
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'channel.dart';
 import 'handle.dart';
@@ -18,31 +20,37 @@ import 'outcome.dart';
 import 'seams.dart';
 import '../chat_client/ticker.dart';
 
-/// A channel over [ChatBodies], [ChatTree] and the doorbell [wait] wakes on.
+/// A channel over [ChatActs], [ChatTree] and the doorbell [wait] wakes on.
 final class LocalChannel implements Channel {
   LocalChannel({
     required this.name,
-    required ChatBodies bodies,
+    required ChatActs acts,
     required ChatTree tree,
     required Identity identity,
     required Ticker Function() ticker,
     String? cursor,
     int attempts = defaultAttempts,
-  })  : _bodies = bodies,
+    DateTime Function() clock = DateTime.now,
+  })  : _acts = acts,
         _tree = tree,
         _identity = identity,
         _openTicker = ticker,
         _cursor = cursor,
-        _attempts = attempts;
+        _attempts = attempts,
+        _clock = clock;
 
   @override
   final String name;
 
-  final ChatBodies _bodies;
+  final ChatActs _acts;
   final ChatTree _tree;
   final Identity _identity;
   final Ticker Function() _openTicker;
   final int _attempts;
+  final DateTime Function() _clock;
+
+  static const _crockford = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+  static final _entropy = math.Random();
 
   /// The burst window: fixed, opened once by the first qualifying event.
   static const Duration _settle = Duration(seconds: 1);
@@ -60,14 +68,47 @@ final class LocalChannel implements Channel {
 
   // ── acting ─────────────────────────────────────────────────────────────────
 
+  /// Joining is the one door in: it births the channel when it does not exist
+  /// yet, since membership is what an external will enters the graph through.
+  /// **Idempotent, by reading the area and never by remembering** —
+  /// reconnecting is ordinary, and re-joining lands a second act saying so
+  /// while leaving the roster where it already was.
   @override
-  Future<ActResult> join({String? displayName}) => _act(
-        'join',
-        displayName == null ? const [] : ['--name', displayName],
-      );
+  Future<ActResult> join({String? displayName}) async {
+    final display = displayName ?? _identity.displayName;
+    final joinedAt = _isoNow(_clock().toUtc());
+    _acts.ensureBorn();
+    return _act(
+      'membership',
+      gated: false,
+      say: 'join · $me${display == null || display.isEmpty ? '' : ' ($display)'}',
+      write: (area) {
+        final seat = '$participantsPath/${me.local}';
+        // Written once and left alone: a real return is dated afresh only by
+        // way of `leave` tearing the seat down first.
+        if (!area.exists('$seat/joined')) area.write('$seat/joined', '$joinedAt\n');
+        if (display != null && display.isNotEmpty) area.write('$seat/name', '$display\n');
+      },
+    );
+  }
 
   @override
-  Future<ActResult> say(String body) => _act('say', [body]);
+  Future<ActResult> say(String body) async {
+    final now = _clock().toUtc();
+    // Minted once, before the loop, so every attempt writes the same bytes at
+    // the same path and landing twice is impossible.
+    final id = _ulid(now.millisecondsSinceEpoch);
+    final path = '$messagesPath/${_two(now.year, 4)}/${_two(now.month)}/'
+        '${_two(now.day)}/$id.md';
+    final author = '${_identity.displayName ?? ''} <${me.email}>';
+    final spoken = _isoNow(now);
+    return _act(
+      'message',
+      say: 'say · $me · "${_clip(body)}"',
+      write: (area) =>
+          area.write(path, 'author: $author\nspoken: $spoken\n\n$body\n'),
+    );
+  }
 
   /// Walk out. The seat is torn down whole and **the transcript is not
   /// touched** — which reads as an inconsistency to whoever meets it first and
@@ -76,50 +117,109 @@ final class LocalChannel implements Channel {
   /// first and present in the second because those are two different questions.
   /// [sync] therefore yields a [RosterChanged] and no retraction of anything.
   @override
-  Future<ActResult> leave() => _act('leave', const []);
+  Future<ActResult> leave() => _act(
+        'membership',
+        say: 'leave · $me',
+        write: (area) => area.removeTree('$participantsPath/${me.local}'),
+      );
 
   @override
-  Future<ActResult> setTopic(String text) => _act('topic', [text]);
+  Future<ActResult> setTopic(String text) => _act(
+        'topic',
+        say: 'topic · $me · "${_clip(text)}"',
+        write: (area) => area.write(topicPath, '$text\n'),
+      );
 
   /// A reason of null and a reason of `''` are **the same act**: the field
   /// exists either way, because the state is the path and the reason is its
-  /// contents. What the body writes for an empty reason is an empty file, which
-  /// is *away, having said nothing*.
+  /// contents. What is written for an empty reason is an empty file, which is
+  /// *away, having said nothing*.
   @override
-  Future<ActResult> away([String? reason]) =>
-      _act('away', reason == null ? const [] : [reason]);
+  Future<ActResult> away([String? reason]) => _act(
+        'presence',
+        say: 'away · $me${reason == null || reason.isEmpty ? '' : ' — ${_clip(reason)}'}',
+        write: (area) =>
+            area.write('$participantsPath/${me.local}/away', reason ?? ''),
+      );
 
   @override
-  Future<ActResult> back() => _act('back', const []);
+  Future<ActResult> back() => _act(
+        'presence',
+        say: 'back · $me',
+        write: (area) => area.removeTree('$participantsPath/${me.local}/away'),
+      );
 
-  /// Runs a body and reads its exit code — **one place, so that every verb
-  /// answers a lost race the same way**, and so that no verb invents a second
-  /// vocabulary for what the floor already said.
+  /// Attempts one act, bounded by [_attempts] — **the loop lives here, and it
+  /// lives here alone.** [gated] is asked of each attempt's own private area,
+  /// never of the present tree, so a participant who joined mid-retry is seen.
   ///
-  /// The bound travels down and comes back unchanged. There is no loop here:
-  /// the body loops, minting the name before it so every attempt writes the
-  /// same bytes at the same path, and a second loop at this altitude would
-  /// multiply the bound and make [Stumbled.attempts] a lie.
-  Future<ActResult> _act(String function, List<String> arguments) async {
-    final outcome =
-        await _bodies.run(function, arguments, attempts: _attempts);
-    switch (outcome.exitCode) {
-      case 0:
-        return Acted(outcome.stdout.trim());
-      case bodyRefused:
-        // The floor's own words, never paraphrased.
-        return Refused(outcome.stderr.trim());
-      case bodyStumbled:
-        return Stumbled(_attempts);
-      default:
-        throw ChatFailure(
-          function,
-          outcome.stderr.trim().isEmpty
-              ? outcome.stdout.trim()
-              : outcome.stderr.trim(),
-          exitCode: outcome.exitCode,
-        );
+  /// [ChatActs.attempt] never retries by itself: a second loop under this one
+  /// would multiply the bound and make [Stumbled.attempts] a lie.
+  Future<ActResult> _act(
+    String noun, {
+    required void Function(ChatArea area) write,
+    required String say,
+    bool gated = true,
+  }) async {
+    if (gated && !_acts.born) throw NoSuchChannel(coordinate);
+    for (var attempt = 1; attempt <= _attempts; attempt++) {
+      final outcome = _acts.attempt(
+        noun,
+        write: write,
+        gate: gated ? _membershipGate : null,
+        say: say,
+      );
+      switch (outcome) {
+        case ChatLanded(:final commit):
+          return Acted(commit);
+        case ChatGateRefused(:final reason):
+          return Refused(reason);
+        case ChatContested():
+          // Staggered, so two writers racing each other do not keep colliding
+          // in step.
+          if (attempt < _attempts) {
+            await Future<void>.delayed(
+              Duration(milliseconds: 100 * (1 + _entropy.nextInt(3))),
+            );
+          }
+      }
     }
+    return Stumbled(_attempts);
+  }
+
+  /// The one gate of this application, asked of the attempt's own area: a
+  /// member is a seat, and a seat is a directory.
+  String? _membershipGate(ChatArea area) {
+    if (area.exists('$participantsPath/${me.local}')) return null;
+    return '$chatOntology: refused — $me is not in $coordinate (join first)';
+  }
+
+  /// One reading of the clock, ISO-8601, second resolution — what every
+  /// timestamp this channel writes states about itself.
+  static String _isoNow(DateTime utc) => '${utc.toIso8601String().split('.').first}Z';
+
+  static String _two(int n, [int width = 2]) => '$n'.padLeft(width, '0');
+
+  /// A sentence's tail, for the log.
+  static String _clip(String text, [int max = 60]) {
+    final flat = text.replaceAll('\n', ' ');
+    return flat.length > max ? flat.substring(0, max) : flat;
+  }
+
+  /// Crockford's base32 over a 48-bit millisecond timestamp and 80 bits of
+  /// randomness — unique, and sorting by time as a tiebreak.
+  String _ulid(int ms) {
+    final time = List<String>.filled(10, '0');
+    var t = ms;
+    for (var i = 9; i >= 0; i--) {
+      time[i] = _crockford[t % 32];
+      t ~/= 32;
+    }
+    final random = StringBuffer();
+    for (var i = 0; i < 16; i++) {
+      random.write(_crockford[_entropy.nextInt(32)]);
+    }
+    return '${time.join()}$random';
   }
 
   // ── reading ────────────────────────────────────────────────────────────────

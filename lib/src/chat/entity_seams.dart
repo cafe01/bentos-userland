@@ -1,6 +1,6 @@
 /// The two seams, filled against the real floor — the entity primitive for
-/// reading, the entity's own embarked bodies for writing, and git's own cascade
-/// for identity.
+/// reading and for the in-process act bracket, `check` alone still spawning
+/// the entity's own embarked function, and git's own cascade for identity.
 ///
 /// Nothing here is chat: it is the adaptation of one layout to one primitive,
 /// which is exactly why it sits behind an interface. The channel above holds
@@ -10,8 +10,12 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
+
+import '../entity/action.dart';
 import '../entity/entity.dart';
 import '../entity/instance.dart';
+import '../git/model/actor.dart';
 import '../git/model/commit.dart';
 import 'handle.dart';
 import 'ontology.dart';
@@ -85,7 +89,102 @@ final class EntityTree implements ChatTree {
   }
 }
 
-/// Runs the entity's own embarked functions, through the primitive.
+/// Opens the act bracket **in process**, through [Instance.beginAct] and
+/// [Workspace.commit] — no shell, no spawn. One attempt per call; the retry
+/// loop is [LocalChannel]'s, never this seam's.
+final class EntityActs implements ChatActs {
+  EntityActs(this.instance, {required this.identity});
+
+  final Instance instance;
+
+  /// Who commits. Passed **explicitly** to every commit rather than left to
+  /// the ambient environment — [ProcessBodies] learned this the hard way: a
+  /// caller's own shell can carry a stale `GIT_AUTHOR_*` export, and
+  /// `commit-tree` prefers it over the repository's own configured identity.
+  /// Stating the signer here, from the same cascade [identity] was read from,
+  /// forces every act to sign under exactly what was declared.
+  final Identity identity;
+
+  @override
+  bool get born => instance.tip != null;
+
+  @override
+  void ensureBorn() {
+    if (!born) instance.create();
+  }
+
+  @override
+  ChatActOutcome attempt(
+    String noun, {
+    required void Function(ChatArea area) write,
+    String? Function(ChatArea area)? gate,
+    String? say,
+  }) {
+    final workspace = instance.beginAct();
+    try {
+      final area = _WorkspaceArea(workspace.directory);
+      final refusal = gate?.call(area);
+      if (refusal != null) return ChatGateRefused(refusal);
+      write(area);
+      final actor = Actor(
+        identity.displayName ?? identity.handle.local,
+        email: identity.handle.email,
+      );
+      final result = workspace.commit(noun, actor: actor, say: say);
+      switch (result) {
+        case Landed(:final action):
+          return ChatLanded(action.commit.sha);
+        case Barred(:final reason):
+          return ChatGateRefused(reason);
+        case Contested():
+          return const ChatContested();
+        case Diverged():
+          // Only [Instance.fetch] can diverge; a local act never does.
+          throw StateError('$chatOntology: an act diverged, which a local act never does');
+      }
+    } finally {
+      workspace.release();
+    }
+  }
+}
+
+/// [ChatArea] over a real materialized directory — ordinary file IO, and
+/// nothing else. The primitive never looks at what is written here; it only
+/// hashes the tree once [Workspace.commit] is asked.
+final class _WorkspaceArea implements ChatArea {
+  _WorkspaceArea(this._directory);
+
+  final Directory _directory;
+
+  String _resolve(String path) => p.join(_directory.path, path);
+
+  @override
+  void write(String path, String content) {
+    final file = File(_resolve(path));
+    file.parent.createSync(recursive: true);
+    file.writeAsStringSync(content);
+  }
+
+  @override
+  void removeTree(String path) {
+    final full = _resolve(path);
+    final type = FileSystemEntity.typeSync(full);
+    if (type == FileSystemEntityType.notFound) return;
+    if (type == FileSystemEntityType.directory) {
+      Directory(full).deleteSync(recursive: true);
+    } else {
+      File(full).deleteSync();
+    }
+  }
+
+  @override
+  bool exists(String path) =>
+      FileSystemEntity.typeSync(_resolve(path)) != FileSystemEntityType.notFound;
+}
+
+/// Runs the entity's own embarked functions, through the primitive — kept for
+/// `check` alone, which is not a [Channel] method and has no [ChatActs]
+/// bracket to open.
 ///
 /// `entity -C <place> run <coord> <function> [args]`, with the retry bound in
 /// the child's environment — **the bound is the caller's and the loop is the
