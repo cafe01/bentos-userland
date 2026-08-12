@@ -1,0 +1,51 @@
+#!/bin/sh
+# A program with knowable behaviour, spawned for real by test/mcp. The suite
+# never doubles the process API: the process API is the floor.
+case "$1" in
+  --help)
+    echo "fixture — a program with knowable behaviour"
+    echo "usage: fixture [echo-args ...|echo-stdin|exit N|slow SECONDS|both]"
+    ;;
+  --usage)
+    echo "fixture, described from behind another flag"
+    ;;
+  echo-args)
+    shift
+    for arg in "$@"; do echo "$arg"; done
+    ;;
+  echo-stdin)
+    cat
+    ;;
+  exit)
+    echo "leaving with $2"
+    exit "$2"
+    ;;
+  slow)
+    echo "started"
+    # exec, so the signal reaches the sleeping process itself rather than a
+    # child holding this program's stdout pipe open.
+    exec sleep "$2"
+    ;;
+  rendezvous)
+    # $2 is my own marker, $3 the marker of the call I must meet. Completing at
+    # all proves the two calls overlapped.
+    : > "$2"
+    tries=0
+    while [ ! -f "$3" ] && [ "$tries" -lt 200 ]; do
+      sleep 0.05
+      tries=$((tries + 1))
+    done
+    if [ -f "$3" ]; then echo "met"; else echo "alone"; fi
+    ;;
+  both)
+    echo "to stdout"
+    echo "to stderr" >&2
+    ;;
+  "")
+    echo "bare"
+    ;;
+  *)
+    echo "unknown: $1" >&2
+    exit 3
+    ;;
+esac

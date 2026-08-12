@@ -1,0 +1,4 @@
+#!/bin/sh
+# A program that prints no help: it refuses the flag and says so on stderr.
+echo "no help here" >&2
+exit 1

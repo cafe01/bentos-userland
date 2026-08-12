@@ -10,6 +10,7 @@
     { "name": "llm", "entrypoint": "bin/llm.dart", "platforms": ["linux-x64", "macos-arm64", "macos-x64", "windows-x64"] },
     { "name": "mem", "entrypoint": "bin/mem.dart", "platforms": ["linux-x64", "macos-arm64", "macos-x64", "windows-x64"] },
     { "name": "mem3", "entrypoint": "bin/mem3.dart", "platforms": ["linux-x64", "macos-arm64", "macos-x64", "windows-x64"] },
+    { "name": "mcp", "entrypoint": "bin/mcp.dart", "platforms": ["linux-x64", "macos-arm64", "macos-x64", "windows-x64"] },
     { "name": "place", "entrypoint": "bin/place.dart", "platforms": ["linux-x64", "macos-arm64", "macos-x64", "windows-x64"] },
     { "name": "stt", "entrypoint": "bin/stt.dart", "platforms": ["linux-x64", "macos-arm64", "macos-x64", "windows-x64"] },
     { "name": "tts", "entrypoint": "bin/tts.dart", "platforms": ["linux-x64", "macos-arm64", "macos-x64", "windows-x64"] },
