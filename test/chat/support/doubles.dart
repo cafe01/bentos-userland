@@ -140,10 +140,15 @@ final class _FakeArea implements ChatArea {
 /// One attempt at an act, captured whole — so a fixture can prove the loop's
 /// own shape: how many attempts it took, and with what.
 final class ActAttempt {
-  const ActAttempt(this.noun, this.gated);
+  const ActAttempt(this.noun, this.gateCalled);
 
   final String noun;
-  final bool gated;
+
+  /// Whether [ChatActs.attempt]'s own `gate` argument was actually invoked on
+  /// this attempt — not whether one was supplied. A contested or barred
+  /// attempt pays for the gate exactly like a landing one does: the real
+  /// floor cannot know either outcome until after it asked.
+  final bool gateCalled;
 }
 
 /// The in-process act bracket, doubled over a [FakeTree] — the seam
@@ -192,10 +197,27 @@ final class FakeActs implements ChatActs {
     String? Function(ChatArea area)? gate,
     String? say,
   }) {
-    attempts.add(ActAttempt(noun, gate != null));
     if (!born) {
       throw StateError('not born: $chatOntology:$channel');
     }
+
+    // The real floor pays this on every attempt, win or lose: a fresh area
+    // materialized from the tip, the gate asked of it, the write run — only
+    // then can it learn whether the swap landed, was contested, or was
+    // barred. A double that answers Contested or Barred before any of that
+    // is cheaper than the world in exactly the place the world is expensive,
+    // which makes it no witness at all.
+    final area = _FakeArea(tree.files);
+    var gateCalled = false;
+    String? refusal;
+    if (gate != null) {
+      gateCalled = true;
+      refusal = gate(area);
+    }
+    attempts.add(ActAttempt(noun, gateCalled));
+    if (refusal != null) return ChatGateRefused(refusal);
+    write(area);
+
     final left = _contests[noun] ?? 0;
     if (left > 0) {
       _contests[noun] = left - 1;
@@ -204,10 +226,6 @@ final class FakeActs implements ChatActs {
     final barred = _bars.remove(noun);
     if (barred != null) return ChatGateRefused(barred);
 
-    final area = _FakeArea(tree.files);
-    final refusal = gate?.call(area);
-    if (refusal != null) return ChatGateRefused(refusal);
-    write(area);
     final delta = <String, String>{
       for (final entry in area.files.entries)
         if (tree.files[entry.key] != entry.value) entry.key: entry.value,
