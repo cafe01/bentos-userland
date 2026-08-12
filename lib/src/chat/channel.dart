@@ -131,4 +131,38 @@ abstract interface class Channel {
 
   /// Where the cursor stands — what a client persists if it wants to resume.
   String? get cursor;
+
+  /// Blocks until something qualifying lands, or [within] expires — **the
+  /// one wait every face needs**, so a screen, a script and a model all reach
+  /// this instead of each growing its own doorbell.
+  ///
+  /// [mentioning] narrows what qualifies to speech naming that handle's
+  /// local part (or everyone); null means any event qualifies. It carries no
+  /// content: the cursor is untouched until the caller reads the batch with
+  /// [sync], so the two axes stay one mechanism and the cursor keeps its
+  /// single owner. A burst that lands together — several messages, a replay
+  /// — settles briefly and returns as one waking rather than one per line.
+  ///
+  /// A doorbell outage is answered too, not swallowed: if nothing has
+  /// qualified yet and the ticker reports itself down, this future
+  /// completes with [DoorbellDown] instead of a value — a stumbled
+  /// connection is not a decided [Arrival] and must never read as one, so it
+  /// takes the one channel a value can never occupy: the error side of the
+  /// same future.
+  Future<Arrival> wait({Duration? within, String? mentioning});
+}
+
+/// What [Channel.wait] answers. Never content — the caller reads that with
+/// [Channel.sync].
+enum Arrival { landed, expired }
+
+/// Thrown by [Channel.wait] instead of returning when the doorbell reports
+/// itself down before anything qualifying landed. Distinct from
+/// [Arrival.expired]: expired says nothing happened, this says the wait
+/// could not tell whether anything did.
+final class DoorbellDown implements Exception {
+  const DoorbellDown();
+
+  @override
+  String toString() => 'DoorbellDown: the dispatch doorbell is disconnected';
 }

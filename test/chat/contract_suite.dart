@@ -16,12 +16,14 @@ void runChannelContract(ChannelConstruction construct) {
   late FakeTree tree;
   late FakeBodies bodies;
   late FakeIdentity identity;
+  late FakeTicker ticker;
 
   Channel open({String? cursor, int attempts = defaultAttempts}) => construct(
         name: 'fabrica',
         bodies: bodies,
         tree: tree,
         identity: identity,
+        ticker: () => ticker,
         cursor: cursor,
         attempts: attempts,
       );
@@ -41,6 +43,7 @@ void runChannelContract(ChannelConstruction construct) {
     tree = FakeTree();
     identity = FakeIdentity();
     bodies = FakeBodies(tree)..identity = identity;
+    ticker = FakeTicker();
   });
 
   group('the address, and who is speaking', () {
@@ -494,6 +497,78 @@ void runChannelContract(ChannelConstruction construct) {
         () async {
       tree.unborn();
       expect(await open().sync(), isEmpty);
+    });
+  });
+
+  group('wait answers landed or expired, never content', () {
+    test('nothing landing expires, bounded by within', () async {
+      final result = await open().wait(within: const Duration(milliseconds: 50));
+      expect(result, Arrival.expired);
+    });
+
+    test('a doorbell tick with a qualifying event landed', () async {
+      seated();
+      final channel = open();
+      final pending = channel.wait();
+      await channel.say('green');
+      ticker.tick();
+      expect(await pending, Arrival.landed);
+    });
+
+    test('landed leaves the cursor untouched — sync reads the whole batch '
+        'afterwards, since wait carries no content of its own', () async {
+      seated();
+      final channel = open();
+      final pending = channel.wait();
+      await channel.say('green');
+      ticker.tick();
+      expect(await pending, Arrival.landed);
+      final events = await channel.sync();
+      expect(events.whereType<Spoke>().single.message.body, 'green');
+    });
+
+    test('a cursor opened at nothing sees a pre-existing message too, per '
+        "sync's own contract, and wait still leaves the cursor untouched",
+        () async {
+      seated();
+      final channel = open();
+      await channel.say('before the wait ever opened');
+      expect(
+        await channel.wait(within: const Duration(milliseconds: 50)),
+        Arrival.landed,
+      );
+      final events = await channel.sync();
+      expect(events.whereType<Spoke>().single.message.body,
+          'before the wait ever opened');
+    });
+
+    test('mentioning narrows what qualifies — an unrelated message never '
+        'opens the window', () async {
+      seated();
+      final channel = open();
+      final pending = channel.wait(
+        mentioning: 'alfred',
+        within: const Duration(milliseconds: 100),
+      );
+      await channel.say('just chatting');
+      ticker.tick();
+      // Nothing landed for @alfred, so the wall clock, not the tick, is what
+      // ends this — proven by the bound elapsing rather than a race.
+      expect(await pending, Arrival.expired);
+    });
+
+    test('naming the handle in mentioning opens the window', () async {
+      seated();
+      final channel = open();
+      final pending = channel.wait(mentioning: 'alfred');
+      await channel.say('@alfred status?');
+      ticker.tick();
+      expect(await pending, Arrival.landed);
+    });
+
+    test('the ticker is disposed once the wait ends', () async {
+      await open().wait(within: const Duration(milliseconds: 20));
+      expect(ticker.disposed, isTrue);
     });
   });
 

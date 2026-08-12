@@ -17,7 +17,6 @@
 /// coordinate, and the medium is not involved and does not record it.
 library;
 
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io' as io;
 
@@ -600,12 +599,11 @@ final class _Monitor extends _ChatCommand {
     }
   }
 
-  /// The agent path. **The window opens on the first qualifying event and
-  /// closes [_settle] later**; everything that lands while it is open — not
-  /// only what matched — returns together, so a burst comes back as one
-  /// waking rather than one per line. Before that window opens, [timeout]
-  /// bounds the wait; nothing landing in time exits [ChatRunner.timedOutCode]
-  /// rather than 0.
+  /// The agent path — a thin caller over [Channel.wait]: the burst window,
+  /// the doorbell and the mention predicate all live in the library now.
+  /// What stays here is the one thing that is genuinely this face's own —
+  /// [MonitorCursors], the persisted cursor a *script* resumes across
+  /// process boundaries, which [Channel]'s in-process cursor cannot be.
   Future<void> _runWait({required Duration? timeout}) async {
     // Validated even though nothing below paces on it — see [_maybeWarnInterval].
     _interval;
@@ -615,14 +613,8 @@ final class _Monitor extends _ChatCommand {
     final cursors = MonitorCursors.load(file: face.monitorCursorFile);
     final resuming = cursors.of(key);
     final channel = this.channel(cursor: resuming);
-    final scanner = _mentionScanner(channel);
-    final ticker = face.floor.dispatchTicker(face.vantage(_place));
-
-    void persist() {
-      final at = channel.cursor;
-      if (at != null) cursors.cursors[key] = at;
-      cursors.save(file: face.monitorCursorFile);
-    }
+    final mention = argResults!['mention'] as bool;
+    final scanner = mention ? MentionScanner(channel.me) : null;
 
     // No special first-call priming: a channel opened at no cursor sees the
     // conversation whole, per `Channel.sync`'s own contract, so the very
@@ -630,56 +622,41 @@ final class _Monitor extends _ChatCommand {
     // batch — exactly as if it had been watching the whole time. Every call
     // after that persists where it left off, so nothing here is reported
     // twice.
-    final deadline = timeout == null ? null : DateTime.now().add(timeout);
-    final batch = <ChannelEvent>[];
-    DateTime? windowCloses;
-    bool? lastConnected;
-
+    final Arrival arrival;
     try {
-      while (true) {
-        lastConnected = _reportConnection(face.err, ticker, lastConnected);
-
-        final events = await channel.sync();
-        final relevant =
-            scanner == null ? events : events.where((e) => _mentioned(e, scanner)).toList();
-        if (relevant.isNotEmpty) {
-          batch.addAll(relevant);
-          windowCloses ??= DateTime.now().add(_settle);
-        }
-        persist();
-
-        final now = DateTime.now();
-        if (windowCloses != null && !now.isBefore(windowCloses)) break;
-        if (windowCloses == null && deadline != null && !now.isBefore(deadline)) {
-          face.err.writeln(
-            '$chatOntology: monitor --wait timed out — nothing landed in '
-            '${timeout!.inSeconds}s',
-          );
-          face.exitCode = ChatRunner.timedOutCode;
-          return;
-        }
-
-        // Wait for whichever comes first: the next dispatch tick, or the
-        // nearer of the two deadlines in play — the burst window closing,
-        // the overall timeout expiring. A deadline fires off the wall clock
-        // regardless of the ticker's own health, so `--timeout` stays
-        // honest even while the doorbell is down.
-        final nextDeadline = windowCloses ?? deadline;
-        if (nextDeadline == null) {
-          await ticker.ticks.first;
-        } else {
-          final remaining = nextDeadline.difference(DateTime.now());
-          if (remaining > Duration.zero) {
-            await _awaitTickOrDuration(ticker.ticks, remaining);
-          }
-        }
-      }
-    } finally {
-      ticker.dispose();
+      arrival = await channel.wait(
+        within: timeout,
+        mentioning: mention ? channel.me.local : null,
+      );
+    } on DoorbellDown {
+      // Reported on stderr so an agent watching stdout for the delta can
+      // tell *I have gone deaf* from *nothing has landed* — the two call for
+      // opposite responses, and the wall-clock exit code is what a script
+      // already branches on either way.
+      face.err.writeln(
+        '$chatOntology: monitor --wait: the dispatch doorbell disconnected',
+      );
+      face.exitCode = ChatRunner.timedOutCode;
+      return;
+    }
+    if (arrival == Arrival.expired) {
+      face.err.writeln(
+        '$chatOntology: monitor --wait timed out — nothing landed in '
+        '${timeout!.inSeconds}s',
+      );
+      face.exitCode = ChatRunner.timedOutCode;
+      return;
     }
 
-    for (final event in batch) {
-      face.out.writeln(eventLine(event));
+    final events = await channel.sync();
+    final at = channel.cursor;
+    if (at != null) cursors.cursors[key] = at;
+    cursors.save(file: face.monitorCursorFile);
+
+    for (final event in events) {
+      if (scanner == null || _mentioned(event, scanner)) {
+        face.out.writeln(eventLine(event));
+      }
     }
   }
 
@@ -733,9 +710,6 @@ final class _Monitor extends _ChatCommand {
       );
     }
   }
-
-  /// The burst window: fixed, opened once by the first qualifying event.
-  static const Duration _settle = Duration(seconds: 1);
 }
 
 /// Prints the doorbell's own health flipping, on stderr and only on a real
@@ -753,22 +727,6 @@ bool? _reportConnection(StringSink err, Ticker ticker, bool? previous) {
     );
   }
   return now;
-}
-
-/// Resolves on whichever comes first: the next tick, or [duration] elapsing.
-/// Neither outcome is reported back — the caller re-reads [Channel.sync] and
-/// the wall clock itself on the next loop turn to find out which one it was.
-Future<void> _awaitTickOrDuration(Stream<void> ticks, Duration duration) async {
-  final completer = Completer<void>();
-  final timer = Timer(duration, () {
-    if (!completer.isCompleted) completer.complete();
-  });
-  final sub = ticks.listen((_) {
-    if (!completer.isCompleted) completer.complete();
-  });
-  await completer.future;
-  timer.cancel();
-  await sub.cancel();
 }
 
 final class _Check extends _ChatCommand {

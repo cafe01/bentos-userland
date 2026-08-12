@@ -55,6 +55,7 @@ final class FakeFloor implements ChatFloor {
       bodies: bodyDouble,
       tree: tree,
       identity: bodyDouble.identity,
+      ticker: () => ticker,
       cursor: cursor,
     );
   }
@@ -99,32 +100,6 @@ final class _NoopTicker implements Ticker {
 
   @override
   bool get connected => true;
-}
-
-/// A doorbell a test can ring by hand: [tick] fires one, and [connected] is
-/// settable so a fixture can prove what a consumer does with a flip, not just
-/// with a fresh occurrence.
-final class FakeTicker implements Ticker {
-  final _controller = StreamController<void>.broadcast();
-
-  @override
-  Stream<void> get ticks => _controller.stream;
-
-  void tick() => _controller.add(null);
-
-  @override
-  void nudge() => tick();
-
-  @override
-  bool connected = true;
-
-  bool disposed = false;
-
-  @override
-  void dispose() {
-    disposed = true;
-    _controller.close();
-  }
 }
 
 /// One invocation of the coreutil, captured whole.

@@ -84,6 +84,10 @@ class FakeChannel implements Channel {
 
   @override
   Future<List<ChannelEvent>> sync() async => syncResult;
+
+  @override
+  Future<Arrival> wait({Duration? within, String? mentioning}) async =>
+      throw UnimplementedError('not exercised by the client suite');
 }
 
 final class _EmptyRoster implements Roster {

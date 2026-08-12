@@ -8,24 +8,30 @@
 /// something.
 library;
 
+import 'dart:async';
+
 import 'channel.dart';
 import 'handle.dart';
+import 'mention.dart';
 import 'model.dart';
 import 'outcome.dart';
 import 'seams.dart';
+import '../chat_client/ticker.dart';
 
-/// A channel over [ChatBodies] and [ChatTree].
+/// A channel over [ChatBodies], [ChatTree] and the doorbell [wait] wakes on.
 final class LocalChannel implements Channel {
   LocalChannel({
     required this.name,
     required ChatBodies bodies,
     required ChatTree tree,
     required Identity identity,
+    required Ticker Function() ticker,
     String? cursor,
     int attempts = defaultAttempts,
   })  : _bodies = bodies,
         _tree = tree,
         _identity = identity,
+        _openTicker = ticker,
         _cursor = cursor,
         _attempts = attempts;
 
@@ -35,7 +41,11 @@ final class LocalChannel implements Channel {
   final ChatBodies _bodies;
   final ChatTree _tree;
   final Identity _identity;
+  final Ticker Function() _openTicker;
   final int _attempts;
+
+  /// The burst window: fixed, opened once by the first qualifying event.
+  static const Duration _settle = Duration(seconds: 1);
 
   String? _cursor;
 
@@ -151,16 +161,26 @@ final class LocalChannel implements Channel {
 
   @override
   Future<List<ChannelEvent>> sync() async {
-    // An unborn channel has nothing to yield, and that is not an error: nobody
-    // has opened it, and there was never anything to be behind on.
+    final events = _eventsSince(_cursor);
+    _cursor = _tree.tip();
+    return events;
+  }
+
+  /// What has landed since [cursor] — the pure read [sync] advances the
+  /// cursor over, and [wait] peeks with **without ever moving it**: a wait
+  /// carries no content, so whatever it sees while polling must still be
+  /// there for the caller's own [sync] once it returns.
+  List<ChannelEvent> _eventsSince(String? cursor) {
+    // An unborn channel has nothing to yield, and that is not an error:
+    // nobody has opened it, and there was never anything to be behind on.
     if (_tree.tip() == null) return const [];
 
     final acts = _tree.log().reversed.toList();
     var from = 0;
-    if (_cursor != null) {
-      final seen = acts.indexWhere((a) => a.commit == _cursor);
-      // A cursor this line does not carry is a cursor from somewhere else, and
-      // the honest answer is the conversation whole rather than silence.
+    if (cursor != null) {
+      final seen = acts.indexWhere((a) => a.commit == cursor);
+      // A cursor this line does not carry is a cursor from somewhere else,
+      // and the honest answer is the conversation whole rather than silence.
       if (seen >= 0) from = seen + 1;
     }
 
@@ -185,9 +205,66 @@ final class LocalChannel implements Channel {
           }
       }
     }
-
-    _cursor = _tree.tip();
     return events;
+  }
+
+  /// **The window opens on the first qualifying event and closes [_settle]
+  /// later**, so a burst — several messages, a replay — comes back as one
+  /// waking rather than one per line. Before it opens, [within] bounds the
+  /// wait.
+  ///
+  /// Polling never touches the cursor: only [_eventsSince] is asked, so
+  /// whatever this found is still there, entire, for the caller's own [sync]
+  /// once this returns.
+  @override
+  Future<Arrival> wait({Duration? within, String? mentioning}) async {
+    final scanner =
+        mentioning == null ? null : MentionScanner(Handle(mentioning, ''));
+    final ticker = _openTicker();
+    final deadline = within == null ? null : DateTime.now().add(within);
+    DateTime? windowCloses;
+
+    try {
+      while (true) {
+        final events = _eventsSince(_cursor);
+        final relevant = scanner == null
+            ? events
+            : events
+                .where((e) => e is Spoke && scanner.mentions(e.message.body))
+                .toList();
+        if (relevant.isNotEmpty) windowCloses ??= DateTime.now().add(_settle);
+
+        // Nothing landed yet and the doorbell itself is down: throw, rather
+        // than let the wall clock alone answer and leave a stumble reading
+        // the same as a channel that was simply quiet. Once a window is
+        // open the burst it already caught is honored instead.
+        if (windowCloses == null && !ticker.connected) {
+          throw const DoorbellDown();
+        }
+
+        final now = DateTime.now();
+        if (windowCloses != null && !now.isBefore(windowCloses)) {
+          return Arrival.landed;
+        }
+        if (windowCloses == null &&
+            deadline != null &&
+            !now.isBefore(deadline)) {
+          return Arrival.expired;
+        }
+
+        final nextDeadline = windowCloses ?? deadline;
+        if (nextDeadline == null) {
+          await ticker.ticks.first;
+        } else {
+          final remaining = nextDeadline.difference(DateTime.now());
+          if (remaining > Duration.zero) {
+            await _awaitTickOrDuration(ticker.ticks, remaining);
+          }
+        }
+      }
+    } finally {
+      ticker.dispose();
+    }
   }
 
   // ── the layout, read ───────────────────────────────────────────────────────
@@ -324,6 +401,22 @@ final class LocalChannel implements Channel {
     if (open < 0 || close < open) return author.trim();
     return author.substring(open + 1, close).trim();
   }
+}
+
+/// Resolves on whichever comes first: the next tick, or [duration] elapsing.
+/// Neither outcome is reported back — the caller re-reads the events and the
+/// wall clock itself on the next loop turn to find out which one it was.
+Future<void> _awaitTickOrDuration(Stream<void> ticks, Duration duration) async {
+  final completer = Completer<void>();
+  final timer = Timer(duration, () {
+    if (!completer.isCompleted) completer.complete();
+  });
+  final sub = ticks.listen((_) {
+    if (!completer.isCompleted) completer.complete();
+  });
+  await completer.future;
+  timer.cancel();
+  await sub.cancel();
 }
 
 final class _Roster implements Roster {

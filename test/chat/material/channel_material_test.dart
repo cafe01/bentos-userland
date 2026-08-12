@@ -64,6 +64,7 @@ void main() {
       ),
       tree: EntityTree(entity.instance(name)),
       identity: GitIdentity.of(entity),
+      ticker: () => DispatchTicker(entity),
       cursor: cursor,
     );
   }

@@ -6,7 +6,10 @@
 /// so every reading claim bites the moment a construction exists.
 library;
 
+import 'dart:async';
+
 import 'package:bentos_userland/bentos_chat.dart';
+import 'package:bentos_userland/chat_client.dart' show Ticker;
 
 /// A channel's substrate: files, and the acts that put them there.
 final class FakeTree implements ChatTree {
@@ -276,6 +279,32 @@ final class FakeBodies implements ChatBodies {
   static String? _valueOf(List<String> arguments, String flag) {
     final at = arguments.indexOf(flag);
     return at < 0 || at + 1 >= arguments.length ? null : arguments[at + 1];
+  }
+}
+
+/// A doorbell a test can ring by hand: [tick] fires one, and nothing else
+/// ever does — the fixture that proves [Channel.wait] answers to the ticker
+/// and not to a hidden cadence.
+final class FakeTicker implements Ticker {
+  final _controller = StreamController<void>.broadcast();
+
+  @override
+  Stream<void> get ticks => _controller.stream;
+
+  void tick() => _controller.add(null);
+
+  @override
+  void nudge() => tick();
+
+  @override
+  bool connected = true;
+
+  bool disposed = false;
+
+  @override
+  void dispose() {
+    disposed = true;
+    _controller.close();
   }
 }
 

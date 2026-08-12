@@ -12,9 +12,9 @@ import '../../entity/entity.dart';
 import '../../chat_client/ticker.dart';
 import '../channel.dart';
 import '../construction.dart';
+import '../dispatch_ticker.dart';
 import '../entity_seams.dart';
 import '../seams.dart';
-import 'dispatch_ticker.dart';
 
 abstract interface class ChatFloor {
   /// A channel at [name], anchored at [place], resuming at [cursor].
@@ -54,6 +54,7 @@ final class EntityFloor implements ChatFloor {
       bodies: bodies(name, place: place),
       tree: EntityTree(entity.instance(name)),
       identity: GitIdentity.of(entity),
+      ticker: () => DispatchTicker(entity),
       cursor: cursor,
     );
   }

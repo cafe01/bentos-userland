@@ -10,7 +10,8 @@ import 'dart:io';
 import 'package:bentos_userland/bentos_chat.dart';
 import 'package:test/test.dart';
 
-import 'face_test.dart' show FakeFloor, FakeTicker, Run;
+import 'face_test.dart' show FakeFloor, Run;
+import 'support/doubles.dart' show FakeTicker;
 
 void main() {
   late FakeFloor floor;
@@ -191,10 +192,12 @@ void main() {
     });
 
     test(
-        'a dispatch outage is reported on stderr, never stdout, and the '
-        'wall-clock timeout still fires while it is down', () async {
+        'a dispatch outage is reported on stderr, never stdout, and ends '
+        'the wait without riding out the wall clock', () async {
       // Unseated on purpose: an unborn channel yields nothing from `sync`,
-      // so the only thing this run can possibly end on is the timeout.
+      // so the only thing this run can possibly end on is the outage or the
+      // timeout — and the outage, reported at 20ms, must win over a 300ms
+      // wall clock rather than hide behind it until it elapses.
       final ticker = FakeTicker();
       floor.ticker = ticker;
 

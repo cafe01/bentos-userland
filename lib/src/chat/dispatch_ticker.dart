@@ -5,9 +5,9 @@ library;
 import 'dart:async';
 import 'dart:io';
 
-import '../../entity/entity.dart';
-import '../../entity/event.dart';
-import '../../chat_client/ticker.dart';
+import '../entity/entity.dart';
+import '../entity/event.dart';
+import '../chat_client/ticker.dart';
 
 /// Fires on every occurrence this installation dispatches — **coalesced**,
 /// never one tick per occurrence.

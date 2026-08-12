@@ -6,7 +6,7 @@ library;
 
 import 'dart:async';
 
-import 'package:bentos_userland/src/chat/cli/dispatch_ticker.dart';
+import 'package:bentos_userland/src/chat/dispatch_ticker.dart';
 import 'package:bentos_userland/src/entity/entity.dart';
 import 'package:bentos_userland/src/entity/event.dart';
 import 'package:bentos_userland/src/entity/instance.dart';
