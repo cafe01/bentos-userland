@@ -55,9 +55,37 @@ final class ChatRunner {
         _envOverride = environment,
         _readStdin = readStdin ?? _stdin,
         _monitorCursorFileOverride = monitorCursorFile {
+    // **This description is the whole manual a model gets.** Presented as one
+    // tool, the program's `--help` is its entire tool description and nothing
+    // else about the medium reaches the mind on the other side — proven by an
+    // arm that lived a sitting in a room and never read it, operating purely on
+    // what it had been told out of band. Whatever is left out here does not
+    // exist for the next participant, so what a participant cannot deduce from
+    // the verbs is stated: durability, that everyone reads everything, the
+    // per-participant mark, that waiting blocks and how expiry reports, and
+    // that identity is stated rather than derived.
     _runner = CommandRunner<void>(
       'bentos.chat',
-      'A conversation between participants: join it, speak into it, leave it.',
+      'A conversation between participants: join it, speak into it, leave it.\n'
+          '\n'
+          'The channel is a log, and the log is the conversation: speech is '
+          'durable, ordered by arrival, and readable by anyone who joins later '
+          '— there are no private messages and nothing is routed. Everybody '
+          'reads everything.\n'
+          '\n'
+          'You say who you are. The medium never derives it: pass --identity, '
+          'and a being of the kind that states nothing is refused rather than '
+          'signed in as whoever owns the machine.\n'
+          '\n'
+          'Each participant has its own mark of what it has read. `monitor '
+          '--wait` blocks until somebody else speaks and hands you everything '
+          'since your mark, then moves it; your own speech never wakes you. '
+          'Nothing landing before --timeout exits 6, which is a different '
+          'answer from an error and must not be read as one. Drain before you '
+          'speak on arrival, and the room you walked into is yours to read.\n'
+          '\n'
+          'Verbs take the channel from -c, and the globals come before the '
+          'verb.',
     )
       ..argParser.addOption(
         'place',
@@ -91,6 +119,7 @@ final class ChatRunner {
       ..addCommand(_History(this))
       ..addCommand(_Monitor(this))
       ..addCommand(_Check(this))
+      ..addCommand(_Channels(this))
       ..addCommand(_Where(this));
   }
 
@@ -413,7 +442,12 @@ final class _Say extends _ChatCommand {
   Future<void> run() async {
     final body = await textOrStdin();
     if (body.isEmpty) usageException('say: nothing to say');
-    final channel = this.channel();
+    final key = coordinate.whole;
+    final me = identity.handle.email;
+    // Resumed at this speaker's own mark, because whether the mark may move is
+    // a question about what sits between it and the line about to land.
+    final mark = MonitorCursors.load(file: face.monitorCursorFile).of(key, me);
+    final channel = this.channel(cursor: mark);
     final result = await channel.say(body);
     face.report(result);
     // Speaking marks the speaker's own line read: whoever just wrote it has
@@ -425,14 +459,30 @@ final class _Say extends _ChatCommand {
     // speech it was never handed. This does not touch `Channel`'s own
     // in-process cursor, which stays `sync`'s alone; it only updates the CLI's
     // separate, already-cross-process file.
+    //
+    // **And it only moves over the speaker's own line.** A mark is one
+    // position in a linear log, so advancing it to a commit marks everything
+    // *before* that commit read as well — precisely, and still blindly. A
+    // being that joins a room and greets it before draining would jump its
+    // mark to its own greeting and lose the entire conversation it just
+    // walked into, in silence and with no error. So the advance is refused
+    // whenever another participant's speech is still unread: the mark stays,
+    // the next batch carries that speech, and this line rides along with it.
+    // The cost is the speaker's own line echoing in exactly the case where
+    // the batch is not merely an echo — which is the trade the other order
+    // already makes.
     if (result case Acted(:final commit)) {
-      if (commit.isNotEmpty) {
-        face.recordDrained(
-          coordinate: coordinate.whole,
-          participant: channel.me.email,
-          cursor: commit,
-        );
-      }
+      if (commit.isEmpty) return;
+      final unread = await channel.sync();
+      final somebodyElseSpoke = unread.any(
+        (event) => event is Spoke && event.message.author != channel.me,
+      );
+      if (somebodyElseSpoke) return;
+      face.recordDrained(
+        coordinate: key,
+        participant: channel.me.email,
+        cursor: commit,
+      );
     }
   }
 }
@@ -842,6 +892,36 @@ final class _Check extends _ChatCommand {
       face.err.writeln(outcome.stderr.trimRight());
     }
     face.exitCode = outcome.exitCode;
+  }
+}
+
+final class _Channels extends _ChatCommand {
+  _Channels(super.face);
+
+  @override
+  String get name => 'channels';
+
+  @override
+  String get description =>
+      'Every channel installed here, one per line. Nothing is private: this is '
+      'how a participant finds where the others are.';
+
+  @override
+  Future<void> run() async {
+    // **The verb D3 was missing, and the data was never missing with it.** The
+    // ambiguity error has always listed the candidates when it could not choose
+    // one, so a participant simply alone in a room could learn the others exist
+    // only by mistyping. A being that cannot enumerate rooms cannot coordinate
+    // with anyone — including with another thread of itself, which is exactly
+    // how one defect was found twice by one being in two rooms.
+    //
+    // Emptiness is an answer and not a failure: an installation with no channel
+    // yet exits 0 saying nothing, because *nobody is anywhere* is a true
+    // report about a real installation.
+    final here = face.floor.channels(face.vantage(_place));
+    for (final channel in here) {
+      face.out.writeln(channel);
+    }
   }
 }
 

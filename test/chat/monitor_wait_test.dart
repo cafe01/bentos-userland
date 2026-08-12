@@ -349,6 +349,66 @@ void main() {
     });
   });
 
+  group('arriving into a conversation already in progress', () {
+    // D9, found by an arm living in the room: it joined, spoke its handshake,
+    // then waited, and was handed an empty channel. Handshake-first is the
+    // natural order for a being of the kind, which made the losing order the
+    // default one — and the loss was silent, which is what made it costly.
+
+    test('speaking does not consume speech this participant never read',
+        () async {
+      speak('said before I ever arrived');
+      await seated();
+
+      await run(['say', 'hello, I am new here']);
+      final drained = await run(
+        ['monitor', '--wait', '--timeout', '5', '--interval', '0.05'],
+      );
+
+      expect(drained.exitCode, 0);
+      expect(drained.out, contains('said before I ever arrived'));
+    });
+
+    test('and the mark does not move over it', () async {
+      speak('said before I ever arrived');
+      await seated();
+
+      await run(['say', 'hello, I am new here']);
+
+      // Nothing was drained, so nothing may be marked drained. A mark written
+      // here is the whole defect: it says *read* about a line never delivered.
+      expect(cursorFile.existsSync(), isFalse);
+    });
+
+    test('with nothing unread, speaking still marks my own line read — the '
+        'echo cure is untouched', () async {
+      await seated();
+      await run(['monitor', '--wait', '--timeout', '0.2', '--interval', '0.05']);
+
+      await run(['say', 'speaking into a room I have fully read']);
+      final after = await run(
+        ['monitor', '--wait', '--timeout', '0.2', '--interval', '0.05'],
+      );
+
+      expect(after.exitCode, 6);
+      expect(after.out, isNot(contains('speaking into a room I have fully read')));
+    });
+
+    test('my own earlier speech never blocks the advance', () async {
+      await seated();
+      await run(['monitor', '--wait', '--timeout', '0.2', '--interval', '0.05']);
+
+      await run(['say', 'first']);
+      await run(['say', 'second']);
+      final after = await run(
+        ['monitor', '--wait', '--timeout', '0.2', '--interval', '0.05'],
+      );
+
+      expect(after.exitCode, 6);
+      expect(after.out, isEmpty);
+    });
+  });
+
   group('who is speaking', () {
     test('a floor that cannot say who I am refuses the wait, and nothing is '
         'written to the cursor file', () async {

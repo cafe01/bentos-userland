@@ -403,6 +403,45 @@ void main() {
     });
   });
 
+  group('finding where everybody is', () {
+    test('channels lists what the installation carries, one per line',
+        () async {
+      floor.here = ['dogfood', 'fabrica', 'front-chat'];
+
+      final result = await run(['channels']);
+
+      expect(result.exitCode, 0);
+      expect(result.lines, ['dogfood', 'fabrica', 'front-chat']);
+    });
+
+    test('an installation with no channels answers, rather than failing',
+        () async {
+      floor.here = [];
+
+      final result = await run(['channels']);
+
+      expect(result.exitCode, 0);
+      expect(result.out, isEmpty);
+    });
+
+    test('it answers without a channel being resolvable — the whole point is '
+        'asking from outside one', () async {
+      floor.here = ['one', 'two'];
+
+      // Two candidates and no -c: every other verb exits 64 here.
+      final result = await run(['channels']);
+
+      expect(result.exitCode, 0);
+      expect(result.lines, ['one', 'two']);
+    });
+
+    test('-C asks of the place named, not of the working directory', () async {
+      await run(['-C', '/elsewhere', 'channels']);
+
+      expect(floor.vantages, contains('/elsewhere'));
+    });
+  });
+
   group('stating who is speaking', () {
     // The face is reachable through surfaces that have argv and stdin and
     // nothing else — a model calling the coreutil as one tool has no shell to
