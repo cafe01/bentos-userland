@@ -275,6 +275,40 @@ void main() {
     });
   });
 
+  group('a file whose shape is wrong rather than whose syntax is', () {
+    // Valid JSON, unreadable shape — a foreign file rather than a damaged
+    // one, and the commoner half of what lands in a shared state file. It
+    // reaches no cast: covering only bad syntax once let this crash the
+    // process with a TypeError, past both policies.
+    const foreign = '{"cursors": "garbage"}';
+
+    test('a reader starts fresh and the verb works', () async {
+      await seated();
+      speak('said while the file was foreign');
+      cursorFile.writeAsStringSync(foreign);
+
+      final result = await run(
+        ['monitor', '--wait', '--timeout', '5', '--interval', '0.05'],
+      );
+
+      expect(result.exitCode, 0);
+      expect(result.out, contains('said while the file was foreign'));
+    });
+
+    test('a writer refuses, says so, and leaves the bytes alone', () async {
+      await seated();
+      speak('something to drain');
+      cursorFile.writeAsStringSync(foreign);
+
+      final result = await run(
+        ['monitor', '--wait', '--timeout', '5', '--interval', '0.05'],
+      );
+
+      expect(result.err, contains('drain mark was not written'));
+      expect(cursorFile.readAsStringSync(), foreign);
+    });
+  });
+
   group('a file this version cannot read', () {
     /// The bytes a reader may shrug at and a writer may not: one caller
     /// starting fresh costs itself a replay, one caller truncating costs

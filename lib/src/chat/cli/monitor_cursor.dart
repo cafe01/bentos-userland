@@ -46,8 +46,15 @@ final class MonitorCursors {
   /// already the contract for a coordinate seen for the first time. The cost of
   /// guessing is speech silently never delivered. **Do not turn this into a
   /// migration.**
+  /// **Total over arbitrary JSON**: it casts nothing and therefore throws
+  /// nothing. Whether an unreadable file is survivable is a policy, and the two
+  /// callers hold opposite ones — a parser that raised a `TypeError` from a
+  /// cast would decide for both of them by crashing the process. What this
+  /// cannot recognize it drops; what is malformed at the container level is
+  /// [_parse]'s to refuse.
   factory MonitorCursors.fromJson(Map<String, dynamic> json) {
-    final raw = json['cursors'] as Map<String, dynamic>? ?? const {};
+    final raw = json['cursors'];
+    if (raw is! Map<String, dynamic>) return MonitorCursors();
     final cursors = <String, Map<String, String>>{};
     for (final entry in raw.entries) {
       final byParticipant = entry.value;
@@ -159,13 +166,25 @@ final class MonitorCursors {
     }
   }
 
-  /// Throws [FormatException] rather than deciding what an unreadable file
-  /// means — that decision belongs to [load] and [record] separately, and they
-  /// make it differently on purpose.
+  /// Throws [FormatException] for **anything it cannot read**, rather than
+  /// deciding what an unreadable file means — that decision belongs to [load]
+  /// and [record] separately, and they make it differently on purpose.
+  ///
+  /// Anything, and not merely bad JSON syntax. This file is shared, so what
+  /// lands in it is a *foreign* file as often as a damaged one — a future
+  /// version's shape, another program's state, a hand-edit — and a wrong shape
+  /// is by far the commoner half of unreadable. Syntax alone was the narrow
+  /// half, and covering only that half let `{"cursors": "garbage"}` reach a
+  /// cast and take the process down with an unhandled `TypeError`, past both
+  /// policies. The two shape checks below are that whole half.
   static MonitorCursors _parse(String content) {
     final decoded = jsonDecode(content);
     if (decoded is! Map<String, dynamic>) {
       throw FormatException('not a JSON object', content);
+    }
+    final cursors = decoded['cursors'];
+    if (cursors != null && cursors is! Map<String, dynamic>) {
+      throw FormatException('"cursors" is not an object', content);
     }
     return MonitorCursors.fromJson(decoded);
   }
