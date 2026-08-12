@@ -215,7 +215,7 @@ void main() {
             .call(['survey', '--hot']);
         expect(code, 0);
         expect(diag.text, contains('no pages under --hot'));
-        expect(out.text, isEmpty);
+        expect(out.text, equals('bank: alfred.mem\n\n'));
       });
     });
   });
@@ -309,6 +309,81 @@ void main() {
         expect(code, 0);
         expect(diag.text, contains('skipped mem://ghost.mem/a'));
         expect(diag.text, contains('bankNotFound'));
+      });
+    });
+  });
+
+  group('bank header — R5.7, every response names its bank', () {
+    test('survey opens with the bank it answered from', () async {
+      await site.runAsync(() async {
+        materialize('alfred.mem');
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call(['survey']);
+        expect(code, 0);
+        expect(out.text, startsWith('bank: alfred.mem\n\n'));
+      });
+    });
+
+    test('recall opens with the bank it answered from', () async {
+      await site.runAsync(() async {
+        final root = materialize('alfred.mem');
+        File(p.join(root.path, 'a.md')).writeAsStringSync(Page(
+          topic: 'a',
+          fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
+          body: 'hello',
+        ).serialize());
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call(['recall', 'a']);
+        expect(code, 0);
+        expect(out.text, startsWith('bank: alfred.mem\n\n'));
+      });
+    });
+
+    test('health opens with the bank it answered from', () async {
+      await site.runAsync(() async {
+        materialize('alfred.mem');
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call(['health']);
+        expect(code, 0);
+        expect(out.text, startsWith('bank: alfred.mem\n\n'));
+      });
+    });
+
+    test('walk names every bank it crossed, in the order it drained them',
+        () async {
+      await site.runAsync(() async {
+        final a = materialize('alfred.mem');
+        File(p.join(a.path, 'a.md')).writeAsStringSync(Page(
+          topic: 'a',
+          fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
+          body: 'crosses to [[mem://other.mem/b]]',
+        ).serialize());
+        final other = materialize('other.mem');
+        File(p.join(other.path, 'b.md')).writeAsStringSync(Page(
+          topic: 'b',
+          fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
+          body: 'the far side',
+        ).serialize());
+
+        final out = _Out(), diag = _Out();
+        final code = await mem(out: out, diagnostics: diag)
+            .call(['walk', 'mem://alfred.mem/a']);
+        expect(code, 0);
+        expect(out.text, startsWith('bank: alfred.mem, other.mem\n\n'));
+      });
+    });
+
+    test('walk names an unresolved bank as skipped, never silently missing',
+        () async {
+      await site.runAsync(() async {
+        final out = _Out(), diag = _Out();
+        final code = await mem(out: out, diagnostics: diag)
+            .call(['walk', 'mem://ghost.mem/a']);
+        expect(code, 0);
+        expect(out.text, contains('(skipped: ghost.mem)'));
       });
     });
   });

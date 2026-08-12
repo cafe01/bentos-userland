@@ -267,6 +267,7 @@ final class SurveyCommand extends MemCommand with SelectorArgs {
   Future<void> run() async {
     final bank = resolveBank();
     if (bank == null) return;
+    cli.out.add(_bankHeader(bank.name));
 
     final selector = buildSelector();
     final index = Index.of(bank);
@@ -320,6 +321,7 @@ final class RecallCommand extends MemCommand with SelectorArgs {
   Future<void> run() async {
     final bank = resolveBank();
     if (bank == null) return;
+    cli.out.add(_bankHeader(bank.name));
 
     final topic = positionalTopic();
     final selector = buildSelector(topic: topic);
@@ -381,6 +383,8 @@ final class WalkCommand extends MemCommand with SelectorArgs {
     );
     final walked = await walk.from(entries);
 
+    cli.out.add(_walkBankHeader(entries, walked, vantage));
+
     if (walked.pages.isEmpty) {
       cli.diagnostics.add(
         'mem: no pages reached from ${entries.map((e) => e.toString()).join(', ')}.\n',
@@ -413,12 +417,16 @@ final class HealthCommand extends MemCommand with SelectorArgs {
 
   @override
   String get description =>
-      'What links here, what this links to, what is orphaned, what is dead.';
+      'What links here, what this links to, what is orphaned, what is dead. '
+      'Bare, this counts every type together, journals included — the '
+      'naive number. Pass --type to read one type at a time; summed over '
+      'every type but autobiographical, that is the real defect count.';
 
   @override
   Future<void> run() async {
     final bank = resolveBank();
     if (bank == null) return;
+    cli.out.add(_bankHeader(bank.name));
 
     final index = Index.of(bank);
     final topic = positionalTopic();
@@ -681,6 +689,87 @@ void _reportOutcome(Mem cli, String bankName, Outcome outcome) {
       );
       cli.exitCode = 1;
   }
+}
+
+/// R5.7: every response opens by naming the bank it answered from — the one
+/// seam telling the kind's own book from a waking's when several are staged
+/// at once. [SurveyCommand], [RecallCommand] and [HealthCommand] each answer
+/// for exactly one, resolved by [MemCommand.resolveBank].
+String _bankHeader(String name) => 'bank: $name\n\n';
+
+/// [WalkCommand]'s own case of R5.7: a walk answers for as many banks as it
+/// crossed, named in the order it drained them (R6.4 — one bank exhausts
+/// before the next begins), plus any bank it never reached at all, named as
+/// skipped rather than silently missing (R6.5).
+///
+/// [Walked] carries no bank tag on a [Page] — only a [Skipped] address does —
+/// so a bank that contributed is attributed after the fact, walking
+/// [walked.pages] in order (bank-contiguous, by R6.4) against the same
+/// entry-bank-then-outbound-edge discovery [Walk] itself does: a page is
+/// matched to a known bank by topic and body, and once matched, its own
+/// outbound edges (read from that bank's [Index], already open for other
+/// callers) name any further bank the walk could have crossed next — so a
+/// bank reached cleanly, with none of its own pages skipped, is still found.
+/// The pathological case — two known banks sharing both a topic and a body —
+/// is not distinguishable from here and is accepted.
+String _walkBankHeader(List<Address> entries, Walked walked, String vantage) {
+  final resolved = <String, Bank>{};
+  final indexes = <String, Index>{};
+  final attempted = <String>{};
+
+  Bank? resolve(String name) {
+    if (resolved.containsKey(name)) return resolved[name];
+    if (attempted.contains(name)) return null;
+    attempted.add(name);
+    final resolution = Bank.resolve(name, vantage: vantage);
+    if (resolution is Found) resolved[name] = resolution.bank;
+    return resolved[name];
+  }
+
+  Index indexOf(Bank bank) => indexes.putIfAbsent(bank.name, () => Index.of(bank));
+
+  for (final entry in entries) {
+    resolve(entry.bank);
+  }
+  for (final skip in walked.skipped) {
+    resolve(skip.address.bank);
+  }
+
+  final touched = <String>[];
+  for (final page in walked.pages) {
+    String? owner;
+    for (final name in resolved.keys) {
+      if (touched.contains(name)) continue;
+      final match = resolved[name]!.page(page.topic);
+      if (match != null && match.body == page.body) {
+        owner = name;
+        break;
+      }
+    }
+    if (owner == null) continue;
+    touched.add(owner);
+    for (final edge in indexOf(resolved[owner]!).outbound(page.topic)) {
+      if (edge.bank != null) resolve(edge.bank!);
+    }
+  }
+
+  final neverResolved = <String>[];
+  for (final skip in walked.skipped) {
+    if (skip.reason == SkipReason.bankNotFound) {
+      final name = skip.address.bank;
+      if (!neverResolved.contains(name)) neverResolved.add(name);
+    }
+  }
+
+  final buf = StringBuffer('bank: ')
+    ..write(touched.isEmpty ? '(none reached)' : touched.join(', '));
+  if (neverResolved.isNotEmpty) {
+    buf.write('  (skipped: ${neverResolved.join(', ')})');
+  }
+  buf
+    ..writeln()
+    ..writeln();
+  return buf.toString();
 }
 
 const _surveyLegend = 'attention  topic — gist   #tags  ·modified  [words]';
