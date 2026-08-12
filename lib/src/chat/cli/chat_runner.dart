@@ -131,6 +131,32 @@ final class ChatRunner {
   io.File get monitorCursorFile =>
       _monitorCursorFileOverride ?? MonitorCursors.defaultFile(environment: env);
 
+  /// Moves this participant's drain mark, and says so on stderr when it could
+  /// not be moved.
+  ///
+  /// **The exit code is not touched.** Both halves are true when the file is
+  /// unreadable — the batch was delivered, the mark was not written — and the
+  /// number a script branches on answers the act, not the bookkeeping. Failing
+  /// the verb would claim the speech never landed; staying silent would claim
+  /// the mark did. One line on stderr is the only honest report, and it names
+  /// the consequence the caller will actually meet.
+  void recordDrained({
+    required String coordinate,
+    required String participant,
+    required String cursor,
+  }) {
+    try {
+      MonitorCursors.record(
+        coordinate: coordinate,
+        participant: participant,
+        cursor: cursor,
+        file: monitorCursorFile,
+      );
+    } on MonitorCursorUnreadable catch (e) {
+      err.writeln('$chatOntology: $e');
+    }
+  }
+
   /// The vantage a channel resolves from: `-C` when given, else the working
   /// directory. Relative paths resolve against [cwd] and never the process's.
   String vantage(String? placeArg) {
@@ -368,11 +394,10 @@ final class _Say extends _ChatCommand {
     // separate, already-cross-process file.
     if (result case Acted(:final commit)) {
       if (commit.isNotEmpty) {
-        MonitorCursors.record(
+        face.recordDrained(
           coordinate: coordinate.whole,
           participant: channel.me.email,
           cursor: commit,
-          file: face.monitorCursorFile,
         );
       }
     }
@@ -678,12 +703,7 @@ final class _Monitor extends _ChatCommand {
     final events = await channel.sync();
     final at = channel.cursor;
     if (at != null) {
-      MonitorCursors.record(
-        coordinate: key,
-        participant: me,
-        cursor: at,
-        file: face.monitorCursorFile,
-      );
+      face.recordDrained(coordinate: key, participant: me, cursor: at);
     }
 
     for (final event in events) {

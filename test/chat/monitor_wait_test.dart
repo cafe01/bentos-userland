@@ -275,6 +275,46 @@ void main() {
     });
   });
 
+  group('a file this version cannot read', () {
+    /// The bytes a reader may shrug at and a writer may not: one caller
+    /// starting fresh costs itself a replay, one caller truncating costs
+    /// everybody else their mark.
+    const corrupt = '{"cursors": {"bentos.chat:fabrica": {"cafe@bentos.life"';
+
+    test('is left byte-for-byte intact, and the mark is refused rather than '
+        'written over it', () async {
+      await seated();
+      speak('something to drain');
+      cursorFile.writeAsStringSync(corrupt);
+
+      final result = await run(
+        ['monitor', '--wait', '--timeout', '5', '--interval', '0.05'],
+      );
+
+      // The batch was delivered — that is what the number answers — and the
+      // mark was not written, which is what the line on stderr answers.
+      expect(result.exitCode, 0);
+      expect(result.out, contains('something to drain'));
+      expect(result.err, contains('drain mark was not written'));
+      expect(cursorFile.readAsStringSync(), corrupt);
+    });
+
+    test('never costs another participant the mark it already has', () async {
+      await seated();
+      // A file that parses, holding somebody else's mark, then damaged in a
+      // way that leaves that mark plainly visible in the bytes.
+      cursorFile.writeAsStringSync(
+        '{"cursors": {"bentos.chat:fabrica": {"cafe@bentos.life": "c1000"',
+      );
+
+      await run(['say', 'speaking with a damaged state file']);
+
+      expect(cursorFile.readAsStringSync(), contains('cafe@bentos.life'));
+      expect(cursorFile.readAsStringSync(), contains('c1000'));
+      expect(cursorFile.readAsStringSync(), isNot(contains('alfred')));
+    });
+  });
+
   group('who is speaking', () {
     test('a floor that cannot say who I am refuses the wait, and nothing is '
         'written to the cursor file', () async {

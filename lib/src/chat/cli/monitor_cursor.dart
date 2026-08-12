@@ -75,10 +75,23 @@ final class MonitorCursors {
     return File('$base/bentos.chat/monitor-state.json');
   }
 
+  /// What the file holds, or nothing at all when it cannot be read.
+  ///
+  /// **A reader may start fresh; a writer may not.** Failing to parse costs a
+  /// reader one replay of its own mark, which is why this swallows and returns
+  /// empty — and why [record] does the opposite with the same condition. The
+  /// two policies are deliberately different because what they risk is
+  /// different: a reader risks its own batch, a writer risks everyone else's.
   static MonitorCursors load({File? file}) {
     final f = file ?? defaultFile();
     if (!f.existsSync()) return MonitorCursors();
-    return _parse(f.readAsStringSync());
+    try {
+      return _parse(f.readAsStringSync());
+    } on FormatException {
+      // A corrupt or foreign file is not this program's business to repair —
+      // it starts fresh rather than refusing to run.
+      return MonitorCursors();
+    }
   }
 
   /// Moves one participant's mark on one coordinate, and **nothing else in the
@@ -91,6 +104,16 @@ final class MonitorCursors {
   /// moved in the meantime, and a resurrected mark hands the same batch out
   /// twice. Re-reading inside the lock and touching one key closes that window
   /// without the caller having to hold anything.
+  ///
+  /// **An unreadable file is refused, never overwritten.** Absent or empty is
+  /// the ordinary first write and proceeds. Bytes that will not parse are
+  /// somebody else's marks in a shape this version cannot read, and truncating
+  /// them to write one key would destroy every other participant's mark on this
+  /// machine — silently, and at the moment somebody is speaking. So this throws
+  /// [MonitorCursorUnreadable] with the file untouched, and the caller says
+  /// out loud that the mark did not land. Nothing here repairs, renames or
+  /// moves the file aside: a writer that cannot read what it is about to
+  /// replace has no standing to decide what happens to it.
   static void record({
     required String coordinate,
     required String participant,
@@ -108,9 +131,21 @@ final class MonitorCursors {
       handle.lockSync(FileLock.exclusive);
       final length = handle.lengthSync();
       handle.setPositionSync(0);
-      final existing = length == 0
-          ? MonitorCursors()
-          : _parse(utf8.decode(handle.readSync(length), allowMalformed: true));
+      final content =
+          length == 0 ? '' : utf8.decode(handle.readSync(length), allowMalformed: true);
+      // Empty and unparseable are different facts, and only the read path is
+      // allowed to conflate them.
+      final MonitorCursors existing;
+      if (content.trim().isEmpty) {
+        existing = MonitorCursors();
+      } else {
+        try {
+          existing = _parse(content);
+        } on FormatException catch (e) {
+          handle.unlockSync();
+          throw MonitorCursorUnreadable(f.path, e);
+        }
+      }
       (existing.cursors[coordinate] ??= {})[participant] = cursor;
       final bytes =
           utf8.encode(const JsonEncoder.withIndent('  ').convert(existing));
@@ -124,15 +159,35 @@ final class MonitorCursors {
     }
   }
 
+  /// Throws [FormatException] rather than deciding what an unreadable file
+  /// means — that decision belongs to [load] and [record] separately, and they
+  /// make it differently on purpose.
   static MonitorCursors _parse(String content) {
-    try {
-      return MonitorCursors.fromJson(
-        jsonDecode(content) as Map<String, dynamic>,
-      );
-    } on Object {
-      // A corrupt or foreign file is not this program's business to repair —
-      // it starts fresh rather than refusing to run.
-      return MonitorCursors();
+    final decoded = jsonDecode(content);
+    if (decoded is! Map<String, dynamic>) {
+      throw FormatException('not a JSON object', content);
     }
+    return MonitorCursors.fromJson(decoded);
   }
+}
+
+/// The file holds bytes this version cannot read, so the mark was **not**
+/// written and the file was **not** touched.
+///
+/// Carried to the caller rather than swallowed because the two halves of the
+/// outcome are both true and neither may be implied: the batch was delivered,
+/// and the mark did not land — which means the next call will hand the same
+/// batch out again. A caller that printed nothing here would be lying by
+/// silence about which of the two happened.
+final class MonitorCursorUnreadable implements Exception {
+  const MonitorCursorUnreadable(this.path, this.cause);
+
+  final String path;
+  final FormatException cause;
+
+  @override
+  String toString() =>
+      'the drain mark was not written: $path holds something this version '
+      'cannot read (${cause.message}). Nothing was changed there — the same '
+      'batch will arrive again next time.';
 }
