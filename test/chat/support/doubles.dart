@@ -161,7 +161,7 @@ final class FakeActs implements ChatActs {
   /// Who these acts commit as. The real seam reads git's own cascade; the
   /// double is told, because the seam under test is the library's and not
   /// git's.
-  FakeIdentity identity = FakeIdentity();
+  Identity identity = FakeIdentity();
   String channel = 'fabrica';
 
   /// Every attempt made, in order — so a fixture can prove the retry loop's

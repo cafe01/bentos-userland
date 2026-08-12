@@ -362,6 +362,67 @@ void main() {
       expect(result.err, contains('states its own identity'));
       expect(cursorFile.existsSync(), isFalse);
     });
+
+    test('the mark belongs to whoever --identity named, never to the floor',
+        () async {
+      await seated();
+      speak('something for the stated speaker to drain');
+
+      final result = await run([
+        '--identity',
+        'peer@bentos.life',
+        'monitor',
+        '--wait',
+        '--timeout',
+        '5',
+        '--interval',
+        '0.05',
+      ]);
+
+      expect(result.exitCode, 0);
+      final state = cursorFile.readAsStringSync();
+      expect(state, contains('peer@bentos.life'));
+      // D7's exact shape one layer up: a mark keyed by anything other than the
+      // participant that actually signed is a mark two speakers can share.
+      expect(state, isNot(contains('alfred@bentos.life')));
+    });
+
+    test('two stated speakers on one state file keep two marks', () async {
+      await seated();
+      speak('the first thing said');
+
+      await run([
+        '--identity',
+        'one@bentos.life',
+        'monitor',
+        '--wait',
+        '--timeout',
+        '5',
+        '--interval',
+        '0.05',
+      ]);
+      final second = await run([
+        '--identity',
+        'two@bentos.life',
+        'monitor',
+        '--wait',
+        '--timeout',
+        '5',
+        '--interval',
+        '0.05',
+      ]);
+
+      // The second speaker was never given the first one's drain: it reads the
+      // channel from its own mark, which does not exist yet.
+      expect(second.exitCode, 0);
+      expect(second.out, contains('the first thing said'));
+      final marks = (jsonDecode(cursorFile.readAsStringSync())
+          as Map<String, dynamic>)['cursors'] as Map<String, dynamic>;
+      expect(
+        (marks['bentos.chat:fabrica'] as Map<String, dynamic>).keys,
+        containsAll(['one@bentos.life', 'two@bentos.life']),
+      );
+    });
   });
 
   group('the doorbell', () {

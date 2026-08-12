@@ -28,6 +28,7 @@ import 'package:path/path.dart' as p;
 import '../../entity/entity.dart' show EntityNotInstalled;
 import '../../chat_client/ticker.dart';
 import '../channel.dart';
+import '../entity_seams.dart' show identityVariable, parseStatedIdentity;
 import '../handle.dart';
 import '../mention.dart';
 import '../outcome.dart';
@@ -70,6 +71,15 @@ final class ChatRunner {
         help: 'Which channel. Ambient otherwise: $channelVariable, then the '
             'place, when it carries exactly one.',
         valueHelp: 'coord',
+      )
+      ..argParser.addOption(
+        'identity',
+        abbr: 'I',
+        help: 'Who is speaking: "Name <email>", or a bare email. Required of '
+            'a being of the kind, which is never given one by default. '
+            'Ambient otherwise: $identityVariable, then a human\'s own git '
+            'cascade.',
+        valueHelp: 'who',
       )
       ..addCommand(_Join(this))
       ..addCommand(_Leave(this))
@@ -119,6 +129,22 @@ final class ChatRunner {
   static const int timedOutCode = 6;
   static const int usageCode = 64;
   static const int stumbledCode = bodyStumbled;
+
+  Identity? _identity;
+
+  /// Who this invocation speaks as, given what `--identity` said — **one
+  /// answer, and every consumer reads it**.
+  ///
+  /// The signer and the drain mark's owner must be the same participant, and
+  /// the floor already resolves once for exactly that reason. The argument
+  /// cannot become a second resolution beside it: a channel signed from argv
+  /// and a mark keyed from the environment would belong to two different
+  /// people and nothing would say so. So the first caller settles it, and every
+  /// later ask — whatever it passes — reads that same answer back.
+  Identity identityStating(String? stated) => _identity ??=
+      (stated != null && stated.isNotEmpty)
+          ? parseStatedIdentity(stated)
+          : floor.identity;
 
   String get cwd => _cwdOverride ?? io.Directory.current.path;
 
@@ -281,6 +307,12 @@ abstract base class _ChatCommand extends Command<void> {
   String? get _place => globalResults?['place'] as String?;
   String? get _channel => globalResults?['channel'] as String?;
 
+  /// Who this verb speaks as. The global is read here because `globalResults`
+  /// is a command's own view of the invocation, and answered by the face so
+  /// every verb in the run shares the one resolution.
+  Identity get identity =>
+      face.identityStating(globalResults?['identity'] as String?);
+
   ChatCoordinate get coordinate =>
       face.coordinate(_channel, place: _place);
 
@@ -288,6 +320,7 @@ abstract base class _ChatCommand extends Command<void> {
         coordinate.name,
         place: face.vantage(_place),
         cursor: cursor,
+        identity: identity,
       );
 
   /// The single argument a verb takes, or the whole of stdin when it takes
@@ -657,11 +690,11 @@ final class _Monitor extends _ChatCommand {
     _maybeWarnInterval();
 
     final key = coordinate.whole;
-    // Asked of the floor and not resolved here, so the mark is owned by
-    // exactly the identity the acts below will be signed under. The cursor is
-    // fixed at construction, so this has to be known before there is a
-    // channel to ask.
-    final me = face.floor.identity.handle.email;
+    // The invocation's one identity, so the mark is owned by exactly the
+    // participant the acts below will be signed under — whether that came from
+    // `--identity` or from the floor. The cursor is fixed at construction, so
+    // this has to be known before there is a channel to ask.
+    final me = identity.handle.email;
     final cursors = MonitorCursors.load(file: face.monitorCursorFile);
     final resuming = cursors.of(key, me);
     final channel = this.channel(cursor: resuming);
@@ -800,7 +833,7 @@ final class _Check extends _ChatCommand {
     // function, run through the primitive like any other body.
     final coordinate = this.coordinate;
     final outcome = await face.floor
-        .bodies(coordinate.name, place: face.vantage(_place))
+        .bodies(coordinate.name, place: face.vantage(_place), identity: identity)
         .run('check', const [], attempts: defaultAttempts);
     if (outcome.stdout.trim().isNotEmpty) {
       face.out.writeln(outcome.stdout.trimRight());

@@ -50,6 +50,9 @@ final class FakeFloor implements ChatFloor {
   /// The names the face asked for, in order.
   final List<String> opened = [];
 
+  /// Who each opened channel was signed under, in order.
+  final List<Identity> signed = [];
+
   /// Makes the floor refuse to say who is speaking, the way the real one does
   /// for a being of the kind that has stated no identity.
   ///
@@ -80,13 +83,18 @@ final class FakeFloor implements ChatFloor {
     vantages.add(place);
     // The real floor resolves identity here too, so the refusal must reach a
     // caller that never asked for [identity] by name.
-    identity ?? this.identity;
+    final signer = identity ?? this.identity;
+    // **Honoured, not discarded.** A double that always signed as its own
+    // [identityDouble] could not tell a face that passes a stated identity
+    // from one that ignores it, which is the whole claim `--identity` makes.
+    signed.add(signer);
+    actsDouble.identity = signer;
     actsDouble.channel = name;
     return channelConstruction(
       name: name,
       acts: actsDouble,
       tree: tree,
-      identity: identityDouble,
+      identity: signer,
       ticker: () => ticker,
       cursor: cursor,
       // Fixed, so the printed lines this gate judges do not move with the
@@ -98,8 +106,15 @@ final class FakeFloor implements ChatFloor {
   @override
   ChatBodies bodies(String name, {required String place, Identity? identity}) {
     vantages.add(place);
+    // The seatless gate signs too, so who it was asked under is a fact this
+    // double has to be able to report.
+    bodiesIdentity = identity ?? this.identity;
     return bodyDouble;
   }
+
+  /// Who [bodies] was last asked for, so a claim that one invocation has one
+  /// signer covers the verb that is not a channel method.
+  Identity? bodiesIdentity;
 
   @override
   List<String> channels(String place) {
@@ -385,6 +400,58 @@ void main() {
       expect(result.lines.single, 'the install gate');
       // One write, and the read added none.
       expect(floor.actsDouble.attemptsAt('topic'), hasLength(1));
+    });
+  });
+
+  group('stating who is speaking', () {
+    // The face is reachable through surfaces that have argv and stdin and
+    // nothing else — a model calling the coreutil as one tool has no shell to
+    // export a variable from. A face that could only be told who is speaking
+    // through the environment was unusable from there, and `join` is the first
+    // act, so the whole medium was.
+
+    test('--identity states the speaker where the floor refuses to guess one',
+        () async {
+      floor.refusesIdentity = true;
+
+      final result = await run(
+        ['--identity', 'Alfred <alfred@bentos.life>', 'join'],
+      );
+
+      expect(result.exitCode, 0);
+      expect(floor.signed.single.handle.email, 'alfred@bentos.life');
+      expect(floor.signed.single.displayName, 'Alfred');
+    });
+
+    test('a bare address is an identity, exactly as the variable spells it',
+        () async {
+      floor.refusesIdentity = true;
+
+      final result = await run(['--identity', 'peer@bentos.life', 'join']);
+
+      expect(result.exitCode, 0);
+      expect(floor.signed.single.handle.email, 'peer@bentos.life');
+      expect(floor.signed.single.displayName, isNull);
+    });
+
+    test('without it, a floor that will not say who I am still refuses',
+        () async {
+      floor.refusesIdentity = true;
+
+      final result = await run(['join']);
+
+      expect(result.exitCode, 1);
+      expect(result.err, contains('states its own identity'));
+      expect(floor.signed, isEmpty);
+    });
+
+    test('one invocation has one signer: the gate that carries no seat is '
+        'asked under the same identity the channel signs with', () async {
+      floor.refusesIdentity = true;
+
+      await run(['--identity', 'peer@bentos.life', 'check']);
+
+      expect(floor.bodiesIdentity?.handle.email, 'peer@bentos.life');
     });
   });
 

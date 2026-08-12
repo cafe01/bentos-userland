@@ -256,9 +256,13 @@ final class ProcessBodies implements ChatBodies {
 /// Who the calling process speaks as — the one seam both faces share.
 ///
 /// Order: an explicit [identity] wins outright — the seam a caller or a test
-/// injects through directly. Absent that, `$BENTOS_CHAT_IDENTITY` is the
-/// stated override, `Name <email>` or a bare email: how a human testing as
-/// someone else, or a being of the kind stating its own voice, both speak.
+/// injects through directly. Then [stated], what the caller said in argv:
+/// ahead of the environment because a face that can only be told who is
+/// speaking through a variable is not scriptable, and a model reaching this
+/// program through a tool has argv and stdin and no shell to export from.
+/// Absent both, `$BENTOS_CHAT_IDENTITY` is the stated override, `Name <email>`
+/// or a bare email: how a human testing as someone else, or a being of the
+/// kind stating its own voice, both speak.
 /// Absent that: `$BENTOS_AGENT` set means the caller **is** a being, and a
 /// being that has not stated an identity is a question, never a default —
 /// refusing rather than borrowing the ambient git cascade of whatever human
@@ -272,24 +276,32 @@ final class ProcessBodies implements ChatBodies {
 /// means the being states itself once, not per chat session.
 Identity resolveChatIdentity({
   Identity? identity,
+  String? stated,
   Map<String, String>? environment,
 }) {
   if (identity != null) return identity;
+  if (stated != null && stated.isNotEmpty) return parseStatedIdentity(stated);
   final env = environment ?? Platform.environment;
-  final stated = env['BENTOS_CHAT_IDENTITY'];
-  if (stated != null && stated.isNotEmpty) return _parseStatedIdentity(stated);
+  final fromEnv = env[identityVariable];
+  if (fromEnv != null && fromEnv.isNotEmpty) return parseStatedIdentity(fromEnv);
   final agent = env['BENTOS_AGENT'];
   if (agent != null && agent.isNotEmpty) {
     throw NoIdentity(
-      'a being of the kind states its own identity — set '
-      r'$BENTOS_CHAT_IDENTITY ("Name <email>" or a bare email); '
+      'a being of the kind states its own identity — pass '
+      '--identity "Name <email>" (or a bare email), or set '
+      '\$$identityVariable; '
       '\$BENTOS_AGENT=$agent names no address on its own',
     );
   }
   return GitIdentity.ambient();
 }
 
-Identity _parseStatedIdentity(String stated) {
+/// Where a caller states who is speaking when it does not say so in argv.
+const String identityVariable = 'BENTOS_CHAT_IDENTITY';
+
+/// A stated identity as both the argument and the variable spell it:
+/// `Name <email>`, or a bare address on its own.
+Identity parseStatedIdentity(String stated) {
   final trimmed = stated.trim();
   final match = RegExp(r'^(.*)<(.+)>$').firstMatch(trimmed);
   if (match == null) {
