@@ -143,6 +143,12 @@ abstract interface class Channel {
   /// single owner. A burst that lands together — several messages, a replay
   /// — settles briefly and returns as one waking rather than one per line.
   ///
+  /// **A participant is never woken by their own speech.** This asks *did
+  /// anyone else speak*, not *did anything land*: a [Spoke] authored by [me]
+  /// never qualifies, mentioning it or not. The caller's own utterance is
+  /// still there for their own [sync] once this returns — nothing is
+  /// dropped, only excluded from what wakes the wait.
+  ///
   /// A doorbell outage is answered too, not swallowed: if nothing has
   /// qualified yet and the ticker reports itself down, this future
   /// completes with [DoorbellDown] instead of a value — a stumbled

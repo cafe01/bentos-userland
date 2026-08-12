@@ -44,6 +44,25 @@ void main() {
 
   Future<void> seated() => run(['join']).then((_) {});
 
+  /// Another participant's speech, landed directly on the tree — every `say`
+  /// through [run] signs under the floor's one fixed identity, so a second
+  /// voice can only enter by writing the act rather than by calling the CLI.
+  void speak(
+    String body, {
+    String local = 'cafe',
+    String email = 'cafe@bentos.life',
+    String name = 'Café',
+  }) {
+    final n = 'm${floor.tree.acts.length + 1}';
+    final path = '$messagesPath/2026/08/06/$n.md';
+    floor.tree.land(
+      noun: 'message',
+      authorName: name,
+      authorEmail: email,
+      writes: {path: 'author: $name <$email>\n\n$body\n'},
+    );
+  }
+
   group('the timeout', () {
     test('nothing landing exits 6, not 0, and never by parsing output',
         () async {
@@ -68,11 +87,12 @@ void main() {
         'while it is open, not one waking per line', () async {
       await seated();
 
-      // Land two messages *before* the wait call starts polling, so the very
-      // first `sync()` inside the window already sees both — proving the
-      // return is the whole burst and not the first event alone.
-      await run(['say', 'first']);
-      await run(['say', 'second']);
+      // Land two messages from someone else *before* the wait call starts
+      // polling, so the very first `sync()` inside the window already sees
+      // both — proving the return is the whole burst and not the first
+      // event alone.
+      speak('first');
+      speak('second');
 
       final result = await run(
         ['monitor', '--wait', '--timeout', '5', '--interval', '0.05'],
@@ -86,7 +106,7 @@ void main() {
     test('a second --wait call sees nothing new and times out — the first '
         'call\'s batch is not replayed', () async {
       await seated();
-      await run(['say', 'first']);
+      speak('first');
 
       final landed = await run(
         ['monitor', '--wait', '--timeout', '5', '--interval', '0.05'],
@@ -105,7 +125,7 @@ void main() {
         "Channel.sync's own contract for a cursor opened at nothing",
         () async {
       await seated();
-      await run(['say', 'said before anybody watched']);
+      speak('said before anybody watched');
 
       final result = await run(
         ['monitor', '--wait', '--timeout', '5', '--interval', '0.05'],
@@ -114,12 +134,53 @@ void main() {
       expect(result.exitCode, 0);
       expect(result.out, contains('said before anybody watched'));
     });
+
+    test('my own speech never opens the window — the wait asks did anyone '
+        'ELSE speak, not did anything land', () async {
+      await seated();
+      // Drains the join itself, exactly as the doorbell group below does.
+      await run(['monitor', '--wait', '--timeout', '0.1']);
+      await run(['say', 'only me talking']);
+
+      final result = await run(
+        ['monitor', '--wait', '--timeout', '0.2', '--interval', '0.05'],
+      );
+
+      expect(result.exitCode, 6);
+      expect(result.out, isEmpty);
+    });
+
+    test('own speech that the wait skipped is still returned by a later '
+        'sync — the transcript is everyone\'s, only the waking excludes me',
+        () async {
+      await seated();
+      await run(['monitor', '--wait', '--timeout', '0.1']);
+      await run(['say', 'heard by nobody\'s wait']);
+
+      // My own line did not open the window, so this expires and — per
+      // `_runWait`'s own rule — the persisted cursor does not advance on an
+      // expiry: my skipped speech is still ahead of it.
+      final expired = await run(
+        ['monitor', '--wait', '--timeout', '0.2', '--interval', '0.05'],
+      );
+      expect(expired.exitCode, 6);
+
+      // Someone else speaking wakes the next wait, and its batch still
+      // carries my own earlier line — nothing was dropped, only excluded
+      // from what woke the wait.
+      speak('and this from someone else');
+      final result = await run(
+        ['monitor', '--wait', '--timeout', '5', '--interval', '0.05'],
+      );
+      expect(result.out, contains('heard by nobody\'s wait'));
+      expect(result.out, contains('and this from someone else'));
+    });
   });
 
   group('--mention', () {
     test('a message that does not name me never opens the window', () async {
       await seated();
-      await run(['say', 'just chatting']);
+      speak('just chatting');
 
       final result = await run(
         ['monitor', '--wait', '--mention', '--timeout', '0.2', '--interval', '0.05'],
@@ -132,7 +193,7 @@ void main() {
     test('naming me opens it, and the batch is the mentioning message',
         () async {
       await seated();
-      await run(['say', '@alfred status?']);
+      speak('@alfred status?');
 
       final result = await run(
         ['monitor', '--wait', '--mention', '--timeout', '5', '--interval', '0.05'],
@@ -141,13 +202,26 @@ void main() {
       expect(result.exitCode, 0);
       expect(result.out, contains('@alfred status?'));
     });
+
+    test('mentioning myself in my own message does not wake me either',
+        () async {
+      await seated();
+      await run(['say', '@alfred talking to myself']);
+
+      final result = await run(
+        ['monitor', '--wait', '--mention', '--timeout', '0.2', '--interval', '0.05'],
+      );
+
+      expect(result.exitCode, 6);
+      expect(result.out, isEmpty);
+    });
   });
 
   group('persistence', () {
     test('the cursor is written to the given file, keyed by coordinate',
         () async {
       await seated();
-      await run(['say', 'hello']);
+      speak('hello');
 
       await run(['monitor', '--wait', '--timeout', '5', '--interval', '0.05']);
 
@@ -179,7 +253,7 @@ void main() {
       final pending = run(['monitor', '--wait']);
 
       await Future<void>.delayed(const Duration(milliseconds: 20));
-      await run(['say', 'woke by the doorbell']);
+      speak('woke by the doorbell');
       ticker.tick();
 
       // The mandatory burst-settle window (1s) still applies after the

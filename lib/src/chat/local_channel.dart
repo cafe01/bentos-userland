@@ -326,7 +326,9 @@ final class LocalChannel implements Channel {
 
     try {
       while (true) {
-        final events = _eventsSince(_cursor);
+        final events = _eventsSince(_cursor)
+            .where((e) => e is! Spoke || e.message.author != me)
+            .toList();
         final relevant = scanner == null
             ? events
             : events

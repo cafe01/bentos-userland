@@ -522,6 +522,28 @@ void runChannelContract(ChannelConstruction construct) {
   });
 
   group('wait answers landed or expired, never content', () {
+    /// Another participant's speech, landed directly on the tree — [open]'s
+    /// channel always signs under [identity], so a second voice can only
+    /// enter by writing the act rather than by calling [Channel.say].
+    ChatAct speak(
+      String body, {
+      String local = 'cafe',
+      String email = 'cafe@bentos.life',
+      String name = 'Café',
+    }) {
+      final n = 'm${tree.acts.length + 1}';
+      final path = '$messagesPath/2026/08/06/$n.md';
+      return tree.land(
+        noun: 'message',
+        authorName: name,
+        authorEmail: email,
+        writes: {
+          path: 'author: $name <$email>\n'
+              'spoken: ${clock.call().toUtc().toIso8601String()}\n\n$body\n',
+        },
+      );
+    }
+
     test('nothing landing expires, bounded by within', () async {
       final result = await open().wait(within: const Duration(milliseconds: 50));
       expect(result, Arrival.expired);
@@ -531,7 +553,7 @@ void runChannelContract(ChannelConstruction construct) {
       seated();
       final channel = open();
       final pending = channel.wait();
-      await channel.say('green');
+      speak('green');
       ticker.tick();
       expect(await pending, Arrival.landed);
     });
@@ -541,7 +563,7 @@ void runChannelContract(ChannelConstruction construct) {
       seated();
       final channel = open();
       final pending = channel.wait();
-      await channel.say('green');
+      speak('green');
       ticker.tick();
       expect(await pending, Arrival.landed);
       final events = await channel.sync();
@@ -553,7 +575,7 @@ void runChannelContract(ChannelConstruction construct) {
         () async {
       seated();
       final channel = open();
-      await channel.say('before the wait ever opened');
+      speak('before the wait ever opened');
       expect(
         await channel.wait(within: const Duration(milliseconds: 50)),
         Arrival.landed,
@@ -571,7 +593,7 @@ void runChannelContract(ChannelConstruction construct) {
         mentioning: 'alfred',
         within: const Duration(milliseconds: 100),
       );
-      await channel.say('just chatting');
+      speak('just chatting');
       ticker.tick();
       // Nothing landed for @alfred, so the wall clock, not the tick, is what
       // ends this — proven by the bound elapsing rather than a race.
@@ -582,9 +604,47 @@ void runChannelContract(ChannelConstruction construct) {
       seated();
       final channel = open();
       final pending = channel.wait(mentioning: 'alfred');
-      await channel.say('@alfred status?');
+      speak('@alfred status?');
       ticker.tick();
       expect(await pending, Arrival.landed);
+    });
+
+    test('a participant is never woken by their own speech — asking IS '
+        'THIS MINE, not DID ANYTHING LAND', () async {
+      seated();
+      final channel = open();
+      await channel.sync(); // drain the join itself before the wait opens
+      final pending = channel.wait(within: const Duration(milliseconds: 100));
+      await channel.say('only me talking');
+      ticker.tick();
+      expect(await pending, Arrival.expired);
+    });
+
+    test('mentioning yourself in your own message does not wake you either',
+        () async {
+      seated();
+      final channel = open();
+      await channel.sync();
+      final pending = channel.wait(
+        mentioning: 'alfred',
+        within: const Duration(milliseconds: 100),
+      );
+      await channel.say('@alfred talking to myself');
+      ticker.tick();
+      expect(await pending, Arrival.expired);
+    });
+
+    test('own speech skipped by wait is still there for a later sync — the '
+        'transcript is everyone\'s, only the waking excludes the speaker',
+        () async {
+      seated();
+      final channel = open();
+      await channel.sync();
+      await channel.wait(within: const Duration(milliseconds: 50));
+      await channel.say('heard by nobody\'s wait, read by my own sync');
+      final events = await channel.sync();
+      expect(events.whereType<Spoke>().single.message.body,
+          'heard by nobody\'s wait, read by my own sync');
     });
 
     test('the ticker is disposed once the wait ends', () async {

@@ -256,6 +256,40 @@ void main() {
           'single handle the medium happened to be configured with',
     );
   });
+
+  test('wait asks did anyone ELSE speak — one actor\'s own say never wakes '
+      'their own wait, another actor\'s does, and the skipped speech is '
+      'still there for a later sync', () async {
+    final alfred = asIdentity('Alfred', 'alfred@bentos.life');
+    final cafe = asIdentity('Café', 'cafe01@gmail.com');
+
+    await open('fabrica', identity: alfred).join(displayName: 'Alfred');
+    await open('fabrica', identity: cafe).join(displayName: 'Café');
+
+    // Alfred's own speech must not wake Alfred's own wait — drain the two
+    // joins above first, so only the speech itself is under test.
+    final alfredChannel = open('fabrica', identity: alfred);
+    await alfredChannel.sync();
+    await alfredChannel.say('talking to myself');
+    expect(
+      await alfredChannel.wait(within: const Duration(milliseconds: 200)),
+      Arrival.expired,
+    );
+
+    // But it is still there for Alfred's own sync — nothing was dropped.
+    final events = await alfredChannel.sync();
+    expect(
+      events.whereType<Spoke>().map((e) => e.message.body),
+      contains('talking to myself'),
+    );
+
+    // Café speaking, though, does wake Alfred's wait.
+    final pending = open('fabrica', identity: alfred).wait(
+      within: const Duration(seconds: 5),
+    );
+    await open('fabrica', identity: cafe).say('from cafe, over here');
+    expect(await pending, Arrival.landed);
+  });
 }
 
 final class _GateIdentity implements Identity {

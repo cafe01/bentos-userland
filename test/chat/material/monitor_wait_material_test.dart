@@ -56,11 +56,8 @@ void main() {
     // Isolated per test, so this gate's cursor never touches a real $HOME and
     // two tests never share one file.
     stateHome = Directory.systemTemp.createTempSync('monitor-wait-state-');
-
-    final repo = _run('entity', ['path', 'bentos.chat'], at: plot.path).trim();
-    _run('git', ['-C', repo, 'config', 'user.name', 'Alfred'], at: plot.path);
-    _run('git', ['-C', repo, 'config', 'user.email', 'alfred@bentos.life'],
-        at: plot.path);
+    // No repo-local git identity: that is the collision `identity.md` rules
+    // out. Each process states its own voice through `$BENTOS_CHAT_IDENTITY`.
   });
 
   tearDown(() {
@@ -68,34 +65,50 @@ void main() {
     stateHome.deleteSync(recursive: true);
   });
 
-  ProcessResult call(List<String> args) => Process.runSync(
+  ProcessResult call(List<String> args, {String? asIdentity}) =>
+      Process.runSync(
         exe,
         ['-C', plot.path, '-c', 'bentos.chat:fabrica', ...args],
         workingDirectory: plot.path,
-        environment: {...Platform.environment, 'XDG_STATE_HOME': stateHome.path},
+        environment: {
+          ...Platform.environment,
+          'XDG_STATE_HOME': stateHome.path,
+          if (asIdentity != null) 'BENTOS_CHAT_IDENTITY': asIdentity,
+        },
       );
+
+  const alfred = 'Alfred <alfred@bentos.life>';
+  const cafe = 'Café <cafe01@gmail.com>';
 
   test('a second process resumes where the first left off — the cursor '
       'survives the process ending, not merely a second call in memory',
       () async {
-    expect(call(['join']).exitCode, 0);
-    expect(call(['say', 'first']).exitCode, 0);
+    // The waiter (Alfred) and the speaker (Café) are different actors: a
+    // wait is never woken by its own caller's speech, so proving this gate
+    // needs a second voice, not a second process alone.
+    expect(call(['join'], asIdentity: alfred).exitCode, 0);
+    expect(call(['join'], asIdentity: cafe).exitCode, 0);
+    expect(call(['say', 'first'], asIdentity: cafe).exitCode, 0);
 
     // Process one: sees "first", persists to disk, and exits — the process is
     // gone, so nothing but the file on disk carries what it learned.
-    final firstProcess =
-        call(['monitor', '--wait', '--timeout', '5', '--interval', '0.1']);
+    final firstProcess = call(
+      ['monitor', '--wait', '--timeout', '5', '--interval', '0.1'],
+      asIdentity: alfred,
+    );
     expect(firstProcess.exitCode, 0,
         reason: 'stderr: ${firstProcess.stderr}');
     expect(firstProcess.stdout, contains('first'));
 
-    expect(call(['say', 'second']).exitCode, 0);
+    expect(call(['say', 'second'], asIdentity: cafe).exitCode, 0);
 
     // Process two: a brand new binary invocation, with nothing of process
     // one's memory. If the cursor lived only in a field, this would see
     // "first" again — or everything since genesis. It must see only "second".
-    final secondProcess =
-        call(['monitor', '--wait', '--timeout', '5', '--interval', '0.1']);
+    final secondProcess = call(
+      ['monitor', '--wait', '--timeout', '5', '--interval', '0.1'],
+      asIdentity: alfred,
+    );
     expect(secondProcess.exitCode, 0,
         reason: 'stderr: ${secondProcess.stderr}');
     expect(secondProcess.stdout, contains('second'));
@@ -106,6 +119,7 @@ void main() {
     // actually written and actually read back, not merely present.
     final thirdProcess = call(
       ['monitor', '--wait', '--timeout', '0.3', '--interval', '0.05'],
+      asIdentity: alfred,
     );
     expect(thirdProcess.exitCode, 6, reason: 'stderr: ${thirdProcess.stderr}');
     expect(thirdProcess.stdout, isEmpty);
