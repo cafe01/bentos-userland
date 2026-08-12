@@ -51,7 +51,12 @@ final class FakeFloor implements ChatFloor {
   final List<String> opened = [];
 
   @override
-  Channel channel(String name, {required String place, String? cursor}) {
+  Channel channel(
+    String name, {
+    required String place,
+    String? cursor,
+    Identity? identity,
+  }) {
     opened.add(name);
     vantages.add(place);
     actsDouble.channel = name;
@@ -69,7 +74,7 @@ final class FakeFloor implements ChatFloor {
   }
 
   @override
-  ChatBodies bodies(String name, {required String place}) {
+  ChatBodies bodies(String name, {required String place, Identity? identity}) {
     vantages.add(place);
     return bodyDouble;
   }

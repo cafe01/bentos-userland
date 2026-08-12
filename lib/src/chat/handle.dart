@@ -65,15 +65,15 @@ abstract interface class Identity {
   String? get displayName;
 }
 
-/// Git has no identity to speak under. Not a refusal — nobody decided
-/// anything — and not a stumble either: it is a condition of the machine.
+/// Nobody has stated who is speaking. Not a refusal — nobody decided
+/// anything — and not a stumble either: it is a condition of the machine, or
+/// of the caller having a name and no address.
 final class NoIdentity implements Exception {
-  const NoIdentity(this.where);
+  const NoIdentity(this.reason);
 
-  /// The repository whose cascade was asked.
-  final String where;
+  /// What is missing, and what would supply it — the whole of the message.
+  final String reason;
 
   @override
-  String toString() =>
-      '$chatOntology: no user.email in $where — git has no identity to speak under';
+  String toString() => '$chatOntology: $reason';
 }

@@ -1,6 +1,7 @@
 /// The two seams, filled against the real floor — the entity primitive for
 /// reading and for the in-process act bracket, `check` alone still spawning
-/// the entity's own embarked function, and git's own cascade for identity.
+/// the entity's own embarked function, and [resolveChatIdentity] for who is
+/// speaking.
 ///
 /// Nothing here is chat: it is the adaptation of one layout to one primitive,
 /// which is exactly why it sits behind an interface. The channel above holds
@@ -13,7 +14,6 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import '../entity/action.dart';
-import '../entity/entity.dart';
 import '../entity/instance.dart';
 import '../git/model/actor.dart';
 import '../git/model/commit.dart';
@@ -193,6 +193,7 @@ final class ProcessBodies implements ChatBodies {
   const ProcessBodies({
     required this.place,
     required this.coordinate,
+    required this.identity,
     this.executable = 'entity',
   });
 
@@ -201,6 +202,10 @@ final class ProcessBodies implements ChatBodies {
 
   /// `bentos.chat:<name>`.
   final String coordinate;
+
+  /// Who runs this — resolved once, the same way [EntityFloor.channel]
+  /// resolves it, and handed in rather than re-derived here.
+  final Identity identity;
 
   /// The primitive on the PATH. Named rather than assumed, so a gate can drive
   /// a build that is not the installed one.
@@ -224,30 +229,19 @@ final class ProcessBodies implements ChatBodies {
     );
   }
 
-  /// Pins the commit's signer to **the same read** the body uses to declare
-  /// the speaker, so the two can no longer be two facts that happen to agree.
+  /// Pins the commit's signer to **the same [identity]** the caller resolved,
+  /// so the two can no longer be two facts that happen to agree.
   ///
   /// The body writes `--actor` to nobody: `entity commit` given none falls
   /// back to whatever `GIT_AUTHOR_*`/`GIT_COMMITTER_*` the ambient environment
   /// carries, which is a cascade the caller's own shell can pollute — a stale
   /// export, a CI harness simulating participants by variable rather than by
-  /// config — and disagrees with `git config`, which is what the identity
-  /// written into the content is read from. Setting those variables here,
-  /// from this same [GitIdentity] read, forces every hop underneath (the
-  /// body, and the `entity commit` it shells out to in turn) to sign under
-  /// exactly what was declared, whatever else the environment carries — an
-  /// explicit override always wins over an inherited one.
-  ///
-  /// Empty when git has no identity to speak under at all: the write then
-  /// refuses downstream exactly as it always did, and inventing one here
-  /// would be putting words in nobody's mouth.
+  /// config. Setting those variables here, from this same [identity], forces
+  /// every hop underneath (the body, and the `entity commit` it shells out to
+  /// in turn) to sign under exactly what was declared, whatever else the
+  /// environment carries — an explicit override always wins over an inherited
+  /// one.
   Map<String, String> _signerEnvironment() {
-    final Identity identity;
-    try {
-      identity = GitIdentity.of(Entity(chatOntology, from: place));
-    } on NoIdentity {
-      return const {};
-    }
     final name = identity.displayName ?? '';
     final email = identity.handle.email;
     return {
@@ -259,24 +253,83 @@ final class ProcessBodies implements ChatBodies {
   }
 }
 
-/// Who the caller is, from **the cascade the commit will be signed under** —
-/// the entity's own repository, never the directory the caller happens to be
-/// standing in. Asking the working directory would answer for whatever
-/// repository the caller is inside, which is a different substrate.
+/// Who the calling process speaks as — the one seam both faces share.
 ///
-/// It mirrors `lib.sh`'s own `_identity`, deliberately: two readers of the
-/// same cascade, both `git config` and neither the ambient environment — which
-/// is exactly why [ProcessBodies] does not stop at reading this and stating
-/// it, but hands it back down as the explicit signer for every body it runs.
+/// Order: an explicit [identity] wins outright — the seam a caller or a test
+/// injects through directly. Absent that, `$BENTOS_CHAT_IDENTITY` is the
+/// stated override, `Name <email>` or a bare email: how a human testing as
+/// someone else, or a being of the kind stating its own voice, both speak.
+/// Absent that: `$BENTOS_AGENT` set means the caller **is** a being, and a
+/// being that has not stated an identity is a question, never a default —
+/// refusing rather than borrowing the ambient git cascade of whatever human
+/// owns the machine it happens to run on, which would be impersonation, not a
+/// fallback. `$BENTOS_AGENT` unset means an ordinary human at their own
+/// keyboard, and their ambient git cascade **is** their identity.
+///
+/// Frontier, not settled: a being's identity has nowhere else to live today
+/// but this one chat-scoped variable. No manifest, no entity, nothing beside
+/// a being's own bank currently publishes it — closing that gap properly
+/// means the being states itself once, not per chat session.
+Identity resolveChatIdentity({
+  Identity? identity,
+  Map<String, String>? environment,
+}) {
+  if (identity != null) return identity;
+  final env = environment ?? Platform.environment;
+  final stated = env['BENTOS_CHAT_IDENTITY'];
+  if (stated != null && stated.isNotEmpty) return _parseStatedIdentity(stated);
+  final agent = env['BENTOS_AGENT'];
+  if (agent != null && agent.isNotEmpty) {
+    throw NoIdentity(
+      'a being of the kind states its own identity — set '
+      r'$BENTOS_CHAT_IDENTITY ("Name <email>" or a bare email); '
+      '\$BENTOS_AGENT=$agent names no address on its own',
+    );
+  }
+  return GitIdentity.ambient();
+}
+
+Identity _parseStatedIdentity(String stated) {
+  final trimmed = stated.trim();
+  final match = RegExp(r'^(.*)<(.+)>$').firstMatch(trimmed);
+  if (match == null) {
+    return _StatedIdentity(Handle.ofEmail(trimmed), null);
+  }
+  final name = match.group(1)!.trim();
+  final email = match.group(2)!.trim();
+  return _StatedIdentity(Handle.ofEmail(email), name.isEmpty ? null : name);
+}
+
+final class _StatedIdentity implements Identity {
+  const _StatedIdentity(this.handle, this.displayName);
+
+  @override
+  final Handle handle;
+
+  @override
+  final String? displayName;
+}
+
+/// A human's own git cascade — global config, or whatever local repository
+/// the process actually stands in. **Never the medium's repository**: the
+/// entity a channel lives in is the substrate a message is written to, not
+/// the identity of whoever is writing it, and reading the two from the same
+/// place is what let one process's `git config` answer for every caller who
+/// ever touched that installation.
 final class GitIdentity implements Identity {
   GitIdentity._(this.handle, this.displayName);
 
-  /// Reads the cascade of [entity]'s repository.
-  factory GitIdentity.of(Entity entity) {
-    final gitDir = gitDirOf(entity);
-    final email = _config(gitDir, 'user.email');
-    if (email == null || email.isEmpty) throw NoIdentity(gitDir);
-    final name = _config(gitDir, 'user.name');
+  /// Reads the caller's own ambient cascade — no `-C`, so it is whatever
+  /// directory the process is actually running in.
+  factory GitIdentity.ambient() {
+    final email = _config('user.email');
+    if (email == null || email.isEmpty) {
+      throw const NoIdentity(
+        'no user.email in the ambient git cascade — git has no identity to '
+        'speak under',
+      );
+    }
+    final name = _config('user.name');
     return GitIdentity._(
       Handle.ofEmail(email),
       name == null || name.isEmpty ? null : name,
@@ -289,8 +342,8 @@ final class GitIdentity implements Identity {
   @override
   final String? displayName;
 
-  static String? _config(String gitDir, String key) {
-    final result = Process.runSync('git', ['-C', gitDir, 'config', key]);
+  static String? _config(String key) {
+    final result = Process.runSync('git', ['config', key]);
     if (result.exitCode != 0) return null;
     return '${result.stdout}'.trim();
   }

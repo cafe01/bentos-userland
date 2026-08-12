@@ -54,9 +54,8 @@ void main() {
   tearDown(() => plot.deleteSync(recursive: true));
 
   /// The channel as any caller builds one: the two seams over the real floor.
-  Channel open(String name, {String? cursor}) {
+  Channel open(String name, {String? cursor, required Identity identity}) {
     final entity = Entity('bentos.chat', from: plot.path);
-    final identity = GitIdentity.of(entity);
     return channelConstruction(
       name: name,
       acts: EntityActs(entity.instance(name), identity: identity),
@@ -71,19 +70,17 @@ void main() {
   String? tip(String name) =>
       EntityTree(Entity('bentos.chat', from: plot.path).instance(name)).tip();
 
-  /// A voice to speak under. A participant IS the author of its commits, so
-  /// giving this gate an identity is giving git one and nothing else — there is
-  /// no registration to perform.
-  void speakAs(String name, String email) {
-    final repo = _run('entity', ['path', 'bentos.chat'], at: plot.path).trim();
-    _run('git', ['-C', repo, 'config', 'user.name', name], at: plot.path);
-    _run('git', ['-C', repo, 'config', 'user.email', email], at: plot.path);
-  }
+  /// A voice to speak under. A participant IS the author of its commits, and
+  /// identity now enters as a value from the caller — never by reading the
+  /// medium's own repository, which is the defect this whole gate exists to
+  /// catch.
+  Identity asIdentity(String name, String email) =>
+      _GateIdentity(Handle.ofEmail(email), name);
 
   test('the library opens a real channel, speaks into it, and reads it back',
       () async {
-    speakAs('Alfred', 'alfred@bentos.life');
-    final channel = open('fabrica');
+    final alfred = asIdentity('Alfred', 'alfred@bentos.life');
+    final channel = open('fabrica', identity: alfred);
 
     // Identity is the substrate's, read from the cascade the commit is signed
     // under — not from the directory this test happens to run in.
@@ -126,13 +123,13 @@ void main() {
 
   test('the one gate: a non-member is refused, in the floor\'s own words',
       () async {
-    speakAs('Alfred', 'alfred@bentos.life');
-    await open('fabrica').join();
+    final alfred = asIdentity('Alfred', 'alfred@bentos.life');
+    await open('fabrica', identity: alfred).join();
     final before = tip('fabrica');
     expect(before, isNotNull);
 
-    speakAs('Stranger', 'stranger@elsewhere');
-    final result = await open('fabrica').say('let me in');
+    final stranger = asIdentity('Stranger', 'stranger@elsewhere');
+    final result = await open('fabrica', identity: stranger).say('let me in');
     expect(result, isA<Refused>());
     expect((result as Refused).reason, contains('is not in bentos.chat:fabrica'));
 
@@ -144,8 +141,8 @@ void main() {
 
   test('the topic, the presence and the departure, over the real floor',
       () async {
-    speakAs('Alfred', 'alfred@bentos.life');
-    final channel = open('fabrica');
+    final alfred = asIdentity('Alfred', 'alfred@bentos.life');
+    final channel = open('fabrica', identity: alfred);
     await channel.join(displayName: 'Alfred');
     await channel.say('raising the install gate');
 
@@ -172,11 +169,11 @@ void main() {
   });
 
   test(
-      'the commit is signed under the identity the content declares, never '
+      'the commit is signed under the identity the caller stated, never '
       "whatever GIT_AUTHOR_*/GIT_COMMITTER_* the caller's own environment "
       'happens to carry', () async {
-    speakAs('Alfred', 'alfred@bentos.life');
-    final channel = open('fabrica');
+    final alfred = asIdentity('Alfred', 'alfred@bentos.life');
+    final channel = open('fabrica', identity: alfred);
     await channel.join(displayName: 'Alfred');
     await channel.say('who signed this?');
 
@@ -185,24 +182,27 @@ void main() {
       _run('git', ['-C', repo, 'log', '-1', '--format=%an <%ae>', 'fabrica'],
           at: plot.path).trim(),
       'Alfred <alfred@bentos.life>',
-      reason: 'the commit must be signed under the identity `git config` '
-          'declares — the same read the content is written from — never '
+      reason: 'the commit must be signed under the identity the caller '
+          'stated — the same value the content is written from — never '
           'whatever the ambient environment happens to carry',
     );
 
     final check = await ProcessBodies(
       place: plot.path,
       coordinate: 'bentos.chat:fabrica',
+      identity: alfred,
     ).run('check', const [], attempts: 1);
     expect(check.exitCode, 0, reason: check.stderr);
   });
 
   test('a non-member moves nothing, not even itself', () async {
-    speakAs('Alfred', 'alfred@bentos.life');
-    await open('fabrica').join();
+    final alfred = asIdentity('Alfred', 'alfred@bentos.life');
+    await open('fabrica', identity: alfred).join();
 
-    speakAs('Stranger', 'stranger@elsewhere');
-    final stranger = open('fabrica');
+    final stranger = open(
+      'fabrica',
+      identity: asIdentity('Stranger', 'stranger@elsewhere'),
+    );
     final before = tip('fabrica');
     expect(await stranger.leave(), isA<Refused>());
     expect(await stranger.setTopic('mine now'), isA<Refused>());
@@ -211,6 +211,61 @@ void main() {
     // Asked of the ref: four refusals and the line did not move once.
     expect(tip('fabrica'), before);
   });
+
+  test(
+      'two actors of different identity speak into one channel, and the '
+      'transcript attributes each line to its own author — the class the '
+      'single-actor gate above is blind to', () async {
+    final alfred = asIdentity('Alfred', 'alfred@bentos.life');
+    final cafe = asIdentity('Café', 'cafe01@gmail.com');
+
+    await open('fabrica', identity: alfred).join(displayName: 'Alfred');
+    await open('fabrica', identity: cafe).join(displayName: 'Café');
+
+    await open('fabrica', identity: alfred).say('from alfred');
+    await open('fabrica', identity: cafe).say('from cafe');
+
+    final roster = await open('fabrica', identity: alfred).roster();
+    expect(
+      roster.participants.map((p) => p.handle.local).toSet(),
+      {'alfred', 'cafe01'},
+    );
+
+    final transcript = await open('fabrica', identity: alfred).history();
+    expect(transcript.map((m) => m.body), ['from alfred', 'from cafe']);
+    expect(transcript.map((m) => m.author.local), ['alfred', 'cafe01']);
+
+    final repo = _run('entity', ['path', 'bentos.chat'], at: plot.path).trim();
+    expect(
+      _run(
+        // Only the four acts this test performed: the ref's history reaches
+        // back through the entity's own install commits, signed under
+        // whatever ambient identity ran `entity install` in setUp, which is
+        // no part of this claim.
+        'git',
+        ['-C', repo, 'log', '-4', '--format=%an <%ae>', 'fabrica'],
+        at: plot.path,
+      ).trim().split('\n'),
+      [
+        'Café <cafe01@gmail.com>',
+        'Alfred <alfred@bentos.life>',
+        'Café <cafe01@gmail.com>',
+        'Alfred <alfred@bentos.life>',
+      ],
+      reason: 'each commit signed under the identity that made it, never a '
+          'single handle the medium happened to be configured with',
+    );
+  });
+}
+
+final class _GateIdentity implements Identity {
+  const _GateIdentity(this.handle, this.displayName);
+
+  @override
+  final Handle handle;
+
+  @override
+  final String? displayName;
 }
 
 void _demand(String binary, String complaint) {

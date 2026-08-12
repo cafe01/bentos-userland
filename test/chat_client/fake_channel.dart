@@ -127,7 +127,12 @@ final class FakeChatFloor implements ChatFloor {
   void register(Channel channel) => _channels[channel.name] = channel;
 
   @override
-  Channel channel(String name, {required String place, String? cursor}) {
+  Channel channel(
+    String name, {
+    required String place,
+    String? cursor,
+    Identity? identity,
+  }) {
     requestedPlaces.add(place);
     final existing = _channels[name];
     if (existing == null) {
@@ -137,7 +142,7 @@ final class FakeChatFloor implements ChatFloor {
   }
 
   @override
-  ChatBodies bodies(String name, {required String place}) =>
+  ChatBodies bodies(String name, {required String place, Identity? identity}) =>
       throw UnimplementedError('not exercised by the client suite');
 
   @override

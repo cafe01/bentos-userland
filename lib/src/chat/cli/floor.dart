@@ -14,15 +14,22 @@ import '../channel.dart';
 import '../construction.dart';
 import '../dispatch_ticker.dart';
 import '../entity_seams.dart';
+import '../handle.dart';
 import '../seams.dart';
 
 abstract interface class ChatFloor {
-  /// A channel at [name], anchored at [place], resuming at [cursor].
-  Channel channel(String name, {required String place, String? cursor});
+  /// A channel at [name], anchored at [place], resuming at [cursor], speaking
+  /// as [identity] — or as [resolveChatIdentity] resolves it when omitted.
+  Channel channel(
+    String name, {
+    required String place,
+    String? cursor,
+    Identity? identity,
+  });
 
   /// The entity's own functions at that coordinate — for `check`, which carries
   /// no seat, answers nobody, and is therefore not a member of [Channel].
-  ChatBodies bodies(String name, {required String place});
+  ChatBodies bodies(String name, {required String place, Identity? identity});
 
   /// The channels the installation at [place] carries, sorted. **The ambient
   /// walk's third step**, and it derives from disk rather than reading a store.
@@ -47,23 +54,30 @@ final class EntityFloor implements ChatFloor {
   Entity _entity(String place) => Entity(chatOntology, from: place);
 
   @override
-  Channel channel(String name, {required String place, String? cursor}) {
+  Channel channel(
+    String name, {
+    required String place,
+    String? cursor,
+    Identity? identity,
+  }) {
     final entity = _entity(place);
-    final identity = GitIdentity.of(entity);
+    final resolved = resolveChatIdentity(identity: identity);
     return construct(
       name: name,
-      acts: EntityActs(entity.instance(name), identity: identity),
+      acts: EntityActs(entity.instance(name), identity: resolved),
       tree: EntityTree(entity.instance(name)),
-      identity: identity,
+      identity: resolved,
       ticker: () => DispatchTicker(entity),
       cursor: cursor,
     );
   }
 
   @override
-  ChatBodies bodies(String name, {required String place}) => ProcessBodies(
+  ChatBodies bodies(String name, {required String place, Identity? identity}) =>
+      ProcessBodies(
         place: place,
         coordinate: '$chatOntology:$name',
+        identity: resolveChatIdentity(identity: identity),
       );
 
   @override
