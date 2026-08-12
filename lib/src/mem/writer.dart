@@ -18,12 +18,12 @@ abstract interface class GistSource {
 /// seam, land the act, absorb a contested landing, bring the tree to the
 /// line, refuse what must be refused.
 final class Writer {
-  Writer(this._bank, {required Actor actor, GistSource? gist, this.attempts = 3})
+  Writer(this._bank, {Actor? actor, GistSource? gist, this.attempts = 3})
       : _actor = actor,
         _gist = gist;
 
   final Bank _bank;
-  final Actor _actor;
+  final Actor? _actor;
   final GistSource? _gist;
 
   /// How many times a [Contested] landing is retried before it is reported

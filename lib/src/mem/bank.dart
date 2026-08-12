@@ -96,7 +96,7 @@ final class Bank {
   Future<Landing> land(
     String payload,
     void Function(Draft) body, {
-    required Actor actor,
+    Actor? actor,
     String? say,
   }) async {
     final result = await _entity.instance(mainInstanceId).act(
