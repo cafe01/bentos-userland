@@ -45,9 +45,10 @@ final class ChatRunner {
     String? currentDirectory,
     Map<String, String>? environment,
     Future<String> Function()? readStdin,
-    this.floor = const EntityFloor(),
+    ChatFloor? floor,
     io.File? monitorCursorFile,
-  })  : out = out ?? io.stdout,
+  })  : floor = floor ?? EntityFloor(),
+        out = out ?? io.stdout,
         err = err ?? io.stderr,
         _cwdOverride = currentDirectory,
         _envOverride = environment,
@@ -353,19 +354,26 @@ final class _Say extends _ChatCommand {
   Future<void> run() async {
     final body = await textOrStdin();
     if (body.isEmpty) usageException('say: nothing to say');
-    final result = await channel().say(body);
+    final channel = this.channel();
+    final result = await channel.say(body);
     face.report(result);
     // Speaking marks the speaker's own line read: whoever just wrote it has
     // obviously read it, and advancing the persisted cursor here — the same
     // one `monitor --wait` resumes from across processes — is what keeps that
-    // line from coming back quoted in a later batch. This does not touch
-    // `Channel`'s own in-process cursor, which stays `sync`'s alone; it only
-    // updates the CLI's separate, already-cross-process file.
+    // line from coming back quoted in a later batch. **The speaker's own**,
+    // and nobody else's: this mark is keyed by the participant who spoke, so
+    // one being's utterance can never advance another being's drain mark past
+    // speech it was never handed. This does not touch `Channel`'s own
+    // in-process cursor, which stays `sync`'s alone; it only updates the CLI's
+    // separate, already-cross-process file.
     if (result case Acted(:final commit)) {
       if (commit.isNotEmpty) {
-        final cursors = MonitorCursors.load(file: face.monitorCursorFile);
-        cursors.cursors[coordinate.whole] = commit;
-        cursors.save(file: face.monitorCursorFile);
+        MonitorCursors.record(
+          coordinate: coordinate.whole,
+          participant: channel.me.email,
+          cursor: commit,
+          file: face.monitorCursorFile,
+        );
       }
     }
   }
@@ -624,8 +632,13 @@ final class _Monitor extends _ChatCommand {
     _maybeWarnInterval();
 
     final key = coordinate.whole;
+    // Asked of the floor and not resolved here, so the mark is owned by
+    // exactly the identity the acts below will be signed under. The cursor is
+    // fixed at construction, so this has to be known before there is a
+    // channel to ask.
+    final me = face.floor.identity.handle.email;
     final cursors = MonitorCursors.load(file: face.monitorCursorFile);
-    final resuming = cursors.of(key);
+    final resuming = cursors.of(key, me);
     final channel = this.channel(cursor: resuming);
     final mention = argResults!['mention'] as bool;
     final scanner = mention ? MentionScanner(channel.me) : null;
@@ -664,8 +677,14 @@ final class _Monitor extends _ChatCommand {
 
     final events = await channel.sync();
     final at = channel.cursor;
-    if (at != null) cursors.cursors[key] = at;
-    cursors.save(file: face.monitorCursorFile);
+    if (at != null) {
+      MonitorCursors.record(
+        coordinate: key,
+        participant: me,
+        cursor: at,
+        file: face.monitorCursorFile,
+      );
+    }
 
     for (final event in events) {
       if (scanner == null || _mentioned(event, scanner)) {

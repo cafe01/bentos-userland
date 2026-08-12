@@ -44,7 +44,7 @@ Future<void> main(List<String> args) async {
     }
   }
 
-  const floor = EntityFloor();
+  final floor = EntityFloor();
   final cwd = Directory.current.path;
   final anchor = p.normalize(
     place == null ? cwd : (p.isAbsolute(place) ? place : p.join(cwd, place)),

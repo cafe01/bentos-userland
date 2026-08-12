@@ -27,6 +27,17 @@ abstract interface class ChatFloor {
     Identity? identity,
   });
 
+  /// Who the calling process speaks as — **the same identity [channel] signs
+  /// under**, asked without opening a channel.
+  ///
+  /// A face needs this before it has a channel: a drain mark is keyed by the
+  /// participant it belongs to, and the cursor a channel resumes from must be
+  /// read before that channel is constructed. Resolving it a second time in the
+  /// face would let the mark name someone other than the signer the moment the
+  /// two resolutions disagree, so the floor answers once and both uses read the
+  /// same answer. Throws [NoIdentity] exactly where [channel] would.
+  Identity get identity;
+
   /// The entity's own functions at that coordinate — for `check`, which carries
   /// no seat, answers nobody, and is therefore not a member of [Channel].
   ChatBodies bodies(String name, {required String place, Identity? identity});
@@ -45,11 +56,19 @@ abstract interface class ChatFloor {
 /// The floor as it really is: the entity primitive underneath, git's own
 /// cascade for identity.
 final class EntityFloor implements ChatFloor {
-  const EntityFloor({this.construct = channelConstruction});
+  EntityFloor({this.construct = channelConstruction});
 
   /// How a channel is built. Named so a face can be driven over a different
   /// construction without this class knowing there is more than one.
   final ChannelConstruction construct;
+
+  /// Resolved once per process. Not caching it would mean a `git config`
+  /// cascade per verb for a human caller, and — worse — two chances for the
+  /// signer and the drain mark's owner to disagree.
+  Identity? _identity;
+
+  @override
+  Identity get identity => _identity ??= resolveChatIdentity();
 
   Entity _entity(String place) => Entity(chatOntology, from: place);
 
@@ -61,7 +80,7 @@ final class EntityFloor implements ChatFloor {
     Identity? identity,
   }) {
     final entity = _entity(place);
-    final resolved = resolveChatIdentity(identity: identity);
+    final resolved = identity ?? this.identity;
     return construct(
       name: name,
       acts: EntityActs(entity.instance(name), identity: resolved),
@@ -77,7 +96,7 @@ final class EntityFloor implements ChatFloor {
       ProcessBodies(
         place: place,
         coordinate: '$chatOntology:$name',
-        identity: resolveChatIdentity(identity: identity),
+        identity: identity ?? this.identity,
       );
 
   @override

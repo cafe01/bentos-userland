@@ -126,6 +126,13 @@ final class FakeChatFloor implements ChatFloor {
 
   void register(Channel channel) => _channels[channel.name] = channel;
 
+  /// The client never asks who it is through the floor — it reads `me` off the
+  /// channel it already holds — so this answers by refusing rather than by
+  /// inventing a participant this suite would then quietly rely on.
+  @override
+  Identity get identity =>
+      throw UnimplementedError('not exercised by the client suite');
+
   @override
   Channel channel(
     String name, {

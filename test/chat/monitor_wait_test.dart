@@ -216,8 +216,8 @@ void main() {
   });
 
   group('persistence', () {
-    test('the cursor is written to the given file, keyed by coordinate',
-        () async {
+    test('the cursor is written to the given file, keyed by coordinate and by '
+        'the participant who drained it', () async {
       await seated();
       speak('hello');
 
@@ -226,6 +226,67 @@ void main() {
       final json = jsonDecode(cursorFile.readAsStringSync()) as Map;
       final cursors = json['cursors'] as Map;
       expect(cursors.keys, contains('bentos.chat:fabrica'));
+      final channel = cursors['bentos.chat:fabrica'] as Map;
+      expect(channel.keys, ['alfred@bentos.life']);
+    });
+
+    test('one being speaking never advances another being\'s drain mark — the '
+        'defect a single key per coordinate hid', () async {
+      // Two participants through one installation, which is what shares this
+      // file: the first speaks, and the second must still be handed that line.
+      await seated();
+      await run(['monitor', '--wait', '--timeout', '0.1']);
+      await run(['say', 'from the first being']);
+
+      floor.identityDouble.handle = const Handle('cafe', 'bentos.life');
+      final second = await run(
+        ['monitor', '--wait', '--timeout', '5', '--interval', '0.05'],
+      );
+
+      expect(second.exitCode, 0);
+      expect(second.out, contains('from the first being'));
+
+      final json = jsonDecode(cursorFile.readAsStringSync()) as Map;
+      final channel =
+          (json['cursors'] as Map)['bentos.chat:fabrica'] as Map;
+      expect(channel.keys, containsAll(['alfred@bentos.life', 'cafe@bentos.life']));
+    });
+
+    test('a mark left by the old flat shape is dropped, never adopted by '
+        'whoever runs next', () async {
+      await seated();
+      speak('said before the upgrade');
+      // The shape this file used to have: a commit under the coordinate, with
+      // nobody's name on it.
+      cursorFile.writeAsStringSync(
+        jsonEncode({
+          'cursors': {'bentos.chat:fabrica': floor.tree.acts.last.commit},
+        }),
+      );
+
+      final result = await run(
+        ['monitor', '--wait', '--timeout', '5', '--interval', '0.05'],
+      );
+
+      // Replayed rather than skipped: an unattributed mark says nothing about
+      // this participant, and one replay is the honest cost.
+      expect(result.exitCode, 0);
+      expect(result.out, contains('said before the upgrade'));
+    });
+  });
+
+  group('who is speaking', () {
+    test('a floor that cannot say who I am refuses the wait, and nothing is '
+        'written to the cursor file', () async {
+      floor.refusesIdentity = true;
+
+      final result = await run(
+        ['monitor', '--wait', '--timeout', '5', '--interval', '0.05'],
+      );
+
+      expect(result.exitCode, 1);
+      expect(result.err, contains('states its own identity'));
+      expect(cursorFile.existsSync(), isFalse);
     });
   });
 

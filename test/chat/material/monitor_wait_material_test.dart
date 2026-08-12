@@ -21,8 +21,7 @@ String get chatSource =>
 
 void main() {
   late Directory plot;
-  late Directory alfredState;
-  late Directory cafeState;
+  late Directory state;
   late String exe;
 
   setUpAll(() {
@@ -55,21 +54,20 @@ void main() {
     _run('entity', ['install', Directory(chatSource).absolute.path],
         at: plot.path);
     // Isolated per test, so this gate's cursor never touches a real $HOME and
-    // two tests never share one file. **One state dir per identity**, since
-    // `say` now advances its own speaker's persisted cursor too: two
-    // identities sharing one state file would have each one's `say`
-    // clobbering the other's read mark, which is not the real world — every
-    // participant runs from its own `$HOME`.
+    // two tests never share one file. **One state dir for both identities**,
+    // which is the real world this gate exists to reproduce: two beings of the
+    // kind run as threads on one machine, under one `$HOME`, and therefore
+    // share this file. Splitting it per identity — as this fixture used to —
+    // made every participant look like it owned its own state, which is
+    // exactly the assumption that hid the mark being shared.
     // No repo-local git identity: that is the collision `identity.md` rules
     // out. Each process states its own voice through `$BENTOS_CHAT_IDENTITY`.
-    alfredState = Directory.systemTemp.createTempSync('monitor-wait-state-alfred-');
-    cafeState = Directory.systemTemp.createTempSync('monitor-wait-state-cafe-');
+    state = Directory.systemTemp.createTempSync('monitor-wait-state-');
   });
 
   tearDown(() {
     plot.deleteSync(recursive: true);
-    alfredState.deleteSync(recursive: true);
-    cafeState.deleteSync(recursive: true);
+    state.deleteSync(recursive: true);
   });
 
   const alfred = 'Alfred <alfred@bentos.life>';
@@ -82,8 +80,7 @@ void main() {
         workingDirectory: plot.path,
         environment: {
           ...Platform.environment,
-          'XDG_STATE_HOME':
-              asIdentity == cafe ? cafeState.path : alfredState.path,
+          'XDG_STATE_HOME': state.path,
           if (asIdentity != null) 'BENTOS_CHAT_IDENTITY': asIdentity,
         },
       );
@@ -131,6 +128,58 @@ void main() {
     );
     expect(thirdProcess.exitCode, 6, reason: 'stderr: ${thirdProcess.stderr}');
     expect(thirdProcess.stdout, isEmpty);
+  });
+
+  test('two beings sharing one state file keep separate drain marks — one '
+      'speaking never consumes the other\'s delta', () {
+    // The reproduction, as it happened in a real room: both participants run
+    // on one machine, so one file holds both marks. Café speaks; Alfred must
+    // be handed that line, whatever Café's own `say` did to Café's mark.
+    expect(call(['join'], asIdentity: alfred).exitCode, 0);
+    expect(call(['join'], asIdentity: cafe).exitCode, 0);
+
+    // Both drain to the tip, so what follows is the only thing outstanding.
+    // Called until quiet rather than a fixed number of times: what the joins
+    // themselves put on the log is not this claim's business, and a count
+    // guessed here would be a fixture asserting something it did not measure.
+    void drain(String who) {
+      for (var attempt = 0; attempt < 4; attempt++) {
+        final r = call(
+          ['monitor', '--wait', '--timeout', '0.3', '--interval', '0.05'],
+          asIdentity: who,
+        );
+        if (r.exitCode == 6) return;
+        expect(r.exitCode, 0, reason: 'stderr: ${r.stderr}');
+      }
+      fail('$who never reached a quiet channel');
+    }
+
+    drain(alfred);
+    drain(cafe);
+
+    // Café speaks: this advances Café's own mark past Café's line, and under
+    // one key per coordinate it advanced Alfred's too — which is how a delta
+    // was never delivered.
+    expect(call(['say', 'anybody there?'], asIdentity: cafe).exitCode, 0);
+
+    final alfredWait = call(
+      ['monitor', '--wait', '--timeout', '5', '--interval', '0.1'],
+      asIdentity: alfred,
+    );
+    expect(alfredWait.exitCode, 0, reason: 'stderr: ${alfredWait.stderr}');
+    expect(alfredWait.stdout, contains('anybody there?'));
+
+    // And Café is not handed back its own speech by the same file.
+    final cafeWait = call(
+      ['monitor', '--wait', '--timeout', '0.3', '--interval', '0.05'],
+      asIdentity: cafe,
+    );
+    expect(cafeWait.exitCode, 6, reason: 'stderr: ${cafeWait.stderr}');
+
+    final marks = File('${state.path}/bentos.chat/monitor-state.json')
+        .readAsStringSync();
+    expect(marks, contains('alfred@bentos.life'));
+    expect(marks, contains('cafe01@gmail.com'));
   });
 }
 

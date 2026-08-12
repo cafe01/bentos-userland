@@ -50,6 +50,25 @@ final class FakeFloor implements ChatFloor {
   /// The names the face asked for, in order.
   final List<String> opened = [];
 
+  /// Makes the floor refuse to say who is speaking, the way the real one does
+  /// for a being of the kind that has stated no identity.
+  ///
+  /// A double that can only answer is a double that hides an arm the real
+  /// floor has: identity resolution *refuses*, and a gate over a face that
+  /// never sees the refusal proves only the happy half.
+  bool refusesIdentity = false;
+
+  @override
+  Identity get identity {
+    if (refusesIdentity) {
+      throw const NoIdentity(
+        'a being of the kind states its own identity — set '
+        r'$BENTOS_CHAT_IDENTITY ("Name <email>" or a bare email)',
+      );
+    }
+    return identityDouble;
+  }
+
   @override
   Channel channel(
     String name, {
@@ -59,6 +78,9 @@ final class FakeFloor implements ChatFloor {
   }) {
     opened.add(name);
     vantages.add(place);
+    // The real floor resolves identity here too, so the refusal must reach a
+    // caller that never asked for [identity] by name.
+    identity ?? this.identity;
     actsDouble.channel = name;
     return channelConstruction(
       name: name,
