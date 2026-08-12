@@ -21,7 +21,8 @@ String get chatSource =>
 
 void main() {
   late Directory plot;
-  late Directory stateHome;
+  late Directory alfredState;
+  late Directory cafeState;
   late String exe;
 
   setUpAll(() {
@@ -54,16 +55,25 @@ void main() {
     _run('entity', ['install', Directory(chatSource).absolute.path],
         at: plot.path);
     // Isolated per test, so this gate's cursor never touches a real $HOME and
-    // two tests never share one file.
-    stateHome = Directory.systemTemp.createTempSync('monitor-wait-state-');
+    // two tests never share one file. **One state dir per identity**, since
+    // `say` now advances its own speaker's persisted cursor too: two
+    // identities sharing one state file would have each one's `say`
+    // clobbering the other's read mark, which is not the real world — every
+    // participant runs from its own `$HOME`.
     // No repo-local git identity: that is the collision `identity.md` rules
     // out. Each process states its own voice through `$BENTOS_CHAT_IDENTITY`.
+    alfredState = Directory.systemTemp.createTempSync('monitor-wait-state-alfred-');
+    cafeState = Directory.systemTemp.createTempSync('monitor-wait-state-cafe-');
   });
 
   tearDown(() {
     plot.deleteSync(recursive: true);
-    stateHome.deleteSync(recursive: true);
+    alfredState.deleteSync(recursive: true);
+    cafeState.deleteSync(recursive: true);
   });
+
+  const alfred = 'Alfred <alfred@bentos.life>';
+  const cafe = 'Café <cafe01@gmail.com>';
 
   ProcessResult call(List<String> args, {String? asIdentity}) =>
       Process.runSync(
@@ -72,13 +82,11 @@ void main() {
         workingDirectory: plot.path,
         environment: {
           ...Platform.environment,
-          'XDG_STATE_HOME': stateHome.path,
+          'XDG_STATE_HOME':
+              asIdentity == cafe ? cafeState.path : alfredState.path,
           if (asIdentity != null) 'BENTOS_CHAT_IDENTITY': asIdentity,
         },
       );
-
-  const alfred = 'Alfred <alfred@bentos.life>';
-  const cafe = 'Café <cafe01@gmail.com>';
 
   test('a second process resumes where the first left off — the cursor '
       'survives the process ending, not merely a second call in memory',

@@ -353,7 +353,21 @@ final class _Say extends _ChatCommand {
   Future<void> run() async {
     final body = await textOrStdin();
     if (body.isEmpty) usageException('say: nothing to say');
-    face.report(await channel().say(body));
+    final result = await channel().say(body);
+    face.report(result);
+    // Speaking marks the speaker's own line read: whoever just wrote it has
+    // obviously read it, and advancing the persisted cursor here — the same
+    // one `monitor --wait` resumes from across processes — is what keeps that
+    // line from coming back quoted in a later batch. This does not touch
+    // `Channel`'s own in-process cursor, which stays `sync`'s alone; it only
+    // updates the CLI's separate, already-cross-process file.
+    if (result case Acted(:final commit)) {
+      if (commit.isNotEmpty) {
+        final cursors = MonitorCursors.load(file: face.monitorCursorFile);
+        cursors.cursors[coordinate.whole] = commit;
+        cursors.save(file: face.monitorCursorFile);
+      }
+    }
   }
 }
 

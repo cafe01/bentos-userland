@@ -150,29 +150,27 @@ void main() {
       expect(result.out, isEmpty);
     });
 
-    test('own speech that the wait skipped is still returned by a later '
-        'sync — the transcript is everyone\'s, only the waking excludes me',
+    test('speaking marks my own line read, so a later sync never quotes it '
+        'back — only someone else\'s speech survives to the next batch',
         () async {
       await seated();
       await run(['monitor', '--wait', '--timeout', '0.1']);
       await run(['say', 'heard by nobody\'s wait']);
 
-      // My own line did not open the window, so this expires and — per
-      // `_runWait`'s own rule — the persisted cursor does not advance on an
-      // expiry: my skipped speech is still ahead of it.
+      // Speaking already advanced the persisted cursor past my own line, so
+      // this expires exactly as before — nothing new landed for anyone else.
       final expired = await run(
         ['monitor', '--wait', '--timeout', '0.2', '--interval', '0.05'],
       );
       expect(expired.exitCode, 6);
 
-      // Someone else speaking wakes the next wait, and its batch still
-      // carries my own earlier line — nothing was dropped, only excluded
-      // from what woke the wait.
+      // Someone else speaking wakes the next wait, and its batch carries
+      // only that line — my own is already read and does not come back.
       speak('and this from someone else');
       final result = await run(
         ['monitor', '--wait', '--timeout', '5', '--interval', '0.05'],
       );
-      expect(result.out, contains('heard by nobody\'s wait'));
+      expect(result.out, isNot(contains('heard by nobody\'s wait')));
       expect(result.out, contains('and this from someone else'));
     });
   });
