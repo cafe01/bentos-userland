@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:bentos_userland/entity.dart';
 import 'package:bentos_userland/src/mem/attention.dart';
-import 'package:bentos_userland/src/mem/bank.dart';
 import 'package:bentos_userland/src/mem/page.dart';
 import 'package:bentos_userland/src/mem/walk.dart';
 import 'package:path/path.dart' as p;
@@ -196,7 +195,7 @@ void main() {
 
         // alfred.mem's own reachable set (a, b) completes before john.mem
         // (x, then its own child y) begins, even though x was named first.
-        expect(walked.pages.map((p) => '${p.topic}'), ['a', 'b', 'x', 'y']);
+        expect(walked.pages.map((p) => p.topic), ['a', 'b', 'x', 'y']);
       });
     });
 
