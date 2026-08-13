@@ -591,19 +591,23 @@ class _ChatAppState extends State<ChatApp> {
   }
 
   Future<void> _onKey(KeyboardEvent event) async {
-    final press = _translate(event);
-    if (press == null) return;
-    final effect = await component.program.handleKeyPress(press);
-    if (effect.quit) {
-      shutdownApp();
-      return;
+    // One event can be several presses: see [_translate]. Applied in order,
+    // each awaited, since a submit in the middle of a block must reach the
+    // channel before the line after it is typed.
+    for (final press in _translate(event)) {
+      final effect = await component.program.handleKeyPress(press);
+      if (effect.quit) {
+        shutdownApp();
+        return;
+      }
+      final scroll = effect.scroll;
+      if (scroll != null) {
+        _scroll(
+          _controllerFor(component.program.session.currentRoom.coordinate),
+          scroll,
+        );
+      }
     }
-    final scroll = effect.scroll;
-    if (scroll != null)
-      _scroll(
-        _controllerFor(component.program.session.currentRoom.coordinate),
-        scroll,
-      );
     if (mounted) setState(() {});
   }
 
@@ -660,16 +664,17 @@ class _ChatAppState extends State<ChatApp> {
   }
 }
 
-/// A raw keyboard event, in this program's own vocabulary — null for
-/// anything neither typed nor bound to a gesture the client acts on.
-KeyPress? _translate(KeyboardEvent event) {
+/// A raw keyboard event, in this program's own vocabulary — empty for
+/// anything neither typed nor bound to a gesture the client acts on, and more
+/// than one press for a block that carries newlines. See [_splitBlock].
+List<KeyPress> _translate(KeyboardEvent event) {
   if (event.isAltPressed) {
     final c = event.character;
     final digit = c == null ? null : int.tryParse(c);
     if (digit != null && digit >= 1 && digit <= 9) {
-      return KeyPress(Key.roomByIndex, index: digit - 1);
+      return [KeyPress(Key.roomByIndex, index: digit - 1)];
     }
-    return null;
+    return const [];
   }
 
   // A bracketed paste — and, on terminals with no bracketing, several
@@ -680,13 +685,13 @@ KeyPress? _translate(KeyboardEvent event) {
   // Ctrl+R shows the roster whole — R5.8. Nothing in this composer does a
   // reverse search, so there is no collision to arbitrate.
   if (event.isControlPressed && event.logicalKey == LogicalKey.keyR) {
-    return const KeyPress(Key.toggleRoster);
+    return const [KeyPress(Key.toggleRoster)];
   }
 
   if (event.isControlPressed && event.logicalKey == LogicalKey.keyV) {
     final text = ClipboardManager.paste();
-    if (text == null || text.isEmpty) return null;
-    return KeyPress(Key.paste, char: text);
+    if (text == null || text.isEmpty) return const [];
+    return _splitBlock(text);
   }
 
   final named = switch (event.logicalKey) {
@@ -704,11 +709,60 @@ KeyPress? _translate(KeyboardEvent event) {
     LogicalKey.end => const KeyPress(Key.end),
     _ => null,
   };
-  if (named != null) return named;
+  if (named != null) return [named];
 
   if (!event.isControlPressed && event.character != null) {
-    return KeyPress(Key.char, char: event.character);
+    return [KeyPress(Key.char, char: event.character)];
   }
 
-  return null;
+  return const [];
+}
+
+/// A newline inside an arriving block **is** an Enter, and the block splits
+/// into a line typed, a line sent, a line typed.
+///
+/// ## Why this exists — the upstream cause
+///
+/// This is a workaround for a defect in `nocterm` (Norbert515/nocterm, 0.8.0),
+/// which is not ours. Two of its facts meet:
+///
+///  1. `input_parser.dart` gives Enter `character: '\n'` and no modifiers.
+///  2. `terminal_binding.dart`'s **`_batchCharacterEvents`** calls any event
+///     with a character and no ctrl/alt/meta *printable*, and folds a run of
+///     printables into one synthetic paste.
+///
+/// So whenever Enter lands in the same stdin read as any other event, the
+/// binding swallows it into a paste and the client never sees a `LogicalKey.
+/// enter` at all. A real terminal coalesces reads constantly — the screen
+/// redraws on every keystroke, and bytes typed during that redraw are read
+/// together with the CR behind them. The symptom is that a person types a
+/// line, presses Enter, and nothing is sent.
+///
+/// **When `_batchCharacterEvents` stops classifying Enter as printable, this
+/// function and the list return of [_translate] can go.** Delete them, and
+/// keep the file's byte-level test — it is what would notice a regression.
+///
+/// ## Why splitting is also simply right
+///
+/// The cure costs nothing it should not, because [Composer] is single-line by
+/// construction: one flat run of grapheme clusters, one cursor, no notion of a
+/// row, rendered on one screen line. It cannot hold a multi-line value, so a
+/// newline stored in it was never text a reader could edit or see — it was an
+/// unrepresentable value being kept. Splitting is what a person pasting three
+/// lines into a one-line composer expects anyway: the same three utterances
+/// they would have got by typing them.
+List<KeyPress> _splitBlock(String text) {
+  // A terminal may deliver a paste with CR, CRLF or LF line endings; the
+  // batched-Enter path above always arrives as LF. All three mean the same.
+  final normalized = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+  final lines = normalized.split('\n');
+
+  final presses = <KeyPress>[];
+  for (var i = 0; i < lines.length; i++) {
+    if (lines[i].isNotEmpty) presses.add(KeyPress(Key.paste, char: lines[i]));
+    // Every separator between lines is one Enter; a trailing newline is a
+    // separator too, which is what sends the last line.
+    if (i < lines.length - 1) presses.add(const KeyPress(Key.enter));
+  }
+  return presses;
 }

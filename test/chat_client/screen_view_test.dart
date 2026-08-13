@@ -345,8 +345,16 @@ void main() {
         });
       });
 
-      test('an embedded newline is text, never a submit', () async {
-        await testNocterm('paste with newline does not submit', (tester) async {
+      // Inverted deliberately. This test used to assert that an embedded
+      // newline stays in the composer as text — which the composer cannot
+      // represent, being single-line, and which is also indistinguishable
+      // from a person typing a line and pressing Enter: nocterm's
+      // `_batchCharacterEvents` sends both down this one door. See
+      // `_splitBlock` in `render/screen_view.dart`.
+      test('an embedded newline is an Enter — each line is spoken', () async {
+        await testNocterm('paste with newline submits each line', (
+          tester,
+        ) async {
           final channel = FakeChannel(name: 'fabrica', me: _alfred);
           final program = ChatProgram(
             channels: [channel],
@@ -365,11 +373,8 @@ void main() {
             ),
           );
 
-          expect(
-            program.session.currentRoom.composer.text,
-            'first line\nsecond line',
-          );
-          expect(channel.spoken.isEmpty, isTrue);
+          expect(channel.spoken, ['first line']);
+          expect(program.session.currentRoom.composer.text, 'second line');
         });
       });
     },

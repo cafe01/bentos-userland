@@ -33,10 +33,12 @@ final class KeyPress {
 
   final Key key;
 
-  /// The typed character, for [Key.char]; the whole block, for [Key.paste] —
+  /// The typed character, for [Key.char]; one whole line, for [Key.paste] —
   /// nocterm hands a paste over as one event, so it lands in the composer as
-  /// one insert rather than one keystroke per character. A newline inside it
-  /// is text, never a submit.
+  /// one insert rather than one keystroke per character. Never carries a
+  /// newline: the render adapter splits an arriving block on its line
+  /// endings, and each of them reaches here as [Key.enter], since the composer
+  /// is single-line and a newline in it could only ever have been a submit.
   final String? char;
 
   /// The zero-based room index, for [Key.roomByIndex].

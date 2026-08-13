@@ -31,17 +31,20 @@ void main() {
     });
 
     test(
-      'a paste inserts the whole block in one move, embedded newline included as text',
+      'a paste inserts the whole block in one move, never one key at a time',
       () {
         final session = _session();
         session.currentRoom.composer.insert('before ');
 
+        // One line, because the render adapter splits a block on its line
+        // endings before this layer sees it — a [Key.paste] never carries a
+        // newline. See `_splitBlock` in `render/screen_view.dart`.
         final effect = input.handle(
-          const KeyPress(Key.paste, char: 'line one\nline two'),
+          const KeyPress(Key.paste, char: 'line one'),
           session,
         );
 
-        expect(session.currentRoom.composer.text, 'before line one\nline two');
+        expect(session.currentRoom.composer.text, 'before line one');
         expect(effect.intent, isNull);
       },
     );
