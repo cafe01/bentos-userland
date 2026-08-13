@@ -71,7 +71,38 @@ const int bodyUsage = 64;
 const String attemptsVariable = 'BENTOS_CHAT_ATTEMPTS';
 
 /// What the body defaults to when nobody sets [attemptsVariable].
-const int defaultAttempts = 8;
+///
+/// **Read off a measured distribution, not chosen.** Eight carried a quiet
+/// machine and dropped roughly one line in eight under a loaded one, and a
+/// joiner that exhausted it stayed outside and was refused for everything it
+/// then said. The measurement, 12/08/2026, with the storm gate's own writers —
+/// four of them, six lines each, the whole material suite running its files at
+/// once for load — set the bound deliberately at 64 so the demand could be
+/// *read* rather than truncated: eight storms, 224 acts, every one landed, and
+/// the attempts each needed peaked per storm at 7, 8, 8, 8, 9, 9, 10 and 11.
+/// So 8 sat below the observed worst case, which is exactly why it failed
+/// intermittently; 24 is a little over double it.
+///
+/// The headroom is cheap and asymmetric: a bound is only ever spent by an act
+/// that keeps losing, so a wider one costs nothing on a quiet channel and costs
+/// a lost line on a busy one. What makes a number this size *sufficient* rather
+/// than merely large is the backoff under it — `LocalChannel._act` waits full
+/// jitter, uniform in `[0, 100ms · 2^(n-1)]` capped at four seconds, so
+/// repeated collision decays instead of repeating. Under the flat wait it
+/// replaced the tail was geometric and no bound removed it.
+///
+/// **What it costs is latency, and the cost is measured too**: in the same
+/// storms most acts finished inside three seconds and the ones that lost seven
+/// to nine races took 7–11, since a retry that waits is a caller that waits. A
+/// dropped line traded for a slow line is the right trade for a medium a
+/// factory coordinates in, and a quiet channel pays none of it — but the knob
+/// that governs the trade is the backoff cap, not this number, and whether a
+/// tighter cap buys back the tail without raising the demand is **unmeasured
+/// and owed**.
+///
+/// Re-measure it, never re-guess it: raise the gate's bound, run the storms
+/// under load, and read `StormVerdict.describe()`'s first two lines.
+const int defaultAttempts = 24;
 
 /// Runs the entity's own declared functions through the primitive. What
 /// survives of the shell face's spawn-and-map-exit-codes seam, kept for

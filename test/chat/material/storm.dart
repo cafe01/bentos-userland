@@ -288,6 +288,7 @@ final class StormVerdict {
     required this.residue,
     required this.rosterAbsent,
     required this.contendedActs,
+    required this.attemptsNeeded,
     required this.overlaps,
     required this.writers,
   });
@@ -328,6 +329,38 @@ final class StormVerdict {
   /// Acts that saw the reference move under them at least once.
   final int contendedActs;
 
+  /// **How many attempts each act actually needed** — every act of every
+  /// writer, in no order, one entry each. The colour says whether the shipped
+  /// bound held; this says by how much, and it is the only reading a bound can
+  /// honestly be chosen from. An act that stumbled contributes the bound it
+  /// reached, which is a floor on its demand and not its demand.
+  final List<int> attemptsNeeded;
+
+  /// [attemptsNeeded] as a histogram, attempts → acts.
+  Map<int, int> get attemptHistogram {
+    final counts = <int, int>{};
+    for (final n in attemptsNeeded) {
+      counts[n] = (counts[n] ?? 0) + 1;
+    }
+    return Map.fromEntries(
+      counts.entries.toList()..sort((a, b) => a.key.compareTo(b.key)),
+    );
+  }
+
+  /// The worst demand observed. Zero when nothing acted.
+  int get worstAttempts =>
+      attemptsNeeded.isEmpty ? 0 : attemptsNeeded.reduce((a, b) => a > b ? a : b);
+
+  /// **What an act cost in wall clock**, worst first. The attempt count says
+  /// whether the bound holds; this says what holding it feels like to whoever
+  /// is waiting — a retry that waits is latency, and a bound chosen without
+  /// reading it buys reliability with a delay nobody measured.
+  List<Duration> get actDurations => [
+        for (final report in reports)
+          for (final act in [report.join, ...report.lines])
+            act.endedAt.difference(act.startedAt),
+      ]..sort((a, b) => b.compareTo(a));
+
   /// Pairs of writers whose speaking intervals intersect.
   final List<String> overlaps;
 
@@ -358,8 +391,18 @@ final class StormVerdict {
   /// Printed by every run, green or red. A run that did not race says so here
   /// in the same breath as its results, because the two together are the whole
   /// of what happened.
+  ///
+  /// **The distribution comes first, before any count of what went wrong.** A
+  /// bound is a claim about a distribution, so a gate that reports only the
+  /// colour hides the measure that makes the colour worth anything — and the
+  /// number a future reader must set the bound from is exactly this line.
   String describe() {
     final b = StringBuffer()
+      ..writeln('  attempts needed: '
+          '${attemptHistogram.entries.map((e) => '${e.key}×${e.value}').join('  ')}'
+          '   worst=$worstAttempts of ${attemptsNeeded.length} act(s)')
+      ..writeln('  slowest acts (ms): '
+          '${actDurations.take(5).map((d) => d.inMilliseconds).join(', ')}')
       ..writeln('storm: ${writers.length} writers, '
           '${landed.length} lines claimed landed, '
           '${transcriptKeys.length} in the transcript')
@@ -398,12 +441,14 @@ Future<StormVerdict> judge({
   final refused = <String>[];
   final threw = <String>[];
   final faults = <String>[];
+  final attemptsNeeded = <int>[];
   var contendedActs = 0;
 
   for (final report in reports) {
     if (report.fault != null) faults.add('${report.writer}: ${report.fault}');
     for (final act in [report.join, ...report.lines]) {
       if (act.contested > 0) contendedActs++;
+      attemptsNeeded.add(act.attempts);
       // The join is an act like any other and contends like any other, but it
       // deposits no line: only speech is looked for in the transcript.
       final speech = act != report.join;
@@ -491,6 +536,7 @@ Future<StormVerdict> judge({
     residue: residue,
     rosterAbsent: rosterAbsent,
     contendedActs: contendedActs,
+    attemptsNeeded: attemptsNeeded,
     overlaps: overlaps,
     writers: [for (final report in reports) report.writer],
   );

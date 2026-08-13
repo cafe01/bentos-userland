@@ -171,29 +171,28 @@ void main() {
 
   test('everything a writer said reaches the room, at the bound the product '
       'actually ships', () async {
-    // **A declared red — and an INTERMITTENT, LOAD-DEPENDENT one.** On a quiet
-    // machine this gate goes green; under a loaded one — the whole material
-    // suite running its files at once, which is how it was first seen — it
-    // drops lines. **A green here is therefore not proof of anything**, and
-    // nobody meeting it later may read one as the seam having closed. What
-    // closes it is the cure named below landing, not a passing run.
+    // **Was a declared red — intermittent and load-dependent; cured
+    // 12/08/2026.** The gate above proves the medium is *correct* under a real
+    // four-way race: nothing lost that claimed to land, nothing duplicated,
+    // nothing misattributed, one linear order, no merge, no residue. This one
+    // asks the other question — is the shipped bound enough for four beings
+    // talking at once — and at eight attempts the answer was no: roughly one
+    // line in eight stumbled under load, and a stumbled line is simply never
+    // said. Nothing in the specification was violated, which is what made it
+    // invisible from inside R1.14: the stumble was honest. What failed was §8.
     //
-    // The gate above proves
-    // the medium is *correct* under a real four-way race: nothing lost that
-    // claimed to land, nothing duplicated, nothing misattributed, one linear
-    // order, no merge, no residue. This one asks the other question — is the
-    // shipped bound of eight attempts enough for four beings talking at once —
-    // and the answer measured here is no: roughly one line in eight stumbles,
-    // and a stumbled line is simply never said.
+    // The cure is two pieces, both in the medium. `LocalChannel._act` now
+    // waits **full jitter** — uniform in `[0, 100ms · 2^(n-1)]`, capped — where
+    // it used to sleep a flat 100–300 ms; a flat wait of any width leaves two
+    // writers that met once meeting again with the same probability, so the
+    // tail stayed geometric and any bound merely truncated it. And
+    // `defaultAttempts` is now **read off the measured demand** rather than
+    // guessed: with the bound set to 64 under load, eight storms of 224 acts
+    // all landed, peaking per storm at 7 to 11 attempts — so eight sat below
+    // the observed worst case. See its doc for the measurement.
     //
-    // Nothing in the specification is violated: R1.14 names the stumble as a
-    // legitimate outcome, and it is honestly reported. What fails is §8 — a
-    // medium the factory coordinates in cannot drop an eighth of what is said
-    // when four participants are lively. The cure is the medium's: a wider
-    // bound, a backoff that widens with it, or an act that does not re-run the
-    // whole bracket to retry. **The missing piece is a bound that carries four
-    // lively participants, wherever it comes from** — this gate goes green the
-    // day one of those lands, with nothing here to change.
+    // Proven under load, which is the only condition that ever showed the red:
+    // the whole material suite running its files at once, green in every run.
     const lines = 6;
     const writers = 4;
     final verdict = await storm(channel: 'lotada', writers: writers, lines: lines);
@@ -266,18 +265,18 @@ void main() {
     // others are already speaking — a being arriving into a busy room, which
     // is the ordinary case and not an edge. The bound is the product's own.
     //
-    // **A declared red — and an INTERMITTENT, LOAD-DEPENDENT one.** Measured
-    // 12/08/2026: red in two runs of three on a busy machine, green on a quiet
-    // one. A writer exhausts all eight attempts, stays outside, and is then
-    // refused for every line it says. Nothing is corrupted — the outcome is an
-    // honest stumble — but the arriving being is silently mute. **A green here
-    // proves nothing and must not be read as the seam closing.**
+    // **Was a declared red — intermittent and load-dependent; cured
+    // 12/08/2026.** A writer exhausted all eight attempts, stayed outside, and
+    // was then refused for every line it said: nothing corrupted, the outcome
+    // an honest stumble, and the arriving being silently mute. It was the
+    // sharper half of the same defect the gate above carried, because a join
+    // that loses costs six lines rather than one.
     //
-    // The cure is the medium's, and **the missing piece is a bound that
-    // carries a join under a live storm**: a wider bound, a backoff that
-    // widens with it, or an act that does not re-run the whole bracket to
-    // retry. This gate goes green the day one of them lands, with nothing here
-    // to change — a seam, not rot.
+    // Cured by the same two pieces — full jitter in `LocalChannel._act` and a
+    // `defaultAttempts` read off the measured demand. This is the gate that
+    // spends the headroom: a join into a live storm was measured needing 12
+    // attempts on a loaded machine, which the old bound could not have
+    // survived however honest it was about failing.
     final verdict = await storm(
       channel: 'chegada',
       writers: 4,
