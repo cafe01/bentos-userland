@@ -932,15 +932,28 @@ final class _Monitor extends _ChatCommand {
     }
 
     final events = await channel.sync();
-    final at = channel.cursor;
-    if (at != null) {
-      face.recordDrained(coordinate: key, participant: me, cursor: at);
-    }
 
+    // **Printed first, marked after — and only over what was printed.** This
+    // used to record before the loop below, so under `--mention` a line the
+    // predicate withheld was marked read by the very call that refused to show
+    // it: the speech was gone, silently, and the participant it was said to
+    // had no way to know it had ever existed. `--wait` wakes on the mention and
+    // then syncs the whole stream, so everything unmentioning in that batch was
+    // exactly the loss. Same rule as the drain, same rule as `say`: a mark is a
+    // claim that something was delivered, and it is only ever made about what
+    // was.
+    var withheld = false;
     for (final event in batch(events)) {
       if (scanner == null || _mentioned(event, scanner)) {
         face.out.writeln(eventLine(event));
+      } else {
+        withheld = true;
       }
+    }
+
+    final at = channel.cursor;
+    if (at != null && !withheld) {
+      face.recordDrained(coordinate: key, participant: me, cursor: at);
     }
   }
 

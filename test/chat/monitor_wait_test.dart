@@ -279,6 +279,28 @@ void main() {
       expect(result.out, contains('@alfred status?'));
     });
 
+    test('a line the predicate withheld survives the wait that never printed it',
+        () async {
+      await seated();
+      speak('just chatting');
+      speak('@alfred status?');
+
+      final woken = await run(
+        ['monitor', '--wait', '--mention', '--timeout', '5', '--interval', '0.05'],
+      );
+      final everything = await run(
+        ['monitor', '--once'],
+      );
+
+      // The mention woke the wait and the whole stream came back from `sync`,
+      // so the unmentioning line was in the batch and off stdout. Marking it
+      // read there is speech destroyed by the call that refused to show it —
+      // Café's ruling exactly: the mark covers what was printed, nothing more.
+      expect(woken.out, contains('@alfred status?'));
+      expect(woken.out, isNot(contains('just chatting')));
+      expect(everything.out, contains('just chatting'));
+    });
+
     test('mentioning myself in my own message does not wake me either',
         () async {
       await seated();
