@@ -553,21 +553,32 @@ class _Hint extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    return RichText(
-      // Clipped like every other row: a narrow terminal trims the hint
-      // rather than running it past the frame.
-      overflow: TextOverflow.clip,
-      text: TextSpan(
-        children: [
-          // The caret keeps the composer's own first cell. The hint sits
-          // after it and never moves it.
-          TextSpan(
-            text: ' ',
-            style: active ? const TextStyle(reverse: true) : null,
+    // Cut to the room actually available, rather than left to the
+    // framework's clip: measured at 30 columns, an overflowing line keeps
+    // its *tail* and loses its head — which drops the caret and starts the
+    // hint mid-sentence. The caret's cell is reserved first, and what is
+    // left is what the hint may spend.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final room = constraints.maxWidth.toInt() - 1;
+        final shown = room <= 0
+            ? ''
+            : text.characters.take(room).toString();
+        return RichText(
+          overflow: TextOverflow.clip,
+          text: TextSpan(
+            children: [
+              // The caret keeps the composer's own first cell. The hint
+              // sits after it and never moves it.
+              TextSpan(
+                text: ' ',
+                style: active ? const TextStyle(reverse: true) : null,
+              ),
+              TextSpan(text: shown, style: _styleOf(context, Role.secondary)),
+            ],
           ),
-          TextSpan(text: text, style: _styleOf(context, Role.secondary)),
-        ],
-      ),
+        );
+      },
     );
   }
 }

@@ -1045,6 +1045,9 @@ void main() {
         // is not, and the frame still owns the last column.
         expect(row, contains('/help'));
         expect(row, isNot(contains('Ctrl+C')));
+        // The head is what survives, and the caret survives with it: the
+        // framework's own clip keeps the tail instead, which drops both.
+        expect(row, contains('> '));
         expect(row.length, width);
         expect(row[width - 1], '│');
       }, size: const Size(30, 12));
