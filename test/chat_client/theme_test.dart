@@ -14,8 +14,8 @@ void main() {
   group('a line carries its role', () {
     final at = DateTime.utc(2026, 8, 12, 14, 2);
 
-    test('speech is primary', () {
-      expect(roleOfLine(SpokenLine(_message(at))), Role.primary);
+    test('speech is body', () {
+      expect(roleOfLine(SpokenLine(_message(at))), Role.body);
     });
 
     test('a topic change is secondary', () {
@@ -27,14 +27,14 @@ void main() {
       );
     });
 
-    test('a notice is secondary and a warning is not', () {
+    test('a notice is secondary and a warning is a failure', () {
       expect(
         roleOfLine(SystemLine('you joined', at, kind: SystemLineKind.notice)),
         Role.secondary,
       );
       expect(
         roleOfLine(SystemLine('unknown command: /frobnicate', at)),
-        Role.warning,
+        Role.failure,
       );
     });
 
@@ -61,10 +61,10 @@ void main() {
       );
     });
 
-    test('the current room is primary and any other is secondary', () {
+    test('the current room is body and any other is secondary', () {
       expect(
         roleOfTab(_tab(level: ActivityLevel.none, isCurrent: true)),
-        Role.primary,
+        Role.body,
       );
       expect(
         roleOfTab(_tab(level: ActivityLevel.speech, isCurrent: false)),
@@ -77,10 +77,10 @@ void main() {
     // The adapter's colour table is exhaustive over exactly these. A member
     // added without a colour beside it is the failure this pins.
     expect(Role.values, [
-      Role.primary,
+      Role.body,
       Role.secondary,
       Role.highlight,
-      Role.warning,
+      Role.failure,
       Role.chrome,
     ]);
   });

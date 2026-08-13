@@ -14,9 +14,8 @@ import 'transcript.dart';
 /// The closed set. Adding a member obliges the adapter's table, which is
 /// exhaustive over this enum and does not compile until it is fed.
 enum Role {
-  /// Spoken text, the current room, the current tab — the terminal's own
-  /// foreground, the one colour that cannot be wrong.
-  primary,
+  /// Spoken text, the current room, the current tab.
+  body,
 
   /// Timestamps, away reasons, the topic line, a tab that is not current.
   secondary,
@@ -24,8 +23,10 @@ enum Role {
   /// A mention. The loudest role, spent on one fact: look here.
   highlight,
 
-  /// Reconnecting, refused, stumbled, an unrecognized command.
-  warning,
+  /// Reconnecting, refused, stumbled, an unrecognized command. Named for
+  /// what it tags and not for a palette slot: `TuiThemeData` carries both a
+  /// `warning` slot and an `error` slot, and this role resolves to `error`.
+  failure,
 
   /// Frame and divider glyphs — never text, which is why it is the one role
   /// deliberately drawn below the contrast threshold text is held to.
@@ -39,10 +40,10 @@ enum Role {
 /// that the line's own type does not already give — telling *you joined*
 /// from *unknown command* without the adapter ever parsing the text.
 Role roleOfLine(TranscriptLine line) => switch (line) {
-  SpokenLine() => Role.primary,
+  SpokenLine() => Role.body,
   TopicLine() => Role.secondary,
   SystemLine(kind: SystemLineKind.notice) => Role.secondary,
-  SystemLine(kind: SystemLineKind.warning) => Role.warning,
+  SystemLine(kind: SystemLineKind.warning) => Role.failure,
 };
 
 /// The role of one slot in the room bar, read off what the tab already
@@ -53,5 +54,5 @@ Role roleOfLine(TranscriptLine line) => switch (line) {
 /// worth pointing at.
 Role roleOfTab(RoomTab tab) {
   if (tab.activityLevel == ActivityLevel.mention) return Role.highlight;
-  return tab.isCurrent ? Role.primary : Role.secondary;
+  return tab.isCurrent ? Role.body : Role.secondary;
 }

@@ -12,7 +12,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io' show Platform;
 
 import 'package:characters/characters.dart';
 import 'package:nocterm/nocterm.dart' hide Key;
@@ -35,119 +34,51 @@ const int _rosterWidthThreshold = 60;
 
 const int _rosterWidth = 14;
 
-/// Which of the two colour tables a terminal is painted for.
+/// The one place in the client a colour is named: [Role] to a slot of
+/// `nocterm`'s own [TuiThemeData], five lines and no exceptions.
 ///
-/// nocterm has no adaptive colour and cannot see the background: `Color`
-/// carries RGB and a terminal-default sentinel, and nothing anywhere probes
-/// what the terminal is painted on. Its own `Colors` constants are a
-/// dark-theme palette — `Colors.grey` scores 2.87:1 on white — so R5.6 is
-/// discharged by two tuned tables against a *stated* background rather than
-/// by one set of hues surviving both.
-enum TerminalBackground { light, dark }
-
-/// The one table from [Role] to colour, and the only place in the client a
-/// colour is named.
+/// Which theme is in force is nobody's decision here — [NoctermApp] detects
+/// the terminal's real background (OSC 11, then `COLORFGBG`, then macOS
+/// appearance, then dark) and publishes the matching [TuiThemeData] through
+/// [TuiTheme]. There is no second answer to override, which is what R5.7
+/// asks for.
 ///
-/// **`primary` is the terminal's own foreground in both tables** — the one
-/// colour that cannot be wrong, and the one the person already chose.
-/// **`chrome` is deliberately below the threshold text is held to**, since
-/// it paints frame glyphs and never a word: a border that competes with
-/// speech is drawn too loud. Violet and red are different hue families on
-/// purpose — *you were mentioned* and *the doorbell died* are facts of
-/// different kinds, and R5.7 forbids them reading alike.
+/// `highlight` takes the accent slot because it is the palette's loudest;
+/// `chrome` takes the slot named for borders and dividers. `failure` takes
+/// `error` and not `warning`: the yellow `warning` slot scores 2.64:1 on the
+/// light background, which is the failure the old hand-tuned tables had.
 ///
-/// Contrast, computed against white and against `#18181C`:
+/// WCAG contrast against each theme's own background — `#18181C` dark,
+/// `#FAFAFA` light — those numbers being real rather than assumed, since
+/// [NoctermApp] paints that background itself:
 ///
-/// | role | light | dark |
+/// | role | dark | light |
 /// |---|---|---|
-/// | secondary | 6.05 | 6.18 |
-/// | highlight | 5.70 | 6.68 |
-/// | warning | 6.57 | 7.90 |
-/// | chrome | 2.87 | 2.93 |
-const Map<Role, Color> _lightTable = {
-  Role.primary: Color.defaultColor,
-  Role.secondary: Color(0x5C6370),
-  Role.highlight: Color(0x7C3AED),
-  Role.warning: Color(0xB02A20),
-  Role.chrome: Color(0x9299A6),
+/// | body | 11.94 | 10.47 |
+/// | secondary | 6.97 | 4.63 |
+/// | highlight | 8.31 | 4.31 |
+/// | failure | 5.35 | 5.17 |
+/// | chrome | 6.18 | 4.71 |
+Color _colorOf(TuiThemeData theme, Role role) => switch (role) {
+  Role.body => theme.onBackground,
+  Role.secondary => theme.secondary,
+  Role.highlight => theme.primary,
+  Role.failure => theme.error,
+  Role.chrome => theme.outline,
 };
-
-const Map<Role, Color> _darkTable = {
-  Role.primary: Color.defaultColor,
-  Role.secondary: Color(0x9299A6),
-  Role.highlight: Color(0xBB86FC),
-  Role.warning: Color(0xFF8B94),
-  Role.chrome: Color(0x5C6370),
-};
-
-/// Which table this terminal reads, from the environment alone.
-///
-/// `BENTOS_CHAT_THEME` is the person's own word and outranks everything.
-/// `COLORFGBG` is a convention several terminals set and many do not —
-/// Ghostty does not — so it is a free improvement where present and never a
-/// mechanism to rely on; its background is the field after the last `;`,
-/// and ANSI 0–6 and 8 are dark. Dark is the default because an unset
-/// terminal is far more often dark. **The cost is accepted and stated**: a
-/// person on a light terminal who declares nothing reads the dark table
-/// silently, at 2.24:1 for a warning, with an environment variable to reach
-/// for.
-TerminalBackground resolveBackground(Map<String, String> environment) {
-  final declared = environment['BENTOS_CHAT_THEME']?.trim().toLowerCase();
-  if (declared == 'light') return TerminalBackground.light;
-  if (declared == 'dark') return TerminalBackground.dark;
-
-  final fgbg = environment['COLORFGBG'];
-  if (fgbg != null && fgbg.contains(';')) {
-    final background = int.tryParse(fgbg.split(';').last.trim());
-    if (background != null) {
-      final dark = background <= 6 || background == 8;
-      return dark ? TerminalBackground.dark : TerminalBackground.light;
-    }
-  }
-
-  return TerminalBackground.dark;
-}
-
-/// The palette in force for the subtree — an inherited value so that no
-/// component below carries it through a constructor, and so the suite can
-/// paint the same screen against either background.
-class Palette extends InheritedComponent {
-  const Palette({super.key, required this.background, required super.child});
-
-  final TerminalBackground background;
-
-  Color color(Role role) => switch (background) {
-    TerminalBackground.light => _lightTable[role]!,
-    TerminalBackground.dark => _darkTable[role]!,
-  };
-
-  static Palette of(BuildContext context) =>
-      context.dependOnInheritedComponentOfExactType<Palette>() ??
-      const Palette(background: TerminalBackground.dark, child: SizedBox());
-
-  @override
-  bool updateShouldNotify(Palette oldComponent) =>
-      background != oldComponent.background;
-}
 
 /// A [TextStyle] carrying one role's colour, and nothing chosen at a call
 /// site — [FontWeight] stays a separate decision, since weight says
 /// *current* and colour says *what kind of thing this is*.
 TextStyle _styleOf(BuildContext context, Role role, {FontWeight? weight}) =>
-    TextStyle(color: Palette.of(context).color(role), fontWeight: weight);
+    TextStyle(color: _colorOf(TuiTheme.of(context), role), fontWeight: weight);
 
 class ChatScreenView extends StatelessComponent {
-  ChatScreenView({
+  const ChatScreenView({
     super.key,
     required this.model,
     required this.scrollController,
-    TerminalBackground? background,
-  }) : background = background ?? resolveBackground(Platform.environment);
-
-  /// Which colour table this screen paints with. Resolved from the
-  /// environment once, at the top, and never re-read below: a component
-  /// deciding this for itself is the second answer R5.7 forbids.
-  final TerminalBackground background;
+  });
 
   final ScreenModel model;
 
@@ -159,84 +90,75 @@ class ChatScreenView extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    return Palette(
-      background: background,
-      child: Builder(
-        builder: (context) => DecoratedBox(
-          // R5.5: one framing border around the whole program, so no region
-          // sits flush against the terminal's own edge on every side. Drawn
-          // by the framework from the constraints its child respects, never
-          // by hand arithmetic — which is what keeps it out of the overflow
-          // defect the transcript already carries a guard for.
-          decoration: BoxDecoration(
-            border: BoxBorder.all(
-              color: Palette.of(context).color(Role.chrome),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Header and bar stay flush against the frame: each is a
-              // single line that already carries its own visual weight, and
-              // a second cell there buys nothing.
-              _Header(model: model),
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    // The roster whole, in place of the transcript — R5.8.
-                    // Available at every width, never a second mechanism
-                    // gated on how narrow the terminal is.
-                    if (model.rosterOverlay) {
-                      return _Pad(
-                        child: _Roster(participants: model.participants),
-                      );
-                    }
+    return DecoratedBox(
+      // R5.5: one framing border around the whole program, so no region
+      // sits flush against the terminal's own edge on every side. Drawn
+      // by the framework from the constraints its child respects, never
+      // by hand arithmetic — which is what keeps it out of the overflow
+      // defect the transcript already carries a guard for.
+      decoration: BoxDecoration(
+        border: BoxBorder.all(
+          color: _colorOf(TuiTheme.of(context), Role.chrome),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header and bar stay flush against the frame: each is a
+          // single line that already carries its own visual weight, and
+          // a second cell there buys nothing.
+          _Header(model: model),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // The roster whole, in place of the transcript — R5.8.
+                // Available at every width, never a second mechanism
+                // gated on how narrow the terminal is.
+                if (model.rosterOverlay) {
+                  return _Pad(child: _Roster(participants: model.participants));
+                }
 
-                    final showRoster =
-                        constraints.maxWidth >= _rosterWidthThreshold;
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Expanded(
+                final showRoster =
+                    constraints.maxWidth >= _rosterWidthThreshold;
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: _Pad(
+                        child: _Transcript(
+                          model: model,
+                          controller: scrollController,
+                        ),
+                      ),
+                    ),
+                    if (showRoster) ...[
+                      VerticalDivider(
+                        color: _colorOf(TuiTheme.of(context), Role.chrome),
+                      ),
+                      SizedBox(
+                        width: _rosterWidth.toDouble(),
+                        // The roster's own clip, sized to its own
+                        // column: clipping text trims a line the layout
+                        // engine already produced, and does not stop a
+                        // row from being laid out taller or wider than
+                        // the column it sits in. A long display name is
+                        // exactly the shape that once broke the
+                        // transcript, one column over.
+                        child: ClipRect(
                           child: _Pad(
-                            child: _Transcript(
-                              model: model,
-                              controller: scrollController,
-                            ),
+                            child: _Roster(participants: model.participants),
                           ),
                         ),
-                        if (showRoster) ...[
-                          VerticalDivider(
-                            color: Palette.of(context).color(Role.chrome),
-                          ),
-                          SizedBox(
-                            width: _rosterWidth.toDouble(),
-                            // The roster's own clip, sized to its own
-                            // column: clipping text trims a line the layout
-                            // engine already produced, and does not stop a
-                            // row from being laid out taller or wider than
-                            // the column it sits in. A long display name is
-                            // exactly the shape that once broke the
-                            // transcript, one column over.
-                            child: ClipRect(
-                              child: _Pad(
-                                child: _Roster(
-                                  participants: model.participants,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    );
-                  },
-                ),
-              ),
-              _Bar(model: model),
-              _InputLine(model: model),
-            ],
+                      ),
+                    ],
+                  ],
+                );
+              },
+            ),
           ),
-        ),
+          _Bar(model: model),
+          _InputLine(model: model),
+        ],
       ),
     );
   }
@@ -268,7 +190,7 @@ class _Header extends StatelessComponent {
       children: [
         Text(
           model.coordinate,
-          style: _styleOf(context, Role.primary, weight: FontWeight.bold),
+          style: _styleOf(context, Role.body, weight: FontWeight.bold),
         ),
         if (topic != null) ...[
           const Text('  — '),
@@ -369,7 +291,7 @@ class _MoreBelowMarker extends StatelessComponent {
     return Text(
       '── more below ──',
       style: TextStyle(
-        color: Palette.of(context).color(Role.secondary),
+        color: _colorOf(TuiTheme.of(context), Role.secondary),
         reverse: true,
       ),
     );
@@ -426,7 +348,7 @@ class _Roster extends StatelessComponent {
       Text(
         '$dot ${p.handle.local}',
         overflow: TextOverflow.clip,
-        style: _styleOf(context, Role.primary),
+        style: _styleOf(context, Role.body),
       ),
     ];
     final reason = p.away;
@@ -464,14 +386,11 @@ class _Bar extends StatelessComponent {
         if (!model.dispatchConnected) ...[
           Text(
             '⚠ reconnecting',
-            style: _styleOf(context, Role.warning, weight: FontWeight.bold),
+            style: _styleOf(context, Role.failure, weight: FontWeight.bold),
           ),
           const Text('  '),
         ],
-        Text(
-          '${model.me} $dot$presence',
-          style: _styleOf(context, Role.primary),
-        ),
+        Text('${model.me} $dot$presence', style: _styleOf(context, Role.body)),
         const Text('  '),
         Text(_clock(model.now), style: _styleOf(context, Role.secondary)),
       ],
@@ -519,7 +438,7 @@ class _InputLine extends StatelessComponent {
           '> ',
           style: _styleOf(
             context,
-            Role.primary,
+            Role.body,
             weight: focused ? FontWeight.bold : null,
           ),
         ),
@@ -561,9 +480,7 @@ class _Hint extends StatelessComponent {
     return LayoutBuilder(
       builder: (context, constraints) {
         final room = constraints.maxWidth.toInt() - 1;
-        final shown = room <= 0
-            ? ''
-            : text.characters.take(room).toString();
+        final shown = room <= 0 ? '' : text.characters.take(room).toString();
         return RichText(
           overflow: TextOverflow.clip,
           text: TextSpan(
@@ -711,23 +628,32 @@ class _ChatAppState extends State<ChatApp> {
 
   @override
   Component build(BuildContext context) {
-    return Focusable(
-      focused: true,
-      onKeyEvent: (event) {
-        // Nocterm offers Ctrl+C to the tree first. Taken here rather than
-        // left to fall through, so a quit always goes through the same
-        // clean shutdown as `/quit`.
-        if (event.isControlPressed && event.logicalKey == LogicalKey.keyC) {
-          shutdownApp();
+    // No `theme` argument: left null, [NoctermApp] asks the terminal what it
+    // is painted on (OSC 11, then `COLORFGBG`, then macOS appearance, then
+    // dark) and publishes the answer through [TuiTheme] for [_colorOf] to
+    // read. Detection is asynchronous, so the first frames carry no theme at
+    // all and `TuiTheme.of` falls back to `TuiThemeData.dark` — which is
+    // also why a [ChatScreenView] built with no ancestor at all, as the
+    // suite builds it, paints in the dark theme rather than failing.
+    return NoctermApp(
+      child: Focusable(
+        focused: true,
+        onKeyEvent: (event) {
+          // Nocterm offers Ctrl+C to the tree first. Taken here rather than
+          // left to fall through, so a quit always goes through the same
+          // clean shutdown as `/quit`.
+          if (event.isControlPressed && event.logicalKey == LogicalKey.keyC) {
+            shutdownApp();
+            return true;
+          }
+          unawaited(_onKey(event));
           return true;
-        }
-        unawaited(_onKey(event));
-        return true;
-      },
-      child: ChatScreenView(
-        model: component.program.model,
-        scrollController: _controllerFor(
-          component.program.session.currentRoom.coordinate,
+        },
+        child: ChatScreenView(
+          model: component.program.model,
+          scrollController: _controllerFor(
+            component.program.session.currentRoom.coordinate,
+          ),
         ),
       ),
     );

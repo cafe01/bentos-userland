@@ -607,7 +607,6 @@ void main() {
           ChatScreenView(
             model: _model(),
             scrollController: AutoScrollController(),
-            background: TerminalBackground.dark,
           ),
         );
 
@@ -637,12 +636,11 @@ void main() {
           ChatScreenView(
             model: _model(),
             scrollController: AutoScrollController(),
-            background: TerminalBackground.dark,
           ),
         );
         final corner = tester.terminalState.getCellAt(0, 0)!;
         expect(corner.char, '┌');
-        expect(corner.style.color, const Color(0x5C6370));
+        expect(corner.style.color, TuiThemeData.dark.outline);
       });
     });
 
@@ -825,43 +823,12 @@ void main() {
     });
   });
 
-  group('which colour table — R5.6', () {
-    test('the person\'s own word outranks everything', () {
-      expect(
-        resolveBackground({'BENTOS_CHAT_THEME': 'light', 'COLORFGBG': '15;0'}),
-        TerminalBackground.light,
-      );
-      expect(
-        resolveBackground({'BENTOS_CHAT_THEME': 'DARK ', 'COLORFGBG': '0;15'}),
-        TerminalBackground.dark,
-      );
-    });
-
-    test('COLORFGBG is read where a terminal sets it', () {
-      expect(
-        resolveBackground({'COLORFGBG': '0;15'}),
-        TerminalBackground.light,
-      );
-      expect(resolveBackground({'COLORFGBG': '15;0'}), TerminalBackground.dark);
-      expect(
-        resolveBackground({'COLORFGBG': '15;default;0'}),
-        TerminalBackground.dark,
-      );
-    });
-
-    test('anything unstated or unparseable falls to dark, silently', () {
-      expect(resolveBackground({}), TerminalBackground.dark);
-      expect(resolveBackground({'COLORFGBG': ''}), TerminalBackground.dark);
-      expect(
-        resolveBackground({'COLORFGBG': '15;default'}),
-        TerminalBackground.dark,
-      );
-      expect(
-        resolveBackground({'BENTOS_CHAT_THEME': 'sepia'}),
-        TerminalBackground.dark,
-      );
-    });
-  });
+  // R5.6 — which background the screen is painted for — is no longer this
+  // client's question and so has no test here. `NoctermApp` asks the
+  // terminal itself (OSC 11, then `COLORFGBG`, then macOS appearance, then
+  // dark) and publishes the answer as a `TuiThemeData`; nothing in this
+  // package parses an environment variable, so there is nothing of ours to
+  // assert. What the screen does with the theme it is handed is R5.7 below.
 
   group('a role becomes a colour once — R5.7', () {
     /// The colour actually painted into the cell the text landed in — the
@@ -877,7 +844,6 @@ void main() {
         final at = DateTime(2026, 8, 7, 14, 5);
         await tester.pumpComponent(
           ChatScreenView(
-            background: TerminalBackground.dark,
             model: _model(
               topic: null,
               lines: [
@@ -893,12 +859,12 @@ void main() {
         final state = tester.terminalState;
         final spoken = colourOf(state, 'SPOKEN');
         final notice = colourOf(state, 'NOTICED');
-        final warning = colourOf(state, 'WARNED');
+        final failure = colourOf(state, 'WARNED');
 
-        expect(spoken.isDefault, isTrue, reason: 'primary is the terminal own');
-        expect(notice, isNot(warning));
-        expect(warning, const Color(0xFF8B94));
-        expect(notice, const Color(0x9299A6));
+        expect(spoken, TuiThemeData.dark.onBackground);
+        expect(notice, isNot(failure));
+        expect(failure, TuiThemeData.dark.error);
+        expect(notice, TuiThemeData.dark.secondary);
       });
     });
 
@@ -906,7 +872,6 @@ void main() {
       await testNocterm('roles — mentioned tab', (tester) async {
         await tester.pumpComponent(
           ChatScreenView(
-            background: TerminalBackground.dark,
             model: _model(
               tabs: const [
                 RoomTab(
@@ -930,27 +895,42 @@ void main() {
         );
 
         final state = tester.terminalState;
-        expect(colourOf(state, '[1:fabrica'), const Color(0xBB86FC));
-        expect(colourOf(state, '[2:design'), const Color(0x9299A6));
+        expect(colourOf(state, '[1:fabrica'), TuiThemeData.dark.primary);
+        expect(colourOf(state, '[2:design'), TuiThemeData.dark.secondary);
       });
     });
 
     test('the same screen paints differently on a light terminal', () async {
-      await testNocterm('roles — light table', (tester) async {
+      await testNocterm('roles — light theme', (tester) async {
         final at = DateTime(2026, 8, 7, 14, 5);
         await tester.pumpComponent(
-          ChatScreenView(
-            background: TerminalBackground.light,
-            model: _model(
-              topic: null,
-              lines: [SystemLine('WARNED', at, kind: SystemLineKind.warning)],
+          // The light theme handed down explicitly, which is what the
+          // detection would publish on a light terminal. Everywhere else in
+          // this suite the view is built with no [TuiTheme] ancestor and
+          // `TuiTheme.of` supplies `TuiThemeData.dark` — the same fallback
+          // the real program renders with until detection answers.
+          TuiTheme(
+            data: TuiThemeData.light,
+            child: ChatScreenView(
+              model: _model(
+                topic: null,
+                lines: [SystemLine('WARNED', at, kind: SystemLineKind.warning)],
+              ),
+              scrollController: AutoScrollController(),
             ),
-            scrollController: AutoScrollController(),
           ),
         );
-        // Not the dark table's warning: a colour chosen for one background
-        // and reused on the other is exactly what R5.6 refuses.
-        expect(colourOf(tester.terminalState, 'WARNED'), const Color(0xB02A20));
+        // Not the dark theme's failure colour: one role reads two ways on
+        // two backgrounds, which is the whole point of detecting one.
+        expect(
+          colourOf(tester.terminalState, 'WARNED'),
+          TuiThemeData.light.error,
+        );
+        expect(
+          TuiThemeData.light.error,
+          isNot(TuiThemeData.dark.error),
+          reason: 'the two themes must actually differ for this to prove any',
+        );
       });
     });
   });
@@ -967,7 +947,6 @@ void main() {
           ChatScreenView(
             model: _model(composingText: ''),
             scrollController: AutoScrollController(),
-            background: TerminalBackground.dark,
           ),
         );
         final row = composerRow(tester.terminalState);
@@ -982,14 +961,13 @@ void main() {
           ChatScreenView(
             model: _model(composingText: ''),
             scrollController: AutoScrollController(),
-            background: TerminalBackground.dark,
           ),
         );
         final state = tester.terminalState;
         final match = state.findText('/help').first;
         expect(
           state.getCellAt(match.x, match.y)!.style.color,
-          const Color(0x9299A6),
+          TuiThemeData.dark.secondary,
         );
       });
     });
@@ -1000,7 +978,6 @@ void main() {
           ChatScreenView(
             model: _model(composingText: 'a', composingCursor: 1),
             scrollController: AutoScrollController(),
-            background: TerminalBackground.dark,
           ),
         );
         final row = composerRow(tester.terminalState);
@@ -1015,7 +992,6 @@ void main() {
           ChatScreenView(
             model: _model(composingText: ''),
             scrollController: AutoScrollController(),
-            background: TerminalBackground.dark,
           ),
         );
         final state = tester.terminalState;
@@ -1029,28 +1005,30 @@ void main() {
       });
     });
 
-    test('a narrow terminal trims the hint rather than breaking the frame', () async {
-      await testNocterm('hint — narrow', (tester) async {
-        await tester.pumpComponent(
-          ChatScreenView(
-            model: _model(composingText: ''),
-            scrollController: AutoScrollController(),
-            background: TerminalBackground.dark,
-          ),
-        );
-        final state = tester.terminalState;
-        final width = state.size.width.toInt();
-        final row = composerRow(state);
-        // Trimmed, not wrapped and not overrun: the hint is there, its tail
-        // is not, and the frame still owns the last column.
-        expect(row, contains('/help'));
-        expect(row, isNot(contains('Ctrl+C')));
-        // The head is what survives, and the caret survives with it: the
-        // framework's own clip keeps the tail instead, which drops both.
-        expect(row, contains('> '));
-        expect(row.length, width);
-        expect(row[width - 1], '│');
-      }, size: const Size(30, 12));
-    });
+    test(
+      'a narrow terminal trims the hint rather than breaking the frame',
+      () async {
+        await testNocterm('hint — narrow', (tester) async {
+          await tester.pumpComponent(
+            ChatScreenView(
+              model: _model(composingText: ''),
+              scrollController: AutoScrollController(),
+            ),
+          );
+          final state = tester.terminalState;
+          final width = state.size.width.toInt();
+          final row = composerRow(state);
+          // Trimmed, not wrapped and not overrun: the hint is there, its tail
+          // is not, and the frame still owns the last column.
+          expect(row, contains('/help'));
+          expect(row, isNot(contains('Ctrl+C')));
+          // The head is what survives, and the caret survives with it: the
+          // framework's own clip keeps the tail instead, which drops both.
+          expect(row, contains('> '));
+          expect(row.length, width);
+          expect(row[width - 1], '│');
+        }, size: const Size(30, 12));
+      },
+    );
   });
 }
