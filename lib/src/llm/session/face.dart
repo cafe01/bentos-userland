@@ -345,15 +345,15 @@ abstract interface class SessionFace {
     Vantage vantage = const Vantage.here(),
   });
 
-  /// `rewind` — discard from a message on, without rewriting it.
-  ///
-  /// Owed by the floor: `user.revise` demands new text, and undoing is not
-  /// rewriting.
-  Future<Deposited> rewind(
-    Coordinate coord,
-    String message, {
-    Vantage vantage = const Vantage.here(),
-  });
+  // `rewind` stood here and is deleted, for the reason `result` was: it named
+  // *what* an edit did — discard from here on, without rewriting — where the
+  // entity only registers *that* the transcript changed. `user.revise` covers
+  // it entirely and means exactly that much; whether an application let someone
+  // drag a ruler up the history, drop everything under it and fire inference
+  // again is the application's ontology, and the entity neither knows nor
+  // should. The context window sent to inference is the whole transcript, so an
+  // application that wants a different one revises the transcript and says
+  // nothing about its motive.
 
   // ── tuning ─────────────────────────────────────────────────────────────
 

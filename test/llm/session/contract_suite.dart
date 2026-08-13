@@ -558,33 +558,11 @@ void runSessionContract(SessionConstruction construction) {
 
     setUp(() => floor = FakePrimitive()..commit(demo, pinned, realSessionTree()));
 
-    test('rewind refuses, naming the deposit that is missing', () async {
-      await expectLater(
-        () => faceOver().rewind(demo, 'llm/messages/0002-20260805T175310Z.json'),
-        throwsA(isA<OwedByFloor>().having(
-          (e) => e.owed,
-          'owed',
-          allOf(contains('bentos.llm'), contains('user.revise'),
-              contains('--drop')),
-        )),
-        reason: 'if this failed because rewind now works, bentos.llm shipped '
-            '`user.revise --from <message> --drop`: delete this claim and drop '
-            'the `owed` tag from the one below it',
-      );
-    });
-
-    test(
-      'rewind discards from a message on, without rewriting it',
-      () async {
-        floor.functions['user.revise'] = (_) => deposited(later.value);
-        final landed = await faceOver()
-            .rewind(demo, 'llm/messages/0002-20260805T175310Z.json');
-        expect(landed.sha.value, later.value);
-        final run = floor.callsTo('run').single;
-        expect(run.argument, contains('--drop'));
-      },
-      tags: 'owed',
-    );
+    // The two `rewind` claims are deleted with the member they tested. They
+    // demanded `user.revise --drop` of the floor, an argument shape invented
+    // here to carry application semantics the entity has no interest in: a
+    // revision means the transcript changed, and what an editor was trying to
+    // achieve is above this floor.
 
     // The two `result` claims are deleted, not retired. They asserted a debt
     // that was never owed: `user.result` is in no manifest, and the ontology

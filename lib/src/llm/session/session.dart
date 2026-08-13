@@ -313,18 +313,6 @@ final class Session implements SessionFace {
   }) =>
       _deposit(coord, 'user.revise', ['--system', text], vantage: vantage);
 
-  @override
-  Future<Deposited> rewind(
-    Coordinate coord,
-    String message, {
-    Vantage vantage = const Vantage.here(),
-  }) async =>
-      throw const OwedByFloor(
-        'rewind',
-        'bentos.llm: user.revise --from <message> --drop — undoing is not '
-            'rewriting, and revise demands new text',
-      );
-
   // ── tuning ───────────────────────────────────────────────────────────────
 
   @override
