@@ -55,10 +55,43 @@ final class Instance {
   ///
   /// Neither origin is privileged and no line is the true one: whether a fork
   /// is a variant, a retry or an alternative reading is the application's word.
+  ///
+  /// **The birth is a compare-and-swap**, at the same ref and through the same
+  /// verb every act lands by: [Git.updateRef] with no expectation, which is the
+  /// substrate's own way of saying *this ref must not exist*. It used to be
+  /// `git branch`, which reads and creates in one command that has no way to
+  /// report a lost race — the second writer through the gap got a raw
+  /// `cannot lock ref` thrown at it, out of a surface whose whole promise is
+  /// that concurrent agency is a value. What is deliberate here stays
+  /// deliberate: a name already taken raises [InstanceExists], because a caller
+  /// that typed `entity new` asked to *make* one and did not.
   Instance create({Commit? from}) {
-    ambientGit.branch(_gitDir, name: id, startPoint: from ?? entity.genesis);
+    if (!_birth(from: from)) throw InstanceExists(entity.name, id);
     return this;
   }
+
+  /// Births it if nobody has — **idempotent**, and the verb for a caller whose
+  /// need is *the instance exists* rather than *I made it*. Answers whether
+  /// this call was the one that birthed it.
+  ///
+  /// The distinction matters exactly where several actors arrive at once, which
+  /// is ordinary for anything an external will enters through: a channel that
+  /// four beings join at the same instant is born once, and the three that lost
+  /// find it born rather than broken. Losing that race and never having run it
+  /// are the same world, so they are the same answer.
+  bool ensureBorn({Commit? from}) => tip != null ? false : _birth(from: from);
+
+  /// The swap itself: the ref moves from nothing to [from], or somebody else
+  /// moved it first. No read precedes it — a read would only widen the gap the
+  /// swap exists to close.
+  bool _birth({Commit? from}) => ambientGit
+      .updateRef(
+        _gitDir,
+        ref: ref,
+        newCommit: from ?? entity.genesis,
+        expected: null,
+      )
+      .moved;
 
   /// The acts of this instance, newest first. Reading an instance's events in
   /// sequence *is* reading its log under another name, which is why an actor's
@@ -344,6 +377,26 @@ final class InstanceNotAtRemote implements Exception {
 
   @override
   String toString() => 'no such instance $instance at $remote';
+}
+
+/// [Instance.create] was asked to birth a name that is already an instance —
+/// either it was born long ago, or another actor birthed it in the instant
+/// between this caller deciding to and swapping the ref.
+///
+/// **Deliberate birth alone raises it.** A caller that merely needs the
+/// instance to exist asks [Instance.ensureBorn], for which losing that race is
+/// success. Retrying changes nothing here: the name is taken, and the ref this
+/// would have moved is somebody else's line now.
+final class InstanceExists implements Exception {
+  const InstanceExists(this.entity, this.instance);
+
+  final String entity;
+
+  /// The instance id the caller asked to birth.
+  final String instance;
+
+  @override
+  String toString() => '$entity:$instance already exists';
 }
 
 /// [Instance.run] was asked for a function [entity]'s manifest does not

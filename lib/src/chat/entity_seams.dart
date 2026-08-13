@@ -108,9 +108,15 @@ final class EntityActs implements ChatActs {
   @override
   bool get born => instance.tip != null;
 
+  /// **Guarded at the primitive**, not here: [Instance.ensureBorn] swaps the ref
+  /// from nothing under compare-and-swap, so four beings joining an unborn
+  /// channel at one instant birth it once and the three that lost the swap
+  /// simply find it born. Read-then-create in this file could only ever widen
+  /// the gap it was trying to close, and a birth race is a fact about every
+  /// entity an external will enters through — never about chat.
   @override
   void ensureBorn() {
-    if (!born) instance.create();
+    instance.ensureBorn();
   }
 
   @override

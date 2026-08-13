@@ -268,6 +268,17 @@ final class EntityRunner {
       // branch on is *I did not touch what is there*.
       err.writeln('entity: barred — $e');
       exitCode = barredCode;
+    } on InstanceExists catch (e) {
+      // The name is taken, and this coreutil declined to touch what stands
+      // there — the same reading as [EntityAlreadyInstalled] one level up.
+      // **Not [contestedCode]**: that number promises a script that re-reads
+      // and tries again will terminate, and here it never will. Before the
+      // birth became a compare-and-swap this arrived as git's own
+      // `cannot lock ref` under [io.ProcessException] and was graded not-found
+      // — the substrate's words for the caller's condition, and the wrong
+      // question answered.
+      err.writeln('entity: barred — $e');
+      exitCode = barredCode;
     } on WorktreeNotOurs catch (e) {
       // Refusal and not a fault: the caller named a directory this repository
       // does not hold, and the answer a script must be able to branch on is

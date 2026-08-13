@@ -78,6 +78,24 @@ void main() {
       expect(r.out, isEmpty);
     });
 
+    test('of a name already born is barred, and never a not-found', () async {
+      await cli.run(['new', 't.chat', 'c1']);
+
+      final r = await cli.run(['new', 't.chat', 'c1']);
+
+      // **Barred, not contested and not not-found.** Contested promises a
+      // script that re-reads the tip and tries again will terminate, and here
+      // it never will: the name is taken. Not-found is what this answered
+      // before the birth became a compare-and-swap, when git's own
+      // `cannot lock ref` arrived as a ProcessException and was graded by the
+      // catch-all — the substrate's words, for a condition the caller has no
+      // way to act on.
+      expect(r.code, EntityRunner.barredCode);
+      expect(r.err, contains('t.chat:c1 already exists'));
+      expect(r.err, isNot(contains('cannot lock ref')));
+      expect(r.out, isEmpty, reason: 'nothing was born, so nothing is printed');
+    });
+
     test('with no instance named, it is a usage fault', () async {
       final r = await cli.run(['new', 't.chat']);
 

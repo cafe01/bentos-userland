@@ -300,22 +300,24 @@ void main() {
   test('four writers join a channel that does not exist yet: joining is the '
       'one door in, and four beings walking through it at once is the '
       'ordinary way a new room comes to exist', () async {
-    // **A declared red, and a DETERMINISTIC one** — it fails on every run, on
-    // any machine, however quiet. The storm above found it on its first run:
-    // three of four writers died inside `Channel.join` with a raw git error —
-    // `fatal: cannot lock ref 'refs/heads/<channel>': reference already
-    // exists`. `join` births the channel through `ChatActs.ensureBorn`, which
-    // reads `born` and then creates: a plain create, outside the retry loop
-    // and with no compare-and-swap, so the second writer through the gap gets
-    // an exception where the surface promises one of four outcomes.
+    // **Was a declared red, and a deterministic one; cured 12/08/2026.** The
+    // storm found it on its first run: three of four writers died inside
+    // `Channel.join` with a raw git error — `fatal: a branch named
+    // '<channel>' already exists`. `join` births through
+    // `ChatActs.ensureBorn`, which read `born` and then created: a plain
+    // `git branch`, no compare-and-swap, so every writer through the gap got
+    // an exception out of a surface that promises one of four outcomes.
     //
-    // **The missing piece is a guarded birth**: `ensureBorn` reading and
-    // creating under one compare-and-swap, or a create that treats *already
-    // exists* as born rather than as a fault — `local_channel.dart` calls it
-    // outside `_act`'s loop, and `EntityActs.ensureBorn` is where the gap is.
-    // It goes green the day that lands, with nothing here to change. It is not
-    // repaired here: this gate holds the claim, and the cure belongs to
-    // whoever owns the medium — a seam, not rot.
+    // The cure is the guarded birth, and it landed **at the primitive**, where
+    // the fact lives: `Instance.ensureBorn` swaps the ref from nothing through
+    // `Git.updateRef(expected: null)` — the substrate's own *this must not
+    // exist* — so the losers of that swap find the instance born rather than
+    // broken. A birth race belongs to every entity an external will enters
+    // through, and never to chat.
+    //
+    // The falsifier, run once: put `git branch` back and this gate returns
+    // `threw: join/w2, join/w3 … already exists` with both absent from the
+    // roster.
     final verdict = await storm(
       channel: 'nascente',
       writers: 4,
