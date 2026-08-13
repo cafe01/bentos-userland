@@ -74,10 +74,10 @@ final class FakeFloor implements ChatFloor {
   @override
   Identity get identity {
     if (refusesIdentity) {
-      throw const NoIdentity(
-        'a being of the kind states its own identity — set '
-        r'$BENTOS_CHAT_IDENTITY ("Name <email>" or a bare email)',
-      );
+      // **The real sentence, not a paraphrase.** A double with a diagnostic of
+      // its own drifts from the one a caller actually reads, and the gate then
+      // proves a message nobody is ever shown.
+      throw const NoIdentity(statedIdentityForm);
     }
     return identityDouble;
   }
@@ -555,15 +555,22 @@ void main() {
       expect(floor.signed.single.displayName, 'Alfred');
     });
 
-    test('a bare address is an identity, exactly as the variable spells it',
-        () async {
+    test('a bare address is refused, and so is a bare name', () async {
       floor.refusesIdentity = true;
 
-      final result = await run(['--identity', 'peer@bentos.life', 'join']);
+      // The floor requires a name *and* an address. Accepting half and filling
+      // the rest is how an empty name reached a commit, and synthesizing an
+      // address from a name is how a plausible one would — a plausible name is
+      // what a forgery is made of.
+      final address = await run(['--identity', 'peer@bentos.life', 'join']);
+      expect(address.exitCode, 64);
+      expect(address.err, contains('Name <addr>'));
 
-      expect(result.exitCode, 0);
-      expect(floor.signed.single.handle.email, 'peer@bentos.life');
-      expect(floor.signed.single.displayName, isNull);
+      final named = await run(['--identity', 'Peer', 'join']);
+      expect(named.exitCode, 64);
+      expect(named.err, contains('Name <addr>'));
+
+      expect(floor.signed, isEmpty, reason: 'neither half alone signs anything');
     });
 
     test('without it, a floor that will not say who I am still refuses',
@@ -572,8 +579,12 @@ void main() {
 
       final result = await run(['join']);
 
-      expect(result.exitCode, 1);
-      expect(result.err, contains('states its own identity'));
+      // **64, and not 1.** A missing identity is not a channel that could not
+      // be found and not a gate saying no: the command was not sayable, so a
+      // retry loop must stop rather than try again at something that can never
+      // work.
+      expect(result.exitCode, 64);
+      expect(result.err, contains('who you are'));
       expect(floor.signed, isEmpty);
     });
 
@@ -581,7 +592,7 @@ void main() {
         'asked under the same identity the channel signs with', () async {
       floor.refusesIdentity = true;
 
-      await run(['--identity', 'peer@bentos.life', 'check']);
+      await run(['--identity', 'Peer <peer@bentos.life>', 'check']);
 
       expect(floor.bodiesIdentity?.handle.email, 'peer@bentos.life');
     });
@@ -621,7 +632,9 @@ void main() {
       await run(['--identity', 'Café <cafe@bentos.life>', 'join', '--name', 'Café']);
       await run(['--identity', 'Café <cafe@bentos.life>', 'away', 'at the dentist']);
 
-      final result = await run(['--identity', 'alfred@bentos.life', 'join']);
+      final result = await run(
+        ['--identity', 'Alfred <alfred@bentos.life>', 'join'],
+      );
 
       expect(
         result.lines.skip(1),

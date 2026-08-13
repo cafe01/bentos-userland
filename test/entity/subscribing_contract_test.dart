@@ -31,7 +31,7 @@ void main() {
 
   setUp(() {
     site = _place('entity_subscribing');
-    entity = Entity('bentos.llm', from: site.path).create();
+    entity = Entity('bentos.llm', from: site.path).create(actor: testActor);
     gitDir = repositoryOf(site.path, entity.name);
     // Every test below drives dispatch through its own explicit call — the
     // shipped shim would double-fire otherwise.
@@ -67,7 +67,7 @@ void main() {
       tree: git.writeTree(gitDir, workTree: work.path),
       parents: [parent.sha],
       message: Action.messageFor(noun),
-      actor: const Actor('alfred'),
+      actor: Actor('alfred', email: 'alfred@test.local'),
     ));
   }
 

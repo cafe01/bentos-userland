@@ -16,7 +16,7 @@ void main() {
   setUp(() async {
     site = Site('cli');
     cli = Cli(site);
-    await cli.run(['create', 't.chat']);
+    await cli.run(['create', 't.chat', ...Cli.signed]);
     await cli.run(['new', 't.chat', 'c1']);
   });
   tearDown(() => site.dispose());
@@ -29,7 +29,7 @@ void main() {
     test('the body writes, the act lands, and stdout is only the sha',
         () async {
       final r = await cli.run(
-        ['act', 't.chat:c1', 'prompt', '--actor', 'alfred', '--', ...writes('1.txt', 'hello')],
+        ['act', 't.chat:c1', 'prompt', '--actor', 'alfred', '--actor-email', 'alfred@test.local', '--', ...writes('1.txt', 'hello')],
       );
 
       expect(r.code, 0);
@@ -40,7 +40,7 @@ void main() {
     });
 
     test('the act is declared under the noun the caller gave it', () async {
-      await cli.run(['act', 't.chat:c1', 'prompt', '--actor', 'alfred', '--', ...writes('1.txt', 'hello')]);
+      await cli.run(['act', 't.chat:c1', 'prompt', '--actor', 'alfred', '--actor-email', 'alfred@test.local', '--', ...writes('1.txt', 'hello')]);
 
       final log = await cli.run(['log', 't.chat:c1']);
       expect(log.out, contains('\tprompt\talfred\t'));
@@ -48,7 +48,7 @@ void main() {
 
     test('--say rides along, and the log reads as who did what', () async {
       await cli.run([
-        'act', 't.chat:c1', 'prompt', '--actor', 'cafe',
+        'act', 't.chat:c1', 'prompt', '--actor', 'cafe', '--actor-email', 'cafe@test.local',
         '--say', 'user say', '--', ...writes('1.txt', 'hello'),
       ]);
 
@@ -65,7 +65,7 @@ void main() {
 
     test('an act that said nothing leaves the column empty and says no more',
         () async {
-      await cli.run(['act', 't.chat:c1', 'prompt', '--', ...writes('1.txt', 'a')]);
+      await cli.run(['act', 't.chat:c1', 'prompt', ...Cli.signed, '--', ...writes('1.txt', 'a')]);
 
       final log = await cli.run(['log', 't.chat:c1']);
       // The raw line, not a trimmed one: a trailing empty field is exactly what
@@ -81,7 +81,7 @@ void main() {
 
     test('a talkative body does not pollute the answer', () async {
       final r = await cli.run([
-        'act', 't.chat:c1', 'prompt', '--',
+        'act', 't.chat:c1', 'prompt', ...Cli.signed, '--',
         'sh', '-c', 'echo chatter; printf hi > 1.txt',
       ]);
 
@@ -95,7 +95,7 @@ void main() {
       final before = (await cli.run(['ls', 't.chat'])).out;
 
       final r = await cli.run([
-        'act', 't.chat:c1', 'prompt', '--',
+        'act', 't.chat:c1', 'prompt', ...Cli.signed, '--',
         'sh', '-c', 'printf hi > 1.txt; exit 7',
       ]);
 
@@ -109,14 +109,14 @@ void main() {
     test('the area is released whether the body succeeded or not', () async {
       final before = _actAreas(site);
 
-      await cli.run(['act', 't.chat:c1', 'prompt', '--', ...writes('1.txt', 'a')]);
-      await cli.run(['act', 't.chat:c1', 'prompt', '--', 'sh', '-c', 'exit 1']);
+      await cli.run(['act', 't.chat:c1', 'prompt', ...Cli.signed, '--', ...writes('1.txt', 'a')]);
+      await cli.run(['act', 't.chat:c1', 'prompt', ...Cli.signed, '--', 'sh', '-c', 'exit 1']);
 
       expect(_actAreas(site), before);
     });
 
     test('without a body, it is a usage fault', () async {
-      final r = await cli.run(['act', 't.chat:c1', 'prompt']);
+      final r = await cli.run(['act', 't.chat:c1', 'prompt', ...Cli.signed]);
 
       expect(r.code, EntityRunner.usageCode);
       expect(r.err, contains('-- <command>'));
@@ -128,7 +128,7 @@ void main() {
       // the caller has to be told, in their own vocabulary, or they go looking
       // for a bug in their own script. A Dart stack trace tells them nothing
       // and claims the coreutil broke.
-      final r = await cli.run(['act', 't.chat:c1', 'prompt', '--', './nope']);
+      final r = await cli.run(['act', 't.chat:c1', 'prompt', ...Cli.signed, '--', './nope']);
 
       expect(r.code, EntityRunner.notFoundCode);
       expect(r.err, contains('./nope'));
@@ -145,7 +145,7 @@ void main() {
     });
 
     test('a body missing from PATH is the same clean answer', () async {
-      final r = await cli.run(['act', 't.chat:c1', 'prompt', '--', 'no-such-p']);
+      final r = await cli.run(['act', 't.chat:c1', 'prompt', ...Cli.signed, '--', 'no-such-p']);
 
       expect(r.code, EntityRunner.notFoundCode);
       expect(r.err, contains('no-such-p'));
@@ -173,7 +173,7 @@ void main() {
   group('entity read', () {
     test('reads at the ref, with no worktree anywhere', () async {
       final landed = await cli.run([
-        'act', 't.chat:c1', 'prompt', '--',
+        'act', 't.chat:c1', 'prompt', ...Cli.signed, '--',
         'sh', '-c', 'mkdir -p a && printf %s deep > a/b.txt',
       ]);
       expect(landed.code, 0, reason: landed.err);
@@ -185,10 +185,10 @@ void main() {
     });
 
     test('--as-of reads the content as it stood at that act', () async {
-      await cli.run(['act', 't.chat:c1', 'prompt', '--', ...writes('1.txt', 'first')]);
+      await cli.run(['act', 't.chat:c1', 'prompt', ...Cli.signed, '--', ...writes('1.txt', 'first')]);
       final log = await cli.run(['log', 't.chat:c1']);
       final first = log.out.trim().split('\t').first;
-      await cli.run(['act', 't.chat:c1', 'reply', '--', ...writes('1.txt', 'second')]);
+      await cli.run(['act', 't.chat:c1', 'reply', ...Cli.signed, '--', ...writes('1.txt', 'second')]);
 
       expect((await cli.run(['read', 't.chat:c1:1.txt'])).out, 'second');
 
@@ -208,7 +208,7 @@ void main() {
 
   group('entity materialize', () {
     test('--at stands the files where someone can look at them', () async {
-      await cli.run(['act', 't.chat:c1', 'prompt', '--', ...writes('1.txt', 'hello')]);
+      await cli.run(['act', 't.chat:c1', 'prompt', ...Cli.signed, '--', ...writes('1.txt', 'hello')]);
       final where = '${site.root.path}/face';
 
       final r = await cli.run(['materialize', 't.chat:c1', '--at', where]);
@@ -219,7 +219,7 @@ void main() {
 
     test('without --at, the face stands on the ground of the place that holds it',
         () async {
-      await cli.run(['act', 't.chat:c1', 'prompt', '--', ...writes('1.txt', 'hello')]);
+      await cli.run(['act', 't.chat:c1', 'prompt', ...Cli.signed, '--', ...writes('1.txt', 'hello')]);
 
       final r = await cli.run(['materialize', 't.chat:c1']);
       expect(r.code, 0);
@@ -241,7 +241,7 @@ void main() {
   group('entity refresh', () {
     /// A face standing where someone looks, and the path it stands at.
     Future<String> face() async {
-      await cli.run(['act', 't.chat:c1', 'prompt', '--', ...writes('1.txt', 'first')]);
+      await cli.run(['act', 't.chat:c1', 'prompt', ...Cli.signed, '--', ...writes('1.txt', 'first')]);
       final where = '${site.root.path}/face';
       await cli.run(['materialize', 't.chat:c1', '--at', where]);
       return where;
@@ -249,7 +249,7 @@ void main() {
 
     test('a face lags until it is refreshed, and then it does not', () async {
       final where = await face();
-      await cli.run(['act', 't.chat:c1', 'reply', '--', ...writes('1.txt', 'second')]);
+      await cli.run(['act', 't.chat:c1', 'reply', ...Cli.signed, '--', ...writes('1.txt', 'second')]);
 
       expect(File('$where/1.txt').readAsStringSync(), 'first',
           reason: 'nothing refreshes a face for whoever looks');
@@ -279,7 +279,7 @@ void main() {
     test('it is another process — nothing of the one that looked survives',
         () async {
       final where = await face();
-      await cli.run(['act', 't.chat:c1', 'reply', '--', ...writes('1.txt', 'second')]);
+      await cli.run(['act', 't.chat:c1', 'reply', ...Cli.signed, '--', ...writes('1.txt', 'second')]);
 
       // The coordinate is the only thing carried in: the directory reports its
       // repository and its commit, and never the ref it follows.
@@ -289,7 +289,7 @@ void main() {
     });
 
     test('an absent directory is stood up, not refused', () async {
-      await cli.run(['act', 't.chat:c1', 'prompt', '--', ...writes('1.txt', 'first')]);
+      await cli.run(['act', 't.chat:c1', 'prompt', ...Cli.signed, '--', ...writes('1.txt', 'first')]);
       final where = '${site.root.path}/nowhere';
 
       // *Make this directory be the ref* is one act to whoever needs the files.
@@ -339,7 +339,7 @@ void main() {
     test('a hand-edited face declines the move and says so, leaving the '
         'edit untouched', () async {
       final where = await face();
-      await cli.run(['act', 't.chat:c1', 'reply', '--', ...writes('1.txt', 'second')]);
+      await cli.run(['act', 't.chat:c1', 'reply', ...Cli.signed, '--', ...writes('1.txt', 'second')]);
       File('$where/1.txt').writeAsStringSync('hand-edited, uncommitted');
 
       final r = await cli.run(['refresh', 't.chat:c1', where]);

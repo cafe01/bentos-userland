@@ -20,6 +20,20 @@ final class Cli {
   final Site site;
   final Git git;
 
+  /// The identity a fixture states when who acted is not what it is testing.
+  ///
+  /// **Spelled at the call site and never injected here.** A harness that
+  /// quietly appended these flags would be the machine answering for a caller
+  /// who said nothing — the defect itself, wearing a fixture's clothes — and
+  /// every identity gate below would then be driving a door that cannot be
+  /// silent. [run] stays honest precisely so a gate can call it with nothing.
+  static const List<String> signed = [
+    '--actor',
+    'tester',
+    '--actor-email',
+    'tester@test.local',
+  ];
+
   Future<Run> run(List<String> args, {String? cwd}) async {
     final out = StringBuffer();
     final err = StringBuffer();
@@ -104,7 +118,7 @@ final class WatchedGit implements Git {
           {required String tree,
           required List<String> parents,
           required String message,
-          Actor? actor}) =>
+          required Actor actor}) =>
       _inner.commitTree(gitDir,
           tree: tree, parents: parents, message: message, actor: actor);
 

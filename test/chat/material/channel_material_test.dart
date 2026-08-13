@@ -299,7 +299,7 @@ final class _GateIdentity implements Identity {
   final Handle handle;
 
   @override
-  final String? displayName;
+  final String displayName;
 }
 
 void _demand(String binary, String complaint) {

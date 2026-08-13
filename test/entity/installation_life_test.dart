@@ -36,7 +36,7 @@ void main() {
     setUp(() {
       site = Site();
       site.run(() {
-        llm = Entity('bentos.llm', from: site.root.path).create();
+        llm = Entity('bentos.llm', from: site.root.path).create(actor: testActor);
         tables = ArmingTables(gitDirOf(llm), entity: llm.name);
       });
     });
@@ -279,7 +279,7 @@ void main() {
     setUp(() {
       site = Site();
       site.run(() {
-        llm = Entity('bentos.llm', from: site.root.path).create();
+        llm = Entity('bentos.llm', from: site.root.path).create(actor: testActor);
         gitDir = gitDirOf(llm);
       });
     });
@@ -376,7 +376,7 @@ void main() {
       addTearDown(watchedSite.dispose);
       watchedSite.run(() {
         final watchedLlm = Entity('bentos.llm', from: watchedSite.root.path)
-            .create();
+            .create(actor: testActor);
         watchedLlm.refit();
       });
 
@@ -431,7 +431,7 @@ void main() {
       File(p.join(root.path, '.place', 'place.yaml'))
           .writeAsStringSync('name: material\n');
       runWithGit(git, () {
-        llm = Entity('bentos.llm', from: root.path).create();
+        llm = Entity('bentos.llm', from: root.path).create(actor: testActor);
         gitDir = gitDirOf(llm);
       });
     });
@@ -469,7 +469,7 @@ void main() {
             .writeAsStringSync('somebody else stood here');
         final tree = git.writeTree(foreignGitDir, workTree: work.path);
         final sha =
-            git.commitTree(foreignGitDir, tree: tree, parents: [], message: 'x\n');
+            git.commitTree(foreignGitDir, tree: tree, parents: [], message: 'x\n', actor: testActor);
         work.deleteSync(recursive: true);
         git.worktreeAdd(foreignGitDir, path: stage.path, at: Commit(sha));
 
@@ -504,7 +504,7 @@ void main() {
       downstream = site.nested('downstream');
       originGitDir = repositoryOf(site.root.path, 'bentos.llm');
       await runWithGitAsync(port, () async {
-        Entity('bentos.llm', from: site.root.path).create();
+        Entity('bentos.llm', from: site.root.path).create(actor: testActor);
         await Entity.install(originGitDir, at: downstream.path);
         here = Entity('bentos.llm', from: downstream.path);
         hereGitDir = gitDirOf(here);
@@ -538,6 +538,7 @@ void main() {
           tree: tree,
           parents: [if (held != null) held.sha],
           message: 'a version published upstream (${++minted})\n',
+        actor: testActor,
         );
         site.git.updateRef(
           gitDir,
@@ -745,7 +746,7 @@ void main() {
           File(p.join(work.path, 'note')).writeAsStringSync('line $i\n');
           final tree = site.git.writeTree(hereGitDir, workTree: work.path);
           final sha = site.git.commitTree(hereGitDir,
-              tree: tree, parents: [tip.sha], message: 'act $i\n');
+              tree: tree, parents: [tip.sha], message: 'act $i\n', actor: testActor);
           site.git.updateRef(hereGitDir,
               ref: 'refs/heads/one', newCommit: Commit(sha), expected: tip);
         } finally {
@@ -1099,7 +1100,7 @@ final class _WatchedGit implements Git {
           {required String tree,
           required List<String> parents,
           required String message,
-          Actor? actor}) =>
+          required Actor actor}) =>
       _inner.commitTree(gitDir,
           tree: tree, parents: parents, message: message, actor: actor);
 

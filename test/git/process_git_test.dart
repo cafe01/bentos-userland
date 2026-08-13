@@ -57,30 +57,44 @@ void main() {
       return (repo, tree.stdout.toString().trim());
     }
 
-    test('no actor means no identity environment, so the machine answers', () {
+    test('the machine never answers — with the cascade configured and reachable',
+        () {
       final (repo, tree) = groundOf('cascade');
 
-      final made = git.commitTree(p.join(repo, '.git'),
-          tree: tree, parents: [], message: 'two');
+      // **The control, asserted rather than assumed.** An absent cascade
+      // over-determines everything below it: the identity could not have been
+      // taken from the machine because there was nothing there to take. So the
+      // gate first proves the machine *does* have an answer, and a good one —
+      // then proves nothing reaches for it.
+      final configured = Process.runSync('git', ['-C', repo, 'config', 'user.email']);
+      expect(configured.exitCode, 0,
+          reason: 'the cascade must be reachable, or this gate proves nothing');
+      expect(configured.stdout.toString().trim(), 'gate@bentos');
 
-      // The defect this replaced: a null actor was substituted by
-      // `Actor('unknown')` and exported, overriding Git's own cascade — so an
-      // act whose content named its author was contradicted by its own commit,
-      // permanently and on every remote that fetched the line.
-      expect(authorOf(repo, made), isNot(contains('unknown')));
-      expect(authorOf(repo, made), 'gate <gate@bentos>');
-    });
-
-    test('an actor is still the author, byte for byte', () {
-      final (repo, tree) = groundOf('named');
-
-      final made = git.commitTree(p.join(repo, '.git'),
-          tree: tree,
-          parents: [],
-          message: 'two',
-          actor: const Actor('alfred', email: 'alfred@bentos.life'));
+      final made = git.commitTree(
+        p.join(repo, '.git'),
+        tree: tree,
+        parents: [],
+        message: 'two',
+        actor: Actor('alfred', email: 'alfred@bentos.life'),
+      );
 
       expect(authorOf(repo, made), 'alfred <alfred@bentos.life>');
+      expect(authorOf(repo, made), isNot(contains('gate')),
+          reason: 'the workstation owner is not who acted');
+    });
+
+    test('an unsigned commit is not expressible at this port', () {
+      // No assertion, because there is nothing left to assert against: the
+      // parameter is required, so the call that produced the old defect does
+      // not compile. A grep is a weak witness for behaviour and a perfectly
+      // good one for deletion — and the type system is a stronger one still.
+      expect(
+        () => Actor('alfred', email: ''),
+        throwsArgumentError,
+        reason: 'nor may a half-stated identity reach a commit',
+      );
+      expect(() => Actor('', email: 'a@b'), throwsArgumentError);
     });
   });
 

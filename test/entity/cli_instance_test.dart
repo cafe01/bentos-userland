@@ -15,7 +15,7 @@ void main() {
   setUp(() async {
     site = Site('cli');
     cli = Cli(site);
-    await cli.run(['create', 't.chat']);
+    await cli.run(['create', 't.chat', ...Cli.signed]);
   });
   tearDown(() => site.dispose());
 
@@ -33,7 +33,7 @@ void main() {
                   ..writeAsStringSync(entry.value);
               }
             },
-            actor: Actor(actor),
+            actor: Actor(actor, email: '@test.local'),
           );
     });
     return (result as Landed).action;

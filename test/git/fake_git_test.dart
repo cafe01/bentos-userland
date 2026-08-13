@@ -40,7 +40,7 @@ void main() {
       tree: tree,
       parents: [if (parent != null) parent.sha],
       message: Action.messageFor('prompt'),
-      actor: const Actor('alfred'),
+      actor: Actor('alfred', email: 'alfred@test.local'),
     );
   }
 

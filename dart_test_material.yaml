@@ -1,0 +1,21 @@
+# The material target's own configuration.
+#
+#   dart test --configuration dart_test_material.yaml test/chat/material
+#
+# `dart_test.yaml` carries `add_presets: [gate]`, and an added preset applies to
+# every run: its `exclude_tags` is unioned with whatever the command line asks
+# for, so `-t material` there selects nothing at all and the material gates
+# become unreachable rather than merely off-by-default. A second configuration
+# is the runner's own answer to that — the default file keeps saying exactly
+# what it says, and this one is chosen deliberately, by name, for the target
+# that runs the real binaries.
+include_tags: material
+
+# The real thing, one process at a time: these gates install entities into
+# temporary plots and speak through git, and concurrency there measures the
+# machine rather than the claim.
+concurrency: 1
+
+tags:
+  owed:
+  material:

@@ -135,6 +135,9 @@ final class _FakeArea implements ChatArea {
   @override
   bool exists(String path) =>
       files.keys.any((key) => key == path || key.startsWith('$path/'));
+
+  @override
+  String? read(String path) => files[path];
 }
 
 /// One attempt at an act, captured whole — so a fixture can prove the loop's
@@ -333,5 +336,5 @@ final class FakeIdentity implements Identity {
   Handle handle;
 
   @override
-  String? displayName;
+  String displayName;
 }

@@ -43,7 +43,7 @@ void main() {
 
   group('entity create', () {
     test('authors one here and prints its genesis', () async {
-      final r = await cli.run(['create', 't.smoke']);
+      final r = await cli.run(['create', 't.smoke', ...Cli.signed]);
 
       expect(r.code, 0);
       expect(r.out.trim(), hasLength(40));
@@ -51,7 +51,7 @@ void main() {
     });
 
     test('registers with the place, so the name resolves from here', () async {
-      await cli.run(['create', 't.smoke']);
+      await cli.run(['create', 't.smoke', ...Cli.signed]);
 
       final r = await cli.run(['which', 't.smoke']);
       expect(r.code, 0);
@@ -61,7 +61,7 @@ void main() {
     test('-C moves the vantage the authoring happens at', () async {
       final nested = site.nested('cto');
 
-      final r = await cli.run(['-C', nested.path, 'create', 't.smoke']);
+      final r = await cli.run(['-C', nested.path, 'create', 't.smoke', ...Cli.signed]);
       expect(r.code, 0);
 
       expect((await cli.run(['which', 't.smoke'])).code, EntityRunner.notFoundCode);
@@ -70,7 +70,7 @@ void main() {
     });
 
     test('with no name, it is a usage fault', () async {
-      final r = await cli.run(['create']);
+      final r = await cli.run(['create', ...Cli.signed]);
 
       expect(r.code, EntityRunner.usageCode);
       expect(r.err, contains('<name>'));
@@ -81,7 +81,7 @@ void main() {
     test('resolves upward — one installation serves everything below it',
         () async {
       final nested = site.nested('cto');
-      await cli.run(['create', 't.smoke']);
+      await cli.run(['create', 't.smoke', ...Cli.signed]);
 
       final r = await cli.run(['which', 't.smoke'], cwd: nested.path);
       expect(r.code, 0);
@@ -90,8 +90,8 @@ void main() {
 
     test('nearest wins — an installation below shadows one above', () async {
       final nested = site.nested('cto');
-      await cli.run(['create', 't.smoke']);
-      await cli.run(['-C', nested.path, 'create', 't.smoke']);
+      await cli.run(['create', 't.smoke', ...Cli.signed]);
+      await cli.run(['-C', nested.path, 'create', 't.smoke', ...Cli.signed]);
 
       final below = await cli.run(['which', 't.smoke'], cwd: nested.path);
       expect(below.out.trim(), nested.path);
@@ -125,7 +125,7 @@ void main() {
 
   group('entity info', () {
     test('an entity that declares nothing still answers', () async {
-      await cli.run(['create', 't.smoke']);
+      await cli.run(['create', 't.smoke', ...Cli.signed]);
 
       final r = await cli.run(['info', 't.smoke']);
       expect(r.code, 0);
@@ -135,7 +135,7 @@ void main() {
     });
 
     test('prints the type, the actions, and the events they cross to', () async {
-      await cli.run(['create', 't.chat']);
+      await cli.run(['create', 't.chat', ...Cli.signed]);
       _declare(site, 't.chat', 'type: conversation\nactions: [prompt, reply]\n');
 
       final r = await cli.run(['info', 't.chat']);
@@ -151,7 +151,7 @@ void main() {
     });
 
     test('it lists actions and offers no way to perform one', () async {
-      await cli.run(['create', 't.chat']);
+      await cli.run(['create', 't.chat', ...Cli.signed]);
       _declare(site, 't.chat', 'type: conversation\nactions: [prompt]\n');
 
       final r = await cli.run(['invoke', 't.chat', 'prompt']);
@@ -164,7 +164,7 @@ void main() {
       // fixture that can catch a field printed twice — once typed, once
       // through the raw dump — because the field-only assertions above never
       // looked at the output as a whole.
-      await cli.run(['create', 't.chat']);
+      await cli.run(['create', 't.chat', ...Cli.signed]);
       _declare(
         site,
         't.chat',
@@ -191,7 +191,7 @@ void main() {
 
   group('entity publish and remotes', () {
     test('publish declares origin and moves the bytes there', () async {
-      await cli.run(['create', 't.smoke']);
+      await cli.run(['create', 't.smoke', ...Cli.signed]);
       final elsewhere = '${site.root.path}/away.git';
       site.run(() => ambientGit.init(elsewhere));
 
@@ -203,7 +203,7 @@ void main() {
     });
 
     test('remotes of a fresh entity is silence, not a failure', () async {
-      await cli.run(['create', 't.smoke']);
+      await cli.run(['create', 't.smoke', ...Cli.signed]);
 
       final r = await cli.run(['remotes', 't.smoke']);
       expect(r.code, 0);
@@ -211,7 +211,7 @@ void main() {
     });
 
     test('publish without a remote is a usage fault', () async {
-      await cli.run(['create', 't.smoke']);
+      await cli.run(['create', 't.smoke', ...Cli.signed]);
 
       final r = await cli.run(['publish', 't.smoke']);
       expect(r.code, EntityRunner.usageCode);
@@ -227,7 +227,7 @@ void main() {
       final origin = Site('origin');
       addTearDown(origin.dispose);
       final away = repositoryOf(origin.root.path, 't.chat');
-      await Cli(origin, git: site.git).run(['create', 't.chat']);
+      await Cli(origin, git: site.git).run(['create', 't.chat', ...Cli.signed]);
       await Cli(origin, git: site.git).run(['new', 't.chat', 'c1']);
 
       await cli.run(['install', away, '--as', 't.chat']);
@@ -236,7 +236,7 @@ void main() {
             .instance('c1')
             .act('prompt', (w) {
           File('${w.directory.path}/1.txt').writeAsStringSync('over there');
-        });
+        }, actor: testActor);
         return (result as Landed).action;
       });
       return (there: origin, remote: 'origin', taken: taken);
@@ -269,13 +269,13 @@ void main() {
       // Both sides act on the same parent: two lines, legitimately.
       await site.runAsync(() async =>
           Entity('t.chat', from: far.there.root.path).instance('c1').act(
-              'reply', (w) => File('${w.directory.path}/2.txt').writeAsStringSync('theirs')));
+              'reply', (w) => File('${w.directory.path}/2.txt').writeAsStringSync('theirs'), actor: testActor));
       final mine = await site.runAsync(() async {
         final result = await Entity('t.chat', from: site.root.path)
             .instance('c1')
             .act('reply', (w) {
           File('${w.directory.path}/3.txt').writeAsStringSync('mine');
-        });
+        }, actor: testActor);
         return (result as Landed).action;
       });
 
@@ -318,7 +318,7 @@ void main() {
     });
 
     test('without a remote, it is a usage fault', () async {
-      await cli.run(['create', 't.chat']);
+      await cli.run(['create', 't.chat', ...Cli.signed]);
 
       final r = await cli.run(['fetch', 't.chat:c1']);
       expect(r.code, EntityRunner.usageCode);
@@ -334,7 +334,7 @@ void main() {
       // One port across both sites: a source is a URL, and the two sites share
       // a substrate the way two directories on one disk do.
       final source = repositoryOf(origin.root.path, 't.smoke');
-      await Cli(origin, git: site.git).run(['create', 't.smoke']);
+      await Cli(origin, git: site.git).run(['create', 't.smoke', ...Cli.signed]);
 
       final r = await cli.run(['install', source]);
       expect(r.code, 0);
@@ -352,7 +352,7 @@ void main() {
       final origin = Site('origin');
       addTearDown(origin.dispose);
       final source = repositoryOf(origin.root.path, 't.smoke');
-      await Cli(origin, git: site.git).run(['create', 't.smoke']);
+      await Cli(origin, git: site.git).run(['create', 't.smoke', ...Cli.signed]);
 
       final r = await cli.run(['install', source, '--as', 't.mine']);
       expect(r.code, 0);
@@ -366,7 +366,7 @@ void main() {
       final origin = Site('origin', site.git);
       addTearDown(origin.dispose);
       final source = repositoryOf(origin.root.path, 't.origin');
-      await Cli(origin).run(['create', 't.origin']);
+      await Cli(origin).run(['create', 't.origin', ...Cli.signed]);
       _declare(origin, 't.origin', 'name: t.declared\n');
 
       final r = await cli.run(['install', source]);
@@ -379,7 +379,7 @@ void main() {
       final origin = Site('origin', site.git);
       addTearDown(origin.dispose);
       final source = repositoryOf(origin.root.path, 't.origin');
-      await Cli(origin).run(['create', 't.origin']);
+      await Cli(origin).run(['create', 't.origin', ...Cli.signed]);
       _declare(origin, 't.origin', 'name: t.declared\n');
 
       final r = await cli.run(['install', source, '--as', 't.mine']);
@@ -438,7 +438,7 @@ void main() {
         final origin = Site('origin', site.git);
         addTearDown(origin.dispose);
         final source = repositoryOf(origin.root.path, 't.smoke');
-        await Cli(origin).run(['create', 't.smoke']);
+        await Cli(origin).run(['create', 't.smoke', ...Cli.signed]);
 
         final first = await cli.run(['install', source, '--as', 'dup']);
         expect(first.code, 0, reason: first.err);
@@ -461,7 +461,7 @@ void main() {
           final origin = Site('origin', site.git);
           addTearDown(origin.dispose);
           final source = repositoryOf(origin.root.path, 't.smoke');
-          await Cli(origin).run(['create', 't.smoke']);
+          await Cli(origin).run(['create', 't.smoke', ...Cli.signed]);
 
           // A stranger, standing exactly where the install would land — made
           // by hand, never by this system's own clone.
@@ -490,7 +490,7 @@ void main() {
           final origin = Site('origin', site.git);
           addTearDown(origin.dispose);
           final source = repositoryOf(origin.root.path, 't.smoke');
-          await Cli(origin).run(['create', 't.smoke']);
+          await Cli(origin).run(['create', 't.smoke', ...Cli.signed]);
 
           final first = await cli.run(['install', source, '--as', 'dup']);
           final second = await cli.run(['install', source, '--as', 'dup']);
@@ -513,7 +513,7 @@ void main() {
     Future<({Site origin, String name})> installed() async {
       final origin = Site('origin', site.git);
       addTearDown(origin.dispose);
-      await Cli(origin).run(['create', 't.thing']);
+      await Cli(origin).run(['create', 't.thing', ...Cli.signed]);
       final r = await cli.run(['install', repositoryOf(origin.root.path, 't.thing')]);
       expect(r.code, 0, reason: r.err);
       return (origin: origin, name: 't.thing');
@@ -619,7 +619,7 @@ void main() {
 
     group('upgrade at the boundary', () {
       test('no origin is not found — exit 1, naming both cures', () async {
-        await cli.run(['create', 't.mine']);
+        await cli.run(['create', 't.mine', ...Cli.signed]);
 
         final r = await cli.run(['upgrade', 't.mine']);
 
@@ -719,6 +719,7 @@ void _declare(Site site, String name, String document) {
       tree: ambientGit.writeTree(gitDir, workTree: stage.path),
       parents: [genesis.sha],
       message: 'declare\n',
+    actor: testActor,
     );
     ambientGit.updateRef(
       gitDir,

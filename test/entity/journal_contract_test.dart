@@ -51,7 +51,7 @@ void main() {
   OccurrenceLine occurrence(Event e, {String? sentence}) => OccurrenceLine(
         entity: 'bentos.llm',
         event: e,
-        actor: const Actor('alfred'),
+        actor: const Attribution('alfred', 'alfred@test.local'),
         instant: DateTime.utc(2026, 8, 7, 16),
         sentence: sentence,
       );

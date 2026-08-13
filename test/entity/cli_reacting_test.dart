@@ -16,7 +16,7 @@ void main() {
   setUp(() async {
     site = Site('cli');
     cli = Cli(site);
-    await cli.run(['create', 't.chat']);
+    await cli.run(['create', 't.chat', ...Cli.signed]);
     await cli.run(['new', 't.chat', 'c1']);
   });
   tearDown(() => site.dispose());

@@ -119,6 +119,7 @@ functions:
       tree: tree,
       parents: [?onto],
       message: 'authored\n',
+    actor: testActor,
     );
     git.updateRef(
       repository,
@@ -363,7 +364,7 @@ functions:
 
   test("another entity's worktree is not this entity's stage", () async {
     await install();
-    final made = await cli(['create', 'other.thing']);
+    final made = await cli(['create', 'other.thing', '--actor', 'tester', '--actor-email', 'tester@test.local']);
     expect(made.code, 0, reason: made.err);
 
     // A **registered** worktree, and of the wrong repository — the state the
@@ -513,7 +514,7 @@ functions:
 
   test('authoring stands one up too, so a first landing has a tree to move',
       () async {
-    final made = await cli(['create', 'authored.thing']);
+    final made = await cli(['create', 'authored.thing', '--actor', 'tester', '--actor-email', 'tester@test.local']);
     expect(made.code, 0, reason: made.err);
 
     await runWithGitAsync(git, () async {

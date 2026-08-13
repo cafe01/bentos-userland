@@ -60,7 +60,10 @@ final class Workspace {
   /// an ordinary outcome and not an error. Releasing is **not** implied — the
   /// plumbing family's caller may still want the directory, and the bracket
   /// releases in its own `finally`.
-  ActionResult commit(String name, {Actor? actor, String? say}) {
+  /// [actor] is **required**, and absence is caught where the caller is written
+  /// rather than where the commit lands: no configuration of the machine may
+  /// fill the field, so there is no shape of this call that leaves it open.
+  ActionResult commit(String name, {required Actor actor, String? say}) {
     // The payload is hashed before the ref is in question — which is why a
     // refusal one step later cannot rewrite it, and why the object of a refused
     // act still exists, orphaned.

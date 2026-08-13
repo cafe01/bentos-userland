@@ -1,6 +1,7 @@
 import 'package:args/command_runner.dart';
 
 import '../entity_runner.dart';
+import '../../git/model/actor.dart';
 import '../../git/model/commit.dart';
 import '../event.dart';
 import 'coordinate.dart';
@@ -58,6 +59,47 @@ abstract base class EntityCommand extends Command<void> {
   Commit? pointInHistory() {
     final asOf = argResults!['as-of'] as String?;
     return asOf == null ? null : Commit(asOf);
+  }
+
+  /// Declares the identity flags on a verb that writes. Both are options with
+  /// no default, because there is no ambient form of either.
+  void takesActor() => argParser
+    ..addOption(
+      'actor',
+      help: 'Who is acting. Required — there is no ambient form.',
+      valueHelp: 'name',
+    )
+    ..addOption(
+      'actor-email',
+      help: 'The address stated beside --actor. Required — no address is '
+          'derived from a name, and no configuration of the machine may fill '
+          'it.',
+      valueHelp: 'addr',
+    );
+
+  /// Who is acting, as this invocation stated it — or a **usage refusal**.
+  ///
+  /// **The refusal fires on silence from any caller whatever**, and no property
+  /// of who is asking may soften it: the caller that says nothing is exactly
+  /// the one that must be refused, and a fallback here produces a signed lie
+  /// rather than a failure. It is usage and not *barred* or *contested* —
+  /// nobody refused this act and nothing raced it; the command was not sayable,
+  /// and the ref does not move.
+  Actor statedActor() {
+    final stated = argResults!['actor'] as String?;
+    final email = argResults!['actor-email'] as String?;
+    final hasName = stated != null && stated.trim().isNotEmpty;
+    final hasEmail = email != null && email.trim().isNotEmpty;
+    if (!hasName || !hasEmail) {
+      usageException(
+        '$name: who is acting must be stated — pass --actor <name> '
+        '--actor-email <addr>. '
+        '${!hasName && !hasEmail ? 'Neither was given' : hasName ? 'No address was given' : 'No name was given'}, '
+        'and nothing else may answer: the git identity cascade describes '
+        'whoever owns a checkout on this machine, not whoever is acting.',
+      );
+    }
+    return Actor(stated.trim(), email: email.trim());
   }
 
   /// Declares the point-in-history flag on a verb that reads.

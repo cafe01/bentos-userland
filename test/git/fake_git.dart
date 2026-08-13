@@ -177,19 +177,21 @@ class FakeGit implements Git {
     required String tree,
     required List<String> parents,
     required String message,
-    Actor? actor,
+    required Actor actor,
   }) {
-    // No actor means the real floor passes no identity and Git's own cascade
-    // answers. The double has no config to cascade through, so it stands in for
-    // one — never for an invented author, which is the defect this fake would
-    // otherwise keep testifying to.
-    final who = actor ?? const Actor('configured', email: 'configured@local');
+    // **The stand-in for an unconfigured cascade is gone, because the cascade
+    // is gone.** This double used to invent `configured@local` for a caller
+    // that passed no actor, which modelled the substrate faithfully and is now
+    // modelling a floor that cannot be reached: absence is not expressible.
     final instant = DateTime.utc(2026, 1, 1).add(Duration(seconds: _counter));
-    final sha = _sha('commit:$tree:${parents.join('+')}:$message:${who.name}');
+    final sha = _sha('commit:$tree:${parents.join('+')}:$message:${actor.name}');
     _repo(gitDir).commits[sha] = CommitObj(
       tree: tree,
       parents: parents,
-      author: who,
+      // Written as a signer, read back as a claim — the same asymmetry the
+      // real substrate has, which is why the double must not keep one type for
+      // both directions.
+      author: Attribution(actor.name, actor.email),
       instant: instant,
       message: message,
     );
@@ -613,7 +615,7 @@ final class CommitObj {
 
   final String tree;
   final List<String> parents;
-  final Actor author;
+  final Attribution author;
   final DateTime instant;
   final String message;
 }

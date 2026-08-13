@@ -46,7 +46,7 @@ void main() {
 
     setUp(() {
       site = Site();
-      site.run(() => llm = Entity('bentos.llm', from: site.root.path).create());
+      site.run(() => llm = Entity('bentos.llm', from: site.root.path).create(actor: testActor));
     });
     tearDown(() => site.dispose());
 
@@ -86,7 +86,7 @@ void main() {
     test('arming is per installation — one site runs, another only watches', () {
       final downstream = site.nested('downstream');
       site.run(() {
-        final there = Entity('bentos.llm', from: downstream.path).create();
+        final there = Entity('bentos.llm', from: downstream.path).create(actor: testActor);
         there.on({EventPattern.parse('prompt.landed')}, command: ['llm-runner']);
 
         expect(there.listeners, hasLength(1));

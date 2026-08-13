@@ -70,7 +70,7 @@ final class EntityTree implements ChatTree {
             commit: action.commit.sha,
             noun: action.name,
             authorName: action.actor.name,
-            authorEmail: action.actor.email ?? '',
+            authorEmail: action.actor.email,
             instant: action.instant,
             sentence: action.sentence,
           ),
@@ -132,10 +132,7 @@ final class EntityActs implements ChatActs {
       final refusal = gate?.call(area);
       if (refusal != null) return ChatGateRefused(refusal);
       write(area);
-      final actor = Actor(
-        identity.displayName ?? identity.handle.local,
-        email: identity.handle.email,
-      );
+      final actor = Actor(identity.displayName, email: identity.handle.email);
       final result = workspace.commit(noun, actor: actor, say: say);
       switch (result) {
         case Landed(:final action):
@@ -186,6 +183,12 @@ final class _WorkspaceArea implements ChatArea {
   @override
   bool exists(String path) =>
       FileSystemEntity.typeSync(_resolve(path)) != FileSystemEntityType.notFound;
+
+  @override
+  String? read(String path) {
+    final file = File(_resolve(path));
+    return file.existsSync() ? file.readAsStringSync() : null;
+  }
 }
 
 /// Runs the entity's own embarked functions, through the primitive — kept for
@@ -248,7 +251,7 @@ final class ProcessBodies implements ChatBodies {
   /// environment carries — an explicit override always wins over an inherited
   /// one.
   Map<String, String> _signerEnvironment() {
-    final name = identity.displayName ?? '';
+    final name = identity.displayName;
     final email = identity.handle.email;
     return {
       'GIT_AUTHOR_NAME': name,
@@ -259,63 +262,75 @@ final class ProcessBodies implements ChatBodies {
   }
 }
 
-/// Who the calling process speaks as — the one seam both faces share.
+/// Who the calling process speaks as — the one seam every face shares.
 ///
-/// Order: an explicit [identity] wins outright — the seam a caller or a test
-/// injects through directly. Then [stated], what the caller said in argv:
-/// ahead of the environment because a face that can only be told who is
-/// speaking through a variable is not scriptable, and a model reaching this
-/// program through a tool has argv and stdin and no shell to export from.
-/// Absent both, `$BENTOS_CHAT_IDENTITY` is the stated override, `Name <email>`
-/// or a bare email: how a human testing as someone else, or a being of the
-/// kind stating its own voice, both speak.
-/// Absent that: `$BENTOS_AGENT` set means the caller **is** a being, and a
-/// being that has not stated an identity is a question, never a default —
-/// refusing rather than borrowing the ambient git cascade of whatever human
-/// owns the machine it happens to run on, which would be impersonation, not a
-/// fallback. `$BENTOS_AGENT` unset means an ordinary human at their own
-/// keyboard, and their ambient git cascade **is** their identity.
+/// **Three sources, all of them the caller's own word, and then a refusal.** An
+/// explicit [identity] wins outright, the seam a caller or a test injects
+/// through directly. Then [stated], what the caller said in argv — ahead of the
+/// environment, because a face that can only be told who is speaking through a
+/// variable is not scriptable, and a mind reaching this program through a tool
+/// has argv and no shell to export from. Then `$BENTOS_CHAT_IDENTITY`, chat's
+/// own variable, a value somebody set deliberately at launch and never
+/// something that describes the machine.
 ///
-/// Frontier, not settled: a being's identity has nowhere else to live today
-/// but this one chat-scoped variable. No manifest, no entity, nothing beside
-/// a being's own bank currently publishes it — closing that gap properly
-/// means the being states itself once, not per chat session.
+/// > The refusal fires on **silence, from any caller whatever**.
+///
+/// Not on a guess about who is asking. A caller that declares itself a being of
+/// the kind and a caller that declares nothing get the same answer, and the
+/// second one is the case that matters: it is the caller that must be refused,
+/// and it was the one being served. No property of the caller may soften it —
+/// not plausibility, not resemblance to a known participant, not a perfectly
+/// good address sitting one directory away in a git config.
+///
+/// Nothing on the machine may answer. Not the entity's `repo.git`, not the
+/// user's git configuration, not a chat configuration file of our own: a file
+/// that answers for a caller who said nothing is the cascade again with better
+/// manners, and one installation serves many beings.
 Identity resolveChatIdentity({
   Identity? identity,
   String? stated,
   Map<String, String>? environment,
 }) {
   if (identity != null) return identity;
-  if (stated != null && stated.isNotEmpty) return parseStatedIdentity(stated);
   final env = environment ?? Platform.environment;
-  final fromEnv = env[identityVariable];
-  if (fromEnv != null && fromEnv.isNotEmpty) return parseStatedIdentity(fromEnv);
-  final agent = env['BENTOS_AGENT'];
-  if (agent != null && agent.isNotEmpty) {
-    throw NoIdentity(
-      'a being of the kind states its own identity — pass '
-      '--identity "Name <email>" (or a bare email), or set '
-      '\$$identityVariable; '
-      '\$BENTOS_AGENT=$agent names no address on its own',
-    );
-  }
-  return GitIdentity.ambient();
+  final value = (stated != null && stated.isNotEmpty)
+      ? stated
+      : env[identityVariable];
+  if (value == null || value.isEmpty) throw const NoIdentity(statedIdentityForm);
+  return parseStatedIdentity(value);
 }
 
 /// Where a caller states who is speaking when it does not say so in argv.
 const String identityVariable = 'BENTOS_CHAT_IDENTITY';
 
+/// The whole diagnostic, and therefore the whole of the ergonomics: it is what
+/// a mind reads on its first refusal, so it prints the flag, the variable and
+/// the form in one sentence, with no advice about who the caller might be.
+const String statedIdentityForm =
+    'say who you are: --identity "Name <addr>", or \$$identityVariable set to '
+    'the same. Both halves are required, and nothing else may answer — an '
+    'identity is stated, never derived from the machine.';
+
 /// A stated identity as both the argument and the variable spell it:
-/// `Name <email>`, or a bare address on its own.
+/// `Name <addr>`, and nothing else.
+///
+/// **A bare address is refused, and so is a bare name.** The floor requires a
+/// name and an address; accepting half and filling the rest with an empty
+/// string is how a blank name reached a commit, and synthesizing an address
+/// from a name is how a plausible one would.
 Identity parseStatedIdentity(String stated) {
   final trimmed = stated.trim();
-  final match = RegExp(r'^(.*)<(.+)>$').firstMatch(trimmed);
-  if (match == null) {
-    return _StatedIdentity(Handle.ofEmail(trimmed), null);
-  }
+  final match = RegExp(r'^(.*)<([^<>]+)>$').firstMatch(trimmed);
+  if (match == null) throw const NoIdentity(statedIdentityForm);
   final name = match.group(1)!.trim();
   final email = match.group(2)!.trim();
-  return _StatedIdentity(Handle.ofEmail(email), name.isEmpty ? null : name);
+  if (name.isEmpty) {
+    throw const NoIdentity('an address with no name — $statedIdentityForm');
+  }
+  if (email.isEmpty || !email.contains('@')) {
+    throw const NoIdentity('a name with no address — $statedIdentityForm');
+  }
+  return _StatedIdentity(Handle.ofEmail(email), name);
 }
 
 final class _StatedIdentity implements Identity {
@@ -325,44 +340,5 @@ final class _StatedIdentity implements Identity {
   final Handle handle;
 
   @override
-  final String? displayName;
-}
-
-/// A human's own git cascade — global config, or whatever local repository
-/// the process actually stands in. **Never the medium's repository**: the
-/// entity a channel lives in is the substrate a message is written to, not
-/// the identity of whoever is writing it, and reading the two from the same
-/// place is what let one process's `git config` answer for every caller who
-/// ever touched that installation.
-final class GitIdentity implements Identity {
-  GitIdentity._(this.handle, this.displayName);
-
-  /// Reads the caller's own ambient cascade — no `-C`, so it is whatever
-  /// directory the process is actually running in.
-  factory GitIdentity.ambient() {
-    final email = _config('user.email');
-    if (email == null || email.isEmpty) {
-      throw const NoIdentity(
-        'no user.email in the ambient git cascade — git has no identity to '
-        'speak under',
-      );
-    }
-    final name = _config('user.name');
-    return GitIdentity._(
-      Handle.ofEmail(email),
-      name == null || name.isEmpty ? null : name,
-    );
-  }
-
-  @override
-  final Handle handle;
-
-  @override
-  final String? displayName;
-
-  static String? _config(String key) {
-    final result = Process.runSync('git', ['config', key]);
-    if (result.exitCode != 0) return null;
-    return '${result.stdout}'.trim();
-  }
+  final String displayName;
 }

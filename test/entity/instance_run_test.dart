@@ -5,6 +5,8 @@ import 'package:bentos_userland/src/git/process_git.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
+import 'helpers.dart';
+
 /// `Instance.run` — the API surface `entity run` now delegates to, proven
 /// **called directly**, with no CLI layer between the assertion and the
 /// primitive. `cli_run_test.dart` proves the CLI wiring; this proves the
@@ -77,7 +79,7 @@ functions:
       Process.runSync('chmod', ['755', p.join(work.path, path)]);
     }
     final tree = git.writeTree(repository, workTree: work.path);
-    final sha = git.commitTree(repository, tree: tree, parents: const [], message: 'authored\n');
+    final sha = git.commitTree(repository, tree: tree, parents: const [], message: 'authored\n', actor: testActor);
     git.updateRef(
       repository,
       ref: Entity.genesisRef,

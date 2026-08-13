@@ -5,6 +5,8 @@ import 'package:bentos_userland/src/place/place.dart';
 import 'package:bentos_userland/src/place/place_runner.dart';
 import 'package:test/test.dart';
 
+import '../entity/helpers.dart';
+
 /// The superrepo verbs through the coreutil — `ls`, `pin`, `timeline`.
 ///
 /// Driven against **a real repository**, deliberately: these three verbs exist
@@ -51,7 +53,7 @@ void main() {
     pinned = git.commitTree(other,
         tree: git.writeTree(other, workTree: work.path),
         parents: const [],
-        message: 'genesis');
+        message: 'genesis', actor: testActor);
   });
 
   tearDown(() {

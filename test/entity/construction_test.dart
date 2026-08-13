@@ -85,7 +85,7 @@ Commit _commitOnto(
     tree: tree,
     parents: [parent.sha],
     message: Action.messageFor('note'),
-    actor: const Actor('alfred'),
+    actor: Actor('alfred', email: 'alfred@test.local'),
   ));
 }
 
@@ -126,7 +126,7 @@ void main() {
         tree: tree,
         parents: [if (parent != null) parent.sha],
         message: message,
-        actor: const Actor('alfred'),
+        actor: Actor('alfred', email: 'alfred@test.local'),
       );
       expect(
         git.updateRef(gitDir,
@@ -252,6 +252,7 @@ void main() {
         tree: tree,
         parents: [first.sha],
         message: 'loser',
+      actor: testActor,
       ));
 
       final lost = git.updateRef(gitDir,
@@ -288,6 +289,7 @@ void main() {
         tree: tree,
         parents: const [],
         message: 'a first action, twice',
+      actor: testActor,
       ));
 
       expect(
@@ -379,7 +381,7 @@ void main() {
 
     setUp(() {
       site = _place('entity_shim_');
-      thing = Entity('t.thing', from: site.path).create();
+      thing = Entity('t.thing', from: site.path).create(actor: testActor);
       one = thing.instance('one').create();
       witness = File('${site.path}/witness');
     });
@@ -454,7 +456,7 @@ void main() {
 
       final result = await one.act('note', (workspace) {
         File('${workspace.directory.path}/note').writeAsStringSync('hello\n');
-      });
+      }, actor: testActor);
 
       expect(result, isA<Barred>());
       expect(one.tip, equals(standing), reason: 'nothing was ever true');
@@ -474,7 +476,7 @@ void main() {
 
       final result = await one.act('reply', (workspace) {
         File('${workspace.directory.path}/said').writeAsStringSync('hi\n');
-      });
+      }, actor: testActor);
       expect(result, isA<Landed>());
 
       await _settles(witness);
@@ -492,14 +494,14 @@ void main() {
 
       expect(await one.act('note', (w) {
         File('${w.directory.path}/a').writeAsStringSync('1\n');
-      }), isA<Landed>());
+      }, actor: testActor), isA<Landed>());
       await _settles(witness);
       expect(witness.readAsStringSync().trim(), 'note');
       expect(thing.listeners.map((l) => l.id), isNot(contains(armed.id)));
 
       expect(await one.act('note2', (w) {
         File('${w.directory.path}/b').writeAsStringSync('2\n');
-      }), isA<Landed>());
+      }, actor: testActor), isA<Landed>());
       await Future<void>.delayed(const Duration(milliseconds: 500));
       expect(
         witness.readAsStringSync().trim(),
@@ -520,7 +522,7 @@ void main() {
 
       final result = await one.act('note', (workspace) {
         File('${workspace.directory.path}/note').writeAsStringSync('hello\n');
-      });
+      }, actor: testActor);
       expect(result, isA<Landed>());
       expect(witness.existsSync(), isFalse,
           reason: 'the act returned before its subscriber did');
@@ -545,12 +547,12 @@ void main() {
     setUp(() async {
       here = _place('entity_here_');
       there = _place('entity_there_');
-      mine = Entity('t.thing', from: here.path).create();
+      mine = Entity('t.thing', from: here.path).create(actor: testActor);
       one = mine.instance('one').create();
       // One act before the clone, so the other site is born holding a past.
       final first = await one.act('note', (workspace) {
         File('${workspace.directory.path}/note').writeAsStringSync('first\n');
-      });
+      }, actor: testActor);
       expect(first, isA<Landed>());
       await Entity.install(repositoryOf(here.path, mine.name), at: there.path);
     });
@@ -579,7 +581,7 @@ void main() {
 
       final landed = await one.act('note', (workspace) {
         File('${workspace.directory.path}/note').writeAsStringSync('second\n');
-      }) as Landed;
+      }, actor: testActor) as Landed;
       // The act landed here and woke nothing here — the other site is where the
       // reaction lives.
       expect(File('${here.path}/witness').existsSync(), isFalse);
@@ -603,7 +605,7 @@ void main() {
 
       final landed = await one.act('note', (workspace) {
         File('${workspace.directory.path}/note').writeAsStringSync('second\n');
-      }) as Landed;
+      }, actor: testActor) as Landed;
 
       await expectLater(
         mine.publish(repositoryOf(there.path, mine.name)),
@@ -637,7 +639,7 @@ void main() {
       // pushed nothing and was told nothing — brings it home.
       final landed = await theirs().instance('one').act('note', (workspace) {
         File('${workspace.directory.path}/note').writeAsStringSync('theirs\n');
-      }) as Landed;
+      }, actor: testActor) as Landed;
       final standing = one.tip;
       expect(standing, isNot(equals(landed.action.commit)));
 
@@ -657,7 +659,7 @@ void main() {
       // instance authored at another site first appears at this one.
       final born = await theirs().instance('two').create().act('note', (w) {
         File('${w.directory.path}/note').writeAsStringSync('elsewhere\n');
-      }) as Landed;
+      }, actor: testActor) as Landed;
       final newcomer = mine.instance('two');
       expect(newcomer.tip, isNull, reason: 'this site never heard of it');
 
@@ -674,10 +676,10 @@ void main() {
       // an act of its own, which fetch declines to invent.
       final ours = await one.act('note', (w) {
         File('${w.directory.path}/note').writeAsStringSync('ours\n');
-      }) as Landed;
+      }, actor: testActor) as Landed;
       await theirs().instance('one').act('note', (w) {
         File('${w.directory.path}/note').writeAsStringSync('theirs\n');
-      });
+      }, actor: testActor);
 
       final theirTip = theirs().instance('one').tip;
       final result = await one.fetch(repositoryOf(there.path, mine.name));
@@ -818,7 +820,7 @@ void main() {
       addTearDown(() {
         if (site.existsSync()) site.deleteSync(recursive: true);
       });
-      final thing = Entity('t.thing', from: site.path).create();
+      final thing = Entity('t.thing', from: site.path).create(actor: testActor);
       final one = thing.instance('one').create();
       final where = '${site.path}/face';
       thing.materialize(one.tip!, path: where);

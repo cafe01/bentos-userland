@@ -1,6 +1,7 @@
 import 'package:args/command_runner.dart';
 import 'package:path/path.dart' as p;
 
+import '../git/model/actor.dart';
 import 'attention.dart';
 import 'bank.dart';
 import 'index.dart';
@@ -39,6 +40,13 @@ final class Mem {
         abbr: 'p',
         help: 'The vantage name resolution walks up from.',
         valueHelp: 'place',
+      )
+      ..argParser.addOption(
+        'actor',
+        help: 'Who is writing: "Name <addr>". Required by every verb that '
+            'writes — a page landed under whoever owns this machine is a '
+            'signed lie, and nothing here derives an identity.',
+        valueHelp: 'who',
       )
       ..addCommand(SurveyCommand(this))
       ..addCommand(RecallCommand(this))
@@ -81,19 +89,41 @@ final class Mem {
 
   /// **0** — did what was asked, including an empty reach and a degraded
   /// read. **1** — a decided refusal, or a bank not found from the vantage.
-  /// **2** — the call itself was invalid.
+  /// **2** — the call itself was invalid. **64** — nobody said who is writing.
   int exitCode = 0;
 
   Future<int> call(List<String> arguments) async {
     exitCode = 0;
     try {
       await _runner.run(arguments);
+    } on NoActor catch (e) {
+      // **64 and not 2**, though both mean the call was not sayable. A caller
+      // scripting across `entity`, `chat` and `mem` must read one number for
+      // *you did not say who you are*: the refusal is the platform's, not this
+      // utility's, and a shared law that answers with three different codes is
+      // three laws.
+      diagnostics.add('$e\n');
+      exitCode = 64;
     } on UsageException catch (e) {
       diagnostics.add('${e.message}\n');
       exitCode = 2;
     }
     return exitCode;
   }
+}
+
+/// Nobody stated who is writing, or what they stated is not `Name <addr>`.
+///
+/// **A refusal with a name, never a fallback**: a fallback here produces a
+/// signed lie rather than a failure, and the page would carry it forever.
+final class NoActor implements Exception {
+  const NoActor();
+
+  @override
+  String toString() => 'mem: say who is writing — pass --actor "Name <addr>". '
+      'Both halves are required, and nothing else may answer: the git identity '
+      'cascade describes whoever owns a checkout on this machine, not whoever '
+      'is remembering.';
 }
 
 /// The base every verb stands on: the two globals, bank resolution, and the
@@ -125,6 +155,28 @@ abstract base class MemCommand extends Command<void> {
       );
     }
     return resolved;
+  }
+
+  /// `--actor "Name <addr>"`, or a refusal — **the same law the entity floor
+  /// states, reaching the caller nobody enumerated.** A page is landed by an
+  /// act and an act carries an author; absent a stated one the machine's git
+  /// cascade answered, and a bank written under whoever owns this workstation
+  /// attributes one being's memory to another.
+  ///
+  /// No environment variable softens it. One was considered and refused: a
+  /// variable that names a being is not an address, and a file that answers
+  /// for a caller who said nothing is the cascade again with better manners.
+  Actor statedActor() {
+    final stated = (globalResults?['actor'] as String?)?.trim();
+    if (stated == null || stated.isEmpty) throw const NoActor();
+    final match = RegExp(r'^(.*)<([^<>]+)>$').firstMatch(stated);
+    if (match == null) throw const NoActor();
+    final who = match.group(1)!.trim();
+    final address = match.group(2)!.trim();
+    if (who.isEmpty || address.isEmpty || !address.contains('@')) {
+      throw const NoActor();
+    }
+    return Actor(who, email: address);
   }
 
   /// Resolves the named bank from [effectiveVantage]. A miss prints the
@@ -518,7 +570,7 @@ final class RememberCommand extends MemCommand {
     final body = await _readBody(this, cli);
     if (body == null) return;
 
-    final writer = Writer(bank, gist: cli.gistSource);
+    final writer = Writer(bank, actor: statedActor(), gist: cli.gistSource);
     final outcome = await writer.remember(
       topic,
       type: type,
@@ -560,7 +612,7 @@ final class RefocusCommand extends MemCommand with SelectorArgs {
     final topic = positionalTopic();
     final selector = buildSelector(topic: topic);
 
-    final writer = Writer(bank);
+    final writer = Writer(bank, actor: statedActor());
     final outcome = await writer.refocus(
       selector,
       to: toOpt == null ? null : _parseAttention(toOpt),
@@ -599,7 +651,7 @@ final class GistCommand extends MemCommand with SelectorArgs {
     final topic = positionalTopic();
     final selector = buildSelector(topic: topic);
 
-    final writer = Writer(bank, gist: cli.gistSource);
+    final writer = Writer(bank, actor: statedActor(), gist: cli.gistSource);
     final outcome = await writer.regist(selector, set: argResults!['set'] as String?);
     _reportOutcome(cli, bank.name, outcome);
   }
@@ -623,7 +675,7 @@ final class ForgetCommand extends MemCommand {
     final rest = argResults!.rest;
     if (rest.isEmpty) usageException('$name: <topic> is required');
 
-    final writer = Writer(bank);
+    final writer = Writer(bank, actor: statedActor());
     final outcome = await writer.forget(rest.first);
     _reportOutcome(cli, bank.name, outcome);
   }

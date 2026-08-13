@@ -17,7 +17,7 @@ void main() {
   setUp(() {
     site = Site();
     site.run(() {
-      llm = Entity('bentos.llm', from: site.root.path).create();
+      llm = Entity('bentos.llm', from: site.root.path).create(actor: testActor);
       llm.instance('s1').create();
     });
   });
@@ -34,7 +34,7 @@ void main() {
             File(p.join(ws.directory.path, file))
               ..parent.createSync(recursive: true)
               ..writeAsStringSync(content);
-          }, actor: const Actor('alfred')));
+          }, actor: Actor('alfred', email: 'alfred@test.local')));
 
   group('an instance is born from a commit', () {
     test('from genesis by default — empty the way a constructor leaves one', () {
@@ -79,7 +79,7 @@ void main() {
         site.runAsync(() => llm.instance('s1').act('prompt', (ws) {
               area = ws.directory;
               throw StateError('the body failed');
-            })),
+            }, actor: testActor)),
         throwsA(isA<StateError>()),
       );
       expect(
@@ -95,7 +95,7 @@ void main() {
         await site.runAsync(() => llm.instance('s1').act('prompt', (ws) {
               areas.add(ws.directory.path);
               File(p.join(ws.directory.path, 'm$i.txt')).writeAsStringSync('x');
-            }));
+            }, actor: testActor));
       }
       expect(
         areas.first,
@@ -178,8 +178,8 @@ void main() {
         File(p.join(mine.directory.path, 'mine.txt')).writeAsStringSync('mine');
         File(p.join(yours.directory.path, 'yours.txt')).writeAsStringSync('yours');
 
-        final first = mine.commit('prompt', actor: const Actor('alfred'));
-        final second = yours.commit('prompt', actor: const Actor('cafe'));
+        final first = mine.commit('prompt', actor: Actor('alfred', email: 'alfred@test.local'));
+        final second = yours.commit('prompt', actor: Actor('cafe', email: 'cafe@test.local'));
 
         expect(first, isA<Landed>());
         // **Contested and not barred**: nobody decided anything, the ref simply
@@ -202,7 +202,7 @@ void main() {
         site.git.declineNextSwap = 'entity: refused by r4: bin/check\n'
             "check: bentos.llm:s1: 'prompt' is illegal at owes_inference";
 
-        final result = ws.commit('prompt', actor: const Actor('alfred'));
+        final result = ws.commit('prompt', actor: Actor('alfred', email: 'alfred@test.local'));
 
         // A gate spoke, so this is barred and never contested: the same act
         // will be barred again, and a retry loop here is an infinite loop
@@ -229,8 +229,8 @@ void main() {
     test('refusal is a value, never a throw', () {
       site.run(() {
         final ws = llm.instance('s1').beginAct();
-        llm.instance('s1').beginAct().commit('prompt');
-        expect(() => ws.commit('prompt'), returnsNormally);
+        llm.instance('s1').beginAct().commit('prompt', actor: testActor);
+        expect(() => ws.commit('prompt', actor: testActor), returnsNormally);
       });
     });
   });
@@ -242,7 +242,7 @@ void main() {
               'prompt',
               (ws) => File(p.join(ws.directory.path, 'm.txt'))
                   .writeAsStringSync('hello'),
-              actor: const Actor('cafe'),
+              actor: Actor('cafe', email: 'cafe@test.local'),
               say: say,
             ),
       ) as Landed;
@@ -340,6 +340,7 @@ void main() {
             tree: tree,
             parents: [if (held != null) held.sha],
             message: 'a version published upstream\n',
+          actor: testActor,
           );
           site.git.updateRef(
             gitDir,
@@ -414,7 +415,7 @@ void main() {
         site.run(() {
           final tree = site.git.writeTree(gitDir, workTree: work.path);
           final sha = site.git.commitTree(gitDir,
-              tree: tree, parents: [if (held != null) held.sha], message: 'x\n');
+              tree: tree, parents: [if (held != null) held.sha], message: 'x\n', actor: testActor);
           site.git.updateRef(gitDir,
               ref: Entity.genesisRef, newCommit: Commit(sha), expected: held);
         });

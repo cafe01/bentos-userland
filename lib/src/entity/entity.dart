@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:path/path.dart' as p;
 
+import '../git/model/actor.dart';
 import '../place/place.dart';
 import 'arming/arming.dart';
 import 'arming/arming_provenance.dart';
@@ -102,11 +103,16 @@ final class Entity {
   /// Installs the entity here — authored, with no origin and nothing to fetch
   /// from. The one member that consumes the anchor; by liveness this same
   /// handle then resolves to what it just made.
-  Entity create() {
+  /// [actor] is required for the same reason it is required on an act:
+  /// authoring an entity is somebody's doing, the genesis commit carries an
+  /// author, and the only alternative source for that field is the machine's
+  /// own git cascade — which describes whoever owns a checkout here and nobody
+  /// else. There is no unsigned commit left in the primitive.
+  Entity create({required Actor actor}) {
     final place = Place(_anchor ?? Directory.current.path);
     final gitDir = p.join(place.plot(plotNamespace).path, name, repositoryDirName);
     ambientGit.init(gitDir);
-    final genesisSha = _bearGenesis(gitDir, name);
+    final genesisSha = _bearGenesis(gitDir, name, actor);
     // The tenant asks; the landlord records. The gitlink is the place's own
     // tree entry and no tenant writes there.
     place.register(name, url: '', path: name, sha: genesisSha.sha);
@@ -129,7 +135,7 @@ final class Entity {
   /// genesis with no identity would be byte-identical under content addressing,
   /// and the two lines would then federate as though they were one, silently.
   /// The token is what makes that impossible.
-  static Commit _bearGenesis(String gitDir, String name) {
+  static Commit _bearGenesis(String gitDir, String name, Actor actor) {
     final empty = Directory.systemTemp.createTempSync('entity-genesis-');
     try {
       final tree = ambientGit.writeTree(gitDir, workTree: empty.path);
@@ -139,6 +145,7 @@ final class Entity {
         parents: const [],
         message: 'genesis\n\n$_entityTrailer: $name\n'
             '$_genesisTrailer: ${_mintIdentity()}\n',
+        actor: actor,
       );
       ambientGit.updateRef(
         gitDir,

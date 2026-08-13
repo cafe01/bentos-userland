@@ -17,11 +17,18 @@ object with its own scrollback, unread mark and half-typed line. Rooms are
 configured, never browsed: name them, or leave none and the place answers
 when it carries exactly one.
 
-  -C, --place <dir>   the vantage the rooms resolve from (default: cwd)
-  -h, --help          print this help''';
+  -C, --place <dir>        the vantage the rooms resolve from (default: cwd)
+  -I, --identity "N <a>"   who is speaking — both halves, stated
+  -h, --help               print this help
+
+You say who you are. The window does not open for a caller that stated
+nothing: an identity is a value, and no configuration of this machine may
+answer for whoever is sitting at it. $identityVariable serves as the
+default when the flag is absent.''';
 
 Future<void> main(List<String> args) async {
   String? place;
+  String? stated;
   final rooms = <String>[];
 
   for (var i = 0; i < args.length; i++) {
@@ -35,6 +42,12 @@ Future<void> main(List<String> args) async {
         exit(64);
       }
       place = args[++i];
+    } else if (arg == '-I' || arg == '--identity') {
+      if (i + 1 >= args.length) {
+        stderr.writeln('chat: $arg needs a value');
+        exit(64);
+      }
+      stated = args[++i];
     } else if (arg.startsWith('-')) {
       stderr.writeln('chat: unrecognized option: $arg');
       stderr.writeln(_usage);
@@ -44,7 +57,19 @@ Future<void> main(List<String> args) async {
     }
   }
 
-  final floor = EntityFloor();
+  // **Resolved at open, and held for the run.** The screen is one sitting by
+  // one participant, so the answer is taken once, before a window exists —
+  // and a caller that said nothing meets a plain sentence on stderr rather
+  // than a stack trace where a refusal belongs.
+  final Identity identity;
+  try {
+    identity = resolveChatIdentity(stated: stated);
+  } on NoIdentity catch (e) {
+    stderr.writeln('chat: $e');
+    exit(64);
+  }
+
+  final floor = EntityFloor(identity: identity);
   final cwd = Directory.current.path;
   final anchor = p.normalize(
     place == null ? cwd : (p.isAbsolute(place) ? place : p.join(cwd, place)),

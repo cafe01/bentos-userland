@@ -518,8 +518,8 @@ void main() {
         ['monitor', '--wait', '--timeout', '5', '--interval', '0.05'],
       );
 
-      expect(result.exitCode, 1);
-      expect(result.err, contains('states its own identity'));
+      expect(result.exitCode, 64);
+      expect(result.err, contains('who you are'));
       expect(cursorFile.existsSync(), isFalse);
     });
 
@@ -530,7 +530,7 @@ void main() {
 
       final result = await run([
         '--identity',
-        'peer@bentos.life',
+        'Peer <peer@bentos.life>',
         'monitor',
         '--wait',
         '--timeout',
@@ -553,7 +553,7 @@ void main() {
 
       await run([
         '--identity',
-        'one@bentos.life',
+        'One <one@bentos.life>',
         'monitor',
         '--wait',
         '--timeout',
@@ -563,7 +563,7 @@ void main() {
       ]);
       final second = await run([
         '--identity',
-        'two@bentos.life',
+        'Two <two@bentos.life>',
         'monitor',
         '--wait',
         '--timeout',
@@ -580,6 +580,8 @@ void main() {
           as Map<String, dynamic>)['cursors'] as Map<String, dynamic>;
       expect(
         (marks['bentos.chat:fabrica'] as Map<String, dynamic>).keys,
+        // Keyed by the address alone, as the test above demands: the display
+        // name is not the being, so a rename must not hand anyone a fresh mark.
         containsAll(['one@bentos.life', 'two@bentos.life']),
       );
     });

@@ -53,18 +53,21 @@ abstract interface class ChatFloor {
   Ticker dispatchTicker(String place);
 }
 
-/// The floor as it really is: the entity primitive underneath, git's own
-/// cascade for identity.
+/// The floor as it really is: the entity primitive underneath, and a stated
+/// identity — never a derived one.
 final class EntityFloor implements ChatFloor {
-  EntityFloor({this.construct = channelConstruction});
+  /// [identity] is what a face that already resolved hands down, which is how
+  /// the screen resolves once at open. Absent it, the resolver is asked at the
+  /// first use and refuses a caller who stated nothing.
+  EntityFloor({this.construct = channelConstruction, Identity? identity})
+      : _identity = identity;
 
   /// How a channel is built. Named so a face can be driven over a different
   /// construction without this class knowing there is more than one.
   final ChannelConstruction construct;
 
-  /// Resolved once per process. Not caching it would mean a `git config`
-  /// cascade per verb for a human caller, and — worse — two chances for the
-  /// signer and the drain mark's owner to disagree.
+  /// Resolved once per process — the signer and the drain mark's owner must be
+  /// the same participant, and two resolutions are two chances to disagree.
   Identity? _identity;
 
   @override

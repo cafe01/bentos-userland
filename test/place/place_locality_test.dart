@@ -4,6 +4,8 @@ import 'package:bentos_userland/src/git/process_git.dart';
 import 'package:bentos_userland/src/place/place.dart';
 import 'package:test/test.dart';
 
+import '../entity/helpers.dart';
+
 /// The pin under two spellings of one directory.
 ///
 /// Every other proof of the pin varies the *state* — which entity, which sha,
@@ -52,7 +54,7 @@ void main() {
       pinned = git.commitTree(other,
           tree: git.writeTree(other, workTree: work.path),
           parents: const [],
-          message: 'genesis');
+          message: 'genesis', actor: testActor);
     });
 
     tearDown(() {

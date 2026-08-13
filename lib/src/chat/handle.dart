@@ -46,28 +46,27 @@ final class Handle {
   String toString() => '@$local';
 }
 
-/// Who the caller is, resolved from **the cascade the commit will be signed
-/// under** — the entity's own repository, never the directory the caller
-/// happens to be standing in.
+/// Who the caller says it is — **a value it stated**, never a fact derived
+/// about the machine it is running on. One installation serves many beings, so
+/// anything read from this box answers a question nobody asked it.
 ///
-/// A collaborator and not a computation, for one reason: today the primitive
-/// invents an author when none is passed, and this library must not compensate
-/// for that by passing one. Holding identity behind a seam means the day the
-/// floor stops inventing an author, nothing in `lib/src/chat/` changes.
+/// Both halves are present, always: a participant with no address cannot be
+/// told from another, and a display name is what a transcript reads by.
 abstract interface class Identity {
-  /// The handle this caller speaks under.
-  ///
-  /// Required: a participant with no identity cannot be told from another, and
-  /// guessing one would put words in somebody's mouth.
+  /// The handle this caller speaks under — the local part and the origin,
+  /// taken from the address it stated.
   Handle get handle;
 
-  /// The display name the substrate holds, or null when it holds none.
-  String? get displayName;
+  /// The name shown beside the handle. Never null: a caller that stated an
+  /// address and no name was refused before an [Identity] existed.
+  String get displayName;
 }
 
-/// Nobody has stated who is speaking. Not a refusal — nobody decided
-/// anything — and not a stumble either: it is a condition of the machine, or
-/// of the caller having a name and no address.
+/// Nobody stated who is speaking, or what they stated is not an identity.
+///
+/// **A usage failure and nothing else.** Not *barred* — no gate refused this —
+/// and not *contested* — nothing raced it. The command was not sayable, which
+/// is why it must not be retried, and why the ref never moved.
 final class NoIdentity implements Exception {
   const NoIdentity(this.reason);
 

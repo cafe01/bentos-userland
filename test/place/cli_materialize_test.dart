@@ -7,6 +7,8 @@ import 'package:bentos_userland/src/place/place.dart';
 import 'package:bentos_userland/src/place/place_runner.dart';
 import 'package:test/test.dart';
 
+import '../entity/helpers.dart';
+
 /// `place materialize` — the constellation brought down, driven through the
 /// coreutil against **real repositories**.
 ///
@@ -50,6 +52,7 @@ void main() {
         tree: git.writeTree(gitDir, workTree: work.path),
         parents: parents,
         message: 'fixture',
+      actor: testActor,
       );
     } finally {
       work.deleteSync(recursive: true);
@@ -64,7 +67,7 @@ void main() {
     String name, {
     String? manifest,
   }) {
-    Entity(name, from: place).create();
+    Entity(name, from: place).create(actor: testActor);
     final gitDir = gitDirOfInstallation(place, name);
 
     final genesis = manifest == null

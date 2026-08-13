@@ -6,6 +6,8 @@ import 'package:bentos_userland/src/place/place.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
+import 'helpers.dart';
+
 /// **Tier C — arming by manifest, on a repository this system never wrote.**
 ///
 /// Every other fixture in the suite is born of [Entity.create], and a portal
@@ -53,7 +55,7 @@ void main() {
         ..writeAsStringSync('#!/usr/bin/env bash\nexit 0\n');
       Process.runSync('chmod', ['755', bad.path]);
       final tree = git.writeTree(gitDir, workTree: work.path);
-      final sha = git.commitTree(gitDir, tree: tree, parents: const [], message: 'initial\n');
+      final sha = git.commitTree(gitDir, tree: tree, parents: const [], message: 'initial\n', actor: testActor);
       git.updateRef(gitDir, ref: 'refs/heads/main', newCommit: Commit(sha), expected: null);
       git.updateRef(gitDir, ref: 'HEAD', newCommit: Commit(sha), expected: null);
     } finally {

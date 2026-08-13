@@ -38,7 +38,7 @@ void main() {
     test('two handles anchored at different depths speak of one installation', () {
       final deep = site.nested('workshop');
       site.run(() {
-        Entity('bentos.llm', from: site.root.path).create();
+        Entity('bentos.llm', from: site.root.path).create(actor: testActor);
         final fromRoot = Entity('bentos.llm', from: site.root.path);
         final fromDeep = Entity('bentos.llm', from: deep.path);
         expect(fromDeep.genesis, fromRoot.genesis);
@@ -48,8 +48,8 @@ void main() {
     test('nearest wins — an installation below shadows one above', () {
       final deep = site.nested('workshop');
       site.run(() {
-        Entity('bentos.llm', from: site.root.path).create();
-        Entity('bentos.llm', from: deep.path).create();
+        Entity('bentos.llm', from: site.root.path).create(actor: testActor);
+        Entity('bentos.llm', from: deep.path).create(actor: testActor);
         expect(
           Entity('bentos.llm', from: deep.path).genesis,
           isNot(Entity('bentos.llm', from: site.root.path).genesis),
@@ -62,7 +62,7 @@ void main() {
   group('genesis', () {
     test('a created entity has genesis and no instances', () {
       site.run(() {
-        final e = Entity('bentos.llm', from: site.root.path).create();
+        final e = Entity('bentos.llm', from: site.root.path).create(actor: testActor);
         expect(e.genesis, isNotNull);
         expect(e.instances, isEmpty);
       });
@@ -70,7 +70,7 @@ void main() {
 
     test('genesis is never listed among the instances', () {
       site.run(() {
-        final e = Entity('bentos.llm', from: site.root.path).create();
+        final e = Entity('bentos.llm', from: site.root.path).create(actor: testActor);
         e.instance('s1').create();
         expect(
           e.instances.map((i) => i.id),
@@ -90,7 +90,7 @@ void main() {
     test('a name already born refuses the deliberate birth, in the ontology\'s '
         'own words', () {
       site.run(() {
-        final e = Entity('bentos.llm', from: site.root.path).create();
+        final e = Entity('bentos.llm', from: site.root.path).create(actor: testActor);
         e.instance('s1').create();
         expect(
           () => e.instance('s1').create(),
@@ -105,7 +105,7 @@ void main() {
 
     test('ensureBorn is idempotent, and says who did the birthing', () {
       site.run(() {
-        final e = Entity('bentos.llm', from: site.root.path).create();
+        final e = Entity('bentos.llm', from: site.root.path).create(actor: testActor);
         final instance = e.instance('s1');
         expect(instance.ensureBorn(), isTrue, reason: 'nobody had');
         final born = instance.tip;
@@ -144,7 +144,7 @@ void main() {
       final downstream = site.nested('downstream');
 
       await site.runAsync(() async {
-        Entity('bentos.llm', from: site.root.path).create();
+        Entity('bentos.llm', from: site.root.path).create(actor: testActor);
         final source = repositoryOf(site.root.path, 'bentos.llm');
 
         final here = await Entity.install(source, at: downstream.path);
@@ -160,8 +160,8 @@ void main() {
     test('two installations of one entity are two participants', () {
       final downstream = site.nested('downstream');
       site.run(() {
-        Entity('bentos.llm', from: site.root.path).create();
-        Entity('bentos.llm', from: downstream.path).create();
+        Entity('bentos.llm', from: site.root.path).create(actor: testActor);
+        Entity('bentos.llm', from: downstream.path).create(actor: testActor);
         Entity('bentos.llm', from: downstream.path).instance('s1').create();
         expect(
           Entity('bentos.llm', from: site.root.path).instances,
@@ -175,14 +175,14 @@ void main() {
   group('materializedAt', () {
     test('unmaterialized answers absence, never a throw', () {
       site.run(() {
-        final e = Entity('bentos.llm', from: site.root.path).create();
+        final e = Entity('bentos.llm', from: site.root.path).create(actor: testActor);
         expect(e.materializedAt, isNull);
       });
     });
 
     test('materialized answers the installation\'s own path', () {
       site.run(() {
-        final e = Entity('bentos.llm', from: site.root.path).create();
+        final e = Entity('bentos.llm', from: site.root.path).create(actor: testActor);
         final where = p.join(site.root.path, e.name);
 
         e.materialize(e.genesis, path: where);
@@ -193,7 +193,7 @@ void main() {
 
     test('the path it answers is the one refresh() actually moves', () async {
       await site.runAsync(() async {
-        final e = Entity('bentos.mem', from: site.root.path).create();
+        final e = Entity('bentos.mem', from: site.root.path).create(actor: testActor);
         final instance = e.instance('main')..create();
         final where = p.join(site.root.path, e.name);
         instance.materialize(at: where);
@@ -201,7 +201,7 @@ void main() {
 
         await instance.act('write', (w) {
           File(p.join(w.directory.path, 'f.txt')).writeAsStringSync('x');
-        });
+        }, actor: testActor);
         final result = instance.materialization(e.materializedAt!.path).refresh();
 
         expect(result.moved, isTrue);

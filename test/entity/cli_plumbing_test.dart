@@ -18,7 +18,7 @@ void main() {
   setUp(() async {
     site = Site('cli');
     cli = Cli(site);
-    await cli.run(['create', 't.chat']);
+    await cli.run(['create', 't.chat', ...Cli.signed]);
     await cli.run(['new', 't.chat', 'c1']);
   });
   tearDown(() => site.dispose());
@@ -77,7 +77,7 @@ void main() {
 
       final landed = await cli.run([
         'commit', 't.chat:c1', 'prompt',
-        '-w', opened.area, '--parent', opened.parent, '--actor', 'alfred',
+        '-w', opened.area, '--parent', opened.parent, '--actor', 'alfred', '--actor-email', 'alfred@test.local',
       ]);
       expect(landed.code, 0, reason: landed.err);
       expect(landed.out.trim(), hasLength(40));
@@ -101,7 +101,7 @@ void main() {
 
       await cli.run([
         'commit', 't.chat:c1', 'prompt',
-        '-w', opened.area, '--parent', opened.parent, '--actor', 'cafe',
+        '-w', opened.area, '--parent', opened.parent, '--actor', 'cafe', '--actor-email', 'cafe@test.local',
         '--say', 'user say',
       ]);
 
@@ -119,13 +119,13 @@ void main() {
 
       File('${first.area}/1.txt').writeAsStringSync('mine');
       final landed = await cli.run(
-        ['commit', 't.chat:c1', 'prompt', '-w', first.area, '--parent', first.parent],
+        ['commit', 't.chat:c1', 'prompt', '-w', first.area, '--parent', first.parent, ...Cli.signed],
       );
       expect(landed.code, 0);
 
       File('${second.area}/1.txt').writeAsStringSync('theirs');
       final refused = await cli.run(
-        ['commit', 't.chat:c1', 'prompt', '-w', second.area, '--parent', second.parent],
+        ['commit', 't.chat:c1', 'prompt', '-w', second.area, '--parent', second.parent, ...Cli.signed],
       );
 
       // Contested: the ref moved under the second actor and no gate was asked,
@@ -166,7 +166,7 @@ void main() {
       final opened = await work('t.chat:c1');
 
       final r = await cli.run(
-        ['commit', 't.chat:c1', 'prompt', '-w', opened.area],
+        ['commit', 't.chat:c1', 'prompt', '-w', opened.area, ...Cli.signed],
       );
       expect(r.code, EntityRunner.usageCode);
       expect(r.err, contains('--parent'));
@@ -174,7 +174,7 @@ void main() {
 
     test('commit without an area is a usage fault', () async {
       final r = await cli.run(
-        ['commit', 't.chat:c1', 'prompt', '--parent', 'deadbeef'],
+        ['commit', 't.chat:c1', 'prompt', '--parent', 'deadbeef', ...Cli.signed],
       );
 
       expect(r.code, EntityRunner.usageCode);
@@ -224,7 +224,7 @@ void main() {
       await runWithGitAsync(git, () async {
         final runner =
             EntityRunner(out: StringBuffer(), err: StringBuffer(), currentDirectory: root.path);
-        await runner.run(['create', 't.chat']);
+        await runner.run(['create', 't.chat', ...Cli.signed]);
         await runner.run(['new', 't.chat', 'c1']);
       });
     });

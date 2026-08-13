@@ -18,12 +18,16 @@ abstract interface class GistSource {
 /// seam, land the act, absorb a contested landing, bring the tree to the
 /// line, refuse what must be refused.
 final class Writer {
-  Writer(this._bank, {Actor? actor, GistSource? gist, this.attempts = 3})
+  /// [actor] is required: a page is landed by an act, an act carries an
+  /// author, and the only other thing that could fill that field is the
+  /// machine's own git cascade — which describes whoever owns a checkout here
+  /// and never whoever is remembering.
+  Writer(this._bank, {required Actor actor, GistSource? gist, this.attempts = 3})
       : _actor = actor,
         _gist = gist;
 
   final Bank _bank;
-  final Actor? _actor;
+  final Actor _actor;
   final GistSource? _gist;
 
   /// How many times a [Contested] landing is retried before it is reported

@@ -72,8 +72,9 @@ final class Action {
   /// it.
   String? get sentence => sayIn(_record.message);
 
-  /// Who acted, from the commit's author.
-  Actor get actor => _record.author;
+  /// Who the act **says** acted, from the commit's author. A claim of
+  /// provenance and not a signature: nothing here verified it.
+  Attribution get actor => _record.author;
 
   /// When, from the commit's author date.
   DateTime get instant => _record.instant;

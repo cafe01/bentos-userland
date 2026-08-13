@@ -18,7 +18,7 @@ void main() {
   /// Materializes an empty bank and returns the directory its pages live in
   /// — no land, no act, exactly the hand-edit shape [Bank.pages] reads.
   Directory materialize(String name) {
-    final entity = Entity(name, from: site.root.path).create();
+    final entity = Entity(name, from: site.root.path).create(actor: testActor);
     entity.instance('main').create();
     final where = Directory(p.join(site.root.path, entity.name));
     entity.instance('main').materialize(at: where.path);

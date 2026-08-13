@@ -32,7 +32,7 @@ void main(List<String> args) {
       tree: tree,
       parents: [tip.sha],
       message: Action.messageFor('note'),
-      actor: const Actor('poisoned'),
+      actor: Actor('poisoned', email: 'poisoned@test.local'),
     );
     if (!git.updateRef(gitDir, ref: ref, newCommit: Commit(sha), expected: tip).moved) {
       stderr.writeln('the swap was refused');

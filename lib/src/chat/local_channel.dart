@@ -77,17 +77,40 @@ final class LocalChannel implements Channel {
   Future<ActResult> join({String? displayName}) async {
     final display = displayName ?? _identity.displayName;
     final joinedAt = _isoNow(_clock().toUtc());
+    final address = me.email;
     _acts.ensureBorn();
     return _act(
       'membership',
+      // Arrival is the one door in, so the membership gate cannot stand at it:
+      // nobody is seated before they join.
       gated: false,
-      say: 'join · $me${display == null || display.isEmpty ? '' : ' ($display)'}',
+      // **The one gate arrival owes**: a local part is one being inside one
+      // channel, so a seat already held by a *different* address is refused
+      // rather than written over. `@alfred` from two addresses is the medium
+      // collapsing two beings onto one handle — the 08/12 defect arriving
+      // through the front door — and one conversation cannot carry two of
+      // them. Read in the act's own area, at the tip the swap will demand, so
+      // two arrivals in the same instant cannot both pass it.
+      gate: (area) {
+        final seated = area.exists('$participantsPath/${me.local}/address')
+            ? area.read('$participantsPath/${me.local}/address')?.trim()
+            : null;
+        if (seated == null || seated.isEmpty || seated == address) return null;
+        return 'refused — @${me.local} is $seated in this channel, and a '
+            'local part is one being: $address cannot take that seat';
+      },
+      say: 'join · $me${display.isEmpty ? '' : ' ($display)'}',
       write: (area) {
         final seat = '$participantsPath/${me.local}';
         // Written once and left alone: a real return is dated afresh only by
         // way of `leave` tearing the seat down first.
         if (!area.exists('$seat/joined')) area.write('$seat/joined', '$joinedAt\n');
-        if (display != null && display.isNotEmpty) area.write('$seat/name', '$display\n');
+        // **The address whole, and not merely the local part.** The roster is
+        // the registry, and a registry that stores half an address cannot tell
+        // two beings apart — which is precisely how one installation showed a
+        // single participant while two were speaking.
+        area.write('$seat/address', '$address\n');
+        if (display.isNotEmpty) area.write('$seat/name', '$display\n');
       },
     );
   }
@@ -100,7 +123,7 @@ final class LocalChannel implements Channel {
     final id = _ulid(now.millisecondsSinceEpoch);
     final path = '$messagesPath/${_two(now.year, 4)}/${_two(now.month)}/'
         '${_two(now.day)}/$id.md';
-    final author = '${_identity.displayName ?? ''} <${me.email}>';
+    final author = '${_identity.displayName} <${me.email}>';
     final spoken = _isoNow(now);
     return _act(
       'message',
@@ -160,13 +183,14 @@ final class LocalChannel implements Channel {
     required void Function(ChatArea area) write,
     required String say,
     bool gated = true,
+    String? Function(ChatArea area)? gate,
   }) async {
     if (gated && !_acts.born) throw NoSuchChannel(coordinate);
     for (var attempt = 1; attempt <= _attempts; attempt++) {
       final outcome = _acts.attempt(
         noun,
         write: write,
-        gate: gated ? _membershipGate : null,
+        gate: gated ? _membershipGate : gate,
         say: say,
       );
       switch (outcome) {
@@ -445,13 +469,20 @@ final class LocalChannel implements Channel {
       final joined = _tree.read('$seat/joined', at: at);
       if (joined == null) continue;
       final displayName = _tree.read('$seat/name', at: at)?.trim();
+      // The address the seat recorded at arrival. Absent in a channel written
+      // before seats carried one, and the handle is then what it always was —
+      // a local part with no origin, which is an old record read honestly and
+      // never a new one written that way.
+      final address = _tree.read('$seat/address', at: at)?.trim();
       // **Presence is asked of the path and not of the bytes**: the file exists
       // when the participant is away, and its contents are the reason. An empty
       // string is *away, having said nothing*; null is *here*.
       final away = _tree.read('$seat/away', at: at)?.trim();
       participants.add(
         Participant(
-          handle: Handle(local, ''),
+          handle: address == null || address.isEmpty
+              ? Handle(local, '')
+              : Handle.ofEmail(address),
           joined: DateTime.parse(joined.trim()).toUtc(),
           displayName:
               displayName == null || displayName.isEmpty ? null : displayName,

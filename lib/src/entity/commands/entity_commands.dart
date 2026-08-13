@@ -10,7 +10,9 @@ import 'entity_command.dart';
 /// `entity create <name>` — author one here. It has no origin and nothing to
 /// fetch from; that is what separates it from [InstallCommand].
 final class CreateCommand extends EntityCommand {
-  CreateCommand(super.cli);
+  CreateCommand(super.cli) {
+    takesActor();
+  }
 
   @override
   String get name => 'create';
@@ -21,7 +23,10 @@ final class CreateCommand extends EntityCommand {
   @override
   Future<void> run() async {
     final named = positional('name');
-    final entity = cli.entityNamed(named, place: placeOption).create();
+    // Authoring is an act with an author, and the genesis commit carries it.
+    final actor = statedActor();
+    final entity =
+        cli.entityNamed(named, place: placeOption).create(actor: actor);
     cli.out.writeln(entity.genesis.sha);
   }
 }

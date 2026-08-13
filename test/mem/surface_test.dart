@@ -29,13 +29,20 @@ final class _Out implements Sink<String> {
 }
 
 void main() {
+  /// Who is writing, where the fixture's subject is not who wrote.
+  ///
+  /// Stated at the call, exactly as a hand would have to: `mem` derives an
+  /// identity from nothing, so a fixture that omitted this would be testing a
+  /// door that no longer opens.
+  const memSigned = ['--actor', 'Tester <tester@test.local>'];
+
   late Site site;
 
   setUp(() => site = Site());
   tearDown(() => site.dispose());
 
   Directory materialize(String name) {
-    final entity = Entity(name, from: site.root.path).create();
+    final entity = Entity(name, from: site.root.path).create(actor: testActor);
     entity.instance('main').create();
     final where = Directory(p.join(site.root.path, entity.name));
     entity.instance('main').materialize(at: where.path);
@@ -101,8 +108,7 @@ void main() {
       await site.runAsync(() async {
         materialize('alfred.mem');
         var out = _Out(), diag = _Out();
-        var code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag).call([
-          'remember',
+        var code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag).call([...memSigned, 'remember',
           'domain/hello',
           '-t',
           'semantic',
@@ -131,8 +137,7 @@ void main() {
           out: out,
           diagnostics: diag,
           fileReader: (path) => File(path).readAsString(),
-        ).call([
-          'remember',
+        ).call([...memSigned, 'remember',
           'domain/hello',
           '-t',
           'semantic',
@@ -170,7 +175,7 @@ void main() {
           out: out,
           diagnostics: diag,
           stdinReader: () async => 'a body',
-        ).call(['remember', 'domain/x', '-t', 'semantic', '-A', '0.5']);
+        ).call([...memSigned, 'remember', 'domain/x', '-t', 'semantic', '-A', '0.5']);
         expect(code, 1);
         expect(diag.text, contains('refused'));
         expect(diag.text, contains('no gist'));
@@ -188,7 +193,7 @@ void main() {
           diagnostics: diag,
           gistSource: const _FixedGist(),
           stdinReader: () async => 'a body',
-        ).call(['remember', 'domain/x', '-t', 'semantic', '-A', '0.5']);
+        ).call([...memSigned, 'remember', 'domain/x', '-t', 'semantic', '-A', '0.5']);
         expect(code, 0);
         expect(diag.text, contains('written domain/x'));
       });
@@ -199,7 +204,7 @@ void main() {
         materialize('alfred.mem');
         final out = _Out(), diag = _Out();
         final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
-            .call(['remember', 'domain/x', '-A', '0.5']);
+            .call([...memSigned, 'remember', 'domain/x', '-A', '0.5']);
         expect(code, 2);
         expect(diag.text, contains('-t <type>'));
       });
@@ -229,7 +234,7 @@ void main() {
         diagnostics: diag,
         stdinReader: () async => 'body text here',
         gistSource: const _FixedGist(),
-      ).call(['remember', 't', '-t', 'semantic', '-A', '0.5']);
+      ).call([...memSigned, 'remember', 't', '-t', 'semantic', '-A', '0.5']);
       expect(code, 0);
     }
 
@@ -241,7 +246,7 @@ void main() {
 
         final out = _Out(), diag = _Out();
         final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
-            .call(['refocus', 't', '--to', '0.9']);
+            .call([...memSigned, 'refocus', 't', '--to', '0.9']);
         expect(code, 0);
         expect(diag.text, contains('written t'));
       });
@@ -254,7 +259,7 @@ void main() {
         await writeOne('alfred.mem');
         final out = _Out(), diag = _Out();
         final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
-            .call(['refocus', 't']);
+            .call([...memSigned, 'refocus', 't']);
         expect(code, 2);
         expect(diag.text, contains('--to'));
       });
@@ -267,7 +272,7 @@ void main() {
 
         var out = _Out(), diag = _Out();
         var code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
-            .call(['forget', 't']);
+            .call([...memSigned, 'forget', 't']);
         expect(code, 0);
 
         out = _Out();

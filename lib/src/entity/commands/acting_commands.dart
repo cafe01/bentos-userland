@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import '../../git/model/actor.dart';
 import '../entity_runner.dart';
 import 'entity_command.dart';
 
@@ -17,17 +16,8 @@ import 'entity_command.dart';
 /// `.attempted` said no. Both are ordinary, and a caller retries by re-reading.
 final class ActCommand extends EntityCommand {
   ActCommand(super.cli) {
-    argParser
-      ..addOption('actor', help: 'The identity written as the author.')
-      ..addOption(
-        'actor-email',
-        help: 'The address written beside --actor. Requires --actor. Absent, '
-            'a placeholder is derived — harmless, since nothing reads meaning '
-            'into the address — but a caller that means to state a real one '
-            'and cannot could only omit --actor entirely, leaving the ambient '
-            'environment to sign instead.',
-      )
-      ..addOption(
+    takesActor();
+    argParser.addOption(
         'say',
         help: 'The legible sentence, stored and never interpreted.',
         valueHelp: 'phrase',
@@ -49,11 +39,9 @@ final class ActCommand extends EntityCommand {
       usageException('act: the body is required — `-- <command>`');
     }
 
-    final actor = argResults!['actor'] as String?;
-    final actorEmail = argResults!['actor-email'] as String?;
-    if (actorEmail != null && actor == null) {
-      usageException('act: --actor-email requires --actor');
-    }
+    // Before the area is opened: an act nobody signed is not sayable, and
+    // refusing after a worktree exists would make the refusal cost something.
+    final actor = statedActor();
     final result = await cli.instanceAt(coordinate(), place: placeOption).act(
       rest[1],
       (workspace) async {
@@ -88,7 +76,7 @@ final class ActCommand extends EntityCommand {
         await Future.wait(said);
         if (code != 0) throw _BodyFailed(code);
       },
-      actor: actor == null ? null : Actor(actor, email: actorEmail),
+      actor: actor,
       say: argResults!['say'] as String?,
     );
     cli.report(result);

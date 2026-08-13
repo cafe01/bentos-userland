@@ -42,7 +42,7 @@ void main() {
   /// needs to land content [Writer] itself has no way to produce — malformed
   /// frontmatter, which no [Fields] value can express.
   ({Entity entity, Bank bank}) stand() {
-    final entity = Entity('alfred.mem', from: site.root.path)..create();
+    final entity = Entity('alfred.mem', from: site.root.path)..create(actor: testActor);
     entity.instance('main').create();
     final where = p.join(site.root.path, entity.name);
     entity.instance('main').materialize(at: where);
@@ -56,7 +56,7 @@ void main() {
       await site.runAsync(() async {
         final s = stand();
         final gist = FixedGist('a derived cue');
-        final writer = Writer(s.bank, actor: const Actor('tester'), gist: gist);
+        final writer = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'), gist: gist);
 
         final outcome = await writer.remember(
           'domain/hello',
@@ -76,7 +76,7 @@ void main() {
       await site.runAsync(() async {
         final s = stand();
         final writer =
-            Writer(s.bank, actor: const Actor('tester'), gist: UnreachableGist());
+            Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'), gist: UnreachableGist());
 
         final outcome = await writer.remember(
           'domain/hello',
@@ -94,7 +94,7 @@ void main() {
     test('no model and no manual gist refuses without landing', () async {
       await site.runAsync(() async {
         final s = stand();
-        final writer = Writer(s.bank, actor: const Actor('tester'));
+        final writer = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'));
 
         final outcome = await writer.remember(
           'domain/hello',
@@ -114,7 +114,7 @@ void main() {
       await site.runAsync(() async {
         final s = stand();
         final writer =
-            Writer(s.bank, actor: const Actor('tester'), gist: FixedGist(null));
+            Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'), gist: FixedGist(null));
 
         final outcome = await writer.remember(
           'domain/hello',
@@ -130,7 +130,7 @@ void main() {
     test('created is stamped once and carried across a replace', () async {
       await site.runAsync(() async {
         final s = stand();
-        final writer = Writer(s.bank, actor: const Actor('tester'), gist: FixedGist('cue'));
+        final writer = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'), gist: FixedGist('cue'));
 
         await writer.remember('domain/hello',
             type: MemType.semantic, attention: Attention(0.5), body: 'v1');
@@ -150,7 +150,7 @@ void main() {
     test('omitted tags replace with none, never inherited', () async {
       await site.runAsync(() async {
         final s = stand();
-        final writer = Writer(s.bank, actor: const Actor('tester'), gist: FixedGist('cue'));
+        final writer = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'), gist: FixedGist('cue'));
 
         await writer.remember('domain/hello',
             type: MemType.semantic,
@@ -170,7 +170,7 @@ void main() {
         () async {
       await site.runAsync(() async {
         final s = stand();
-        final writer = Writer(s.bank, actor: const Actor('tester'), gist: FixedGist('cue'));
+        final writer = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'), gist: FixedGist('cue'));
         await writer.remember('a',
             type: MemType.semantic, attention: Attention(0.5), body: 'body');
         final before = s.bank.page('a')!.fields.modified;
@@ -190,7 +190,7 @@ void main() {
         () async {
       await site.runAsync(() async {
         final s = stand();
-        final writer = Writer(s.bank, actor: const Actor('tester'), gist: FixedGist('cue'));
+        final writer = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'), gist: FixedGist('cue'));
         await writer.remember('a',
             type: MemType.semantic, attention: Attention(0.9), body: 'x');
 
@@ -204,7 +204,7 @@ void main() {
         () async {
       await site.runAsync(() async {
         final s = stand();
-        final writer = Writer(s.bank, actor: const Actor('tester'), gist: FixedGist('cue'));
+        final writer = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'), gist: FixedGist('cue'));
         await writer.remember('a',
             type: MemType.semantic, attention: Attention(0.5), body: 'a');
         await writer.remember('b',
@@ -228,7 +228,7 @@ void main() {
         File(p.join(where, 'broken.md'))
             .writeAsStringSync('---\nattention: 0.5\n---\nno type here\n');
 
-        final writer = Writer(s.bank, actor: const Actor('tester'));
+        final writer = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'));
         final outcome =
             await writer.refocus(const Selector(topic: 'broken'), to: Attention(0.9));
 
@@ -245,14 +245,14 @@ void main() {
       await site.runAsync(() async {
         final s = stand();
         final writing = FixedGist('old cue');
-        final writer = Writer(s.bank, actor: const Actor('tester'), gist: writing);
+        final writer = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'), gist: writing);
         await writer.remember('a',
             type: MemType.semantic, attention: Attention(0.5), body: 'body a');
         await writer.remember('b',
             type: MemType.semantic, attention: Attention(0.5), body: 'body b');
 
         final register = FixedGist('fresh cue');
-        final regisWriter = Writer(s.bank, actor: const Actor('tester'), gist: register);
+        final regisWriter = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'), gist: register);
         final outcome = await regisWriter.regist(Selector(minAttention: Attention(0.5)));
 
         expect(outcome, isA<Written>());
@@ -267,11 +267,11 @@ void main() {
     test('--set skips the seam entirely', () async {
       await site.runAsync(() async {
         final s = stand();
-        final writer = Writer(s.bank, actor: const Actor('tester'), gist: FixedGist('old'));
+        final writer = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'), gist: FixedGist('old'));
         await writer.remember('a',
             type: MemType.semantic, attention: Attention(0.5), body: 'x');
 
-        final setter = Writer(s.bank, actor: const Actor('tester'), gist: UnreachableGist());
+        final setter = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'), gist: UnreachableGist());
         final outcome =
             await setter.regist(const Selector(topic: 'a'), set: 'hand-set');
 
@@ -283,12 +283,12 @@ void main() {
     test('no model and no --set refuses without landing', () async {
       await site.runAsync(() async {
         final s = stand();
-        final writer = Writer(s.bank, actor: const Actor('tester'), gist: FixedGist('old'));
+        final writer = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'), gist: FixedGist('old'));
         await writer.remember('a',
             type: MemType.semantic, attention: Attention(0.5), body: 'x');
         final before = s.bank.page('a')!.fields.gist;
 
-        final modelless = Writer(s.bank, actor: const Actor('tester'));
+        final modelless = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'));
         final outcome = await modelless.regist(const Selector(topic: 'a'));
 
         expect(outcome, isA<RefusedWithoutModel>());
@@ -300,7 +300,7 @@ void main() {
         () async {
       await site.runAsync(() async {
         final s = stand();
-        final writer = Writer(s.bank, actor: const Actor('tester'), gist: FixedGist('old'));
+        final writer = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'), gist: FixedGist('old'));
         await writer.remember('a',
             type: MemType.semantic, attention: Attention(0.5), body: 'committed');
         final where = p.join(site.root.path, s.entity.name);
@@ -321,12 +321,12 @@ void main() {
         final ws = s.entity.instance('main').beginAct();
         File(p.join(ws.directory.path, 'broken.md'))
             .writeAsStringSync('---\nattention: 0.5\n---\nno type here\n');
-        ws.commit('page', actor: const Actor('seed'));
+        ws.commit('page', actor: Actor('seed', email: 'seed@test.local'));
         ws.release();
         s.bank.advance();
         expect(s.bank.handEdited, isEmpty, reason: 'landed and advanced — the tree is clean');
 
-        final writer = Writer(s.bank, actor: const Actor('tester'), gist: FixedGist('cue'));
+        final writer = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'), gist: FixedGist('cue'));
         final outcome = await writer.regist(const Selector(topic: 'broken'));
 
         expect(outcome, isA<RefusedOnAssumedFields>());
@@ -339,7 +339,7 @@ void main() {
     test('removes a page by topic', () async {
       await site.runAsync(() async {
         final s = stand();
-        final writer = Writer(s.bank, actor: const Actor('tester'), gist: FixedGist('cue'));
+        final writer = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'), gist: FixedGist('cue'));
         await writer.remember('a',
             type: MemType.semantic, attention: Attention(0.5), body: 'x');
 
@@ -358,7 +358,7 @@ void main() {
         () async {
       await site.runAsync(() async {
         final s = stand();
-        final writer = Writer(s.bank, actor: const Actor('tester'), gist: FixedGist('cue'));
+        final writer = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'), gist: FixedGist('cue'));
         site.git.declineNextSwap = 'entity: refused by r4: bin/check\ncheck: illegal';
 
         final outcome = await writer.remember('a',
@@ -376,8 +376,8 @@ void main() {
         () async {
       await site.runAsync(() async {
         final s = stand();
-        final one = Writer(s.bank, actor: const Actor('one'), gist: FixedGist('cue'), attempts: 1);
-        final two = Writer(s.bank, actor: const Actor('two'), gist: FixedGist('cue'), attempts: 1);
+        final one = Writer(s.bank, actor: Actor('one', email: 'one@test.local'), gist: FixedGist('cue'), attempts: 1);
+        final two = Writer(s.bank, actor: Actor('two', email: 'two@test.local'), gist: FixedGist('cue'), attempts: 1);
 
         final results = await Future.wait([
           one.remember('a', type: MemType.semantic, attention: Attention(0.5), body: '1'),
@@ -395,8 +395,8 @@ void main() {
     test('is absorbed by a retry, landing on the second attempt', () async {
       await site.runAsync(() async {
         final s = stand();
-        final one = Writer(s.bank, actor: const Actor('one'), gist: FixedGist('cue'));
-        final two = Writer(s.bank, actor: const Actor('two'), gist: FixedGist('cue'));
+        final one = Writer(s.bank, actor: Actor('one', email: 'one@test.local'), gist: FixedGist('cue'));
+        final two = Writer(s.bank, actor: Actor('two', email: 'two@test.local'), gist: FixedGist('cue'));
 
         final results = await Future.wait([
           one.remember('a', type: MemType.semantic, attention: Attention(0.5), body: '1'),

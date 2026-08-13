@@ -26,7 +26,7 @@ void main() {
     });
 
     test('an installed name is Found, and carries its own vantage', () {
-      site.run(() => Entity('alfred.mem', from: site.root.path).create());
+      site.run(() => Entity('alfred.mem', from: site.root.path).create(actor: testActor));
       final resolution =
           site.run(() => Bank.resolve('alfred.mem', vantage: site.root.path));
       expect(resolution, isA<Found>());
@@ -37,7 +37,7 @@ void main() {
 
     test('resolves from a vantage nested below the installation', () {
       final deep = site.nested('workshop');
-      site.run(() => Entity('alfred.mem', from: site.root.path).create());
+      site.run(() => Entity('alfred.mem', from: site.root.path).create(actor: testActor));
       final resolution =
           site.run(() => Bank.resolve('alfred.mem', vantage: deep.path));
       expect(resolution, isA<Found>());
@@ -46,7 +46,7 @@ void main() {
 
   group('pages and page — read in place', () {
     test('a bank never materialized has no pages, and no page by name', () {
-      site.run(() => Entity('alfred.mem', from: site.root.path).create());
+      site.run(() => Entity('alfred.mem', from: site.root.path).create(actor: testActor));
       final bank =
           (site.run(() => Bank.resolve('alfred.mem', vantage: site.root.path))
                   as Found)
@@ -58,7 +58,7 @@ void main() {
     test('reads pages back from the working tree after a land and an advance',
         () async {
       await site.runAsync(() async {
-        final entity = Entity('alfred.mem', from: site.root.path).create();
+        final entity = Entity('alfred.mem', from: site.root.path).create(actor: testActor);
         entity.instance('main').create();
         final where = p.join(site.root.path, entity.name);
         entity.instance('main').materialize(at: where);
@@ -74,7 +74,7 @@ void main() {
             fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
             body: 'World.',
           )),
-          actor: const Actor('tester'),
+          actor: Actor('tester', email: 'tester@test.local'),
         );
         expect(landing, isA<Landed>());
 
@@ -92,7 +92,7 @@ void main() {
   group('handEdited', () {
     test('an untouched tree reports no hand-edits', () async {
       await site.runAsync(() async {
-        final entity = Entity('alfred.mem', from: site.root.path).create();
+        final entity = Entity('alfred.mem', from: site.root.path).create(actor: testActor);
         entity.instance('main').create();
         final where = p.join(site.root.path, entity.name);
         entity.instance('main').materialize(at: where);
@@ -107,7 +107,7 @@ void main() {
     test('a hand-edited page is named by topic, non-markdown noise dropped',
         () async {
       await site.runAsync(() async {
-        final entity = Entity('alfred.mem', from: site.root.path).create();
+        final entity = Entity('alfred.mem', from: site.root.path).create(actor: testActor);
         entity.instance('main').create();
         final where = p.join(site.root.path, entity.name);
         entity.instance('main').materialize(at: where);
@@ -125,7 +125,7 @@ void main() {
 
   group('advance', () {
     test('a bank never materialized has nothing to advance', () {
-      site.run(() => Entity('alfred.mem', from: site.root.path).create());
+      site.run(() => Entity('alfred.mem', from: site.root.path).create(actor: testActor));
       final bank =
           (site.run(() => Bank.resolve('alfred.mem', vantage: site.root.path))
                   as Found)
@@ -136,7 +136,7 @@ void main() {
     test('a clean tree behind the line is fast-forwarded, and reports Advanced',
         () async {
       await site.runAsync(() async {
-        final entity = Entity('alfred.mem', from: site.root.path).create();
+        final entity = Entity('alfred.mem', from: site.root.path).create(actor: testActor);
         entity.instance('main').create();
         final where = p.join(site.root.path, entity.name);
         entity.instance('main').materialize(at: where);
@@ -151,7 +151,7 @@ void main() {
             fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
             body: 'x',
           )),
-          actor: const Actor('tester'),
+          actor: Actor('tester', email: 'tester@test.local'),
         );
 
         expect(bank.advance(), isA<Advanced>());
@@ -162,7 +162,7 @@ void main() {
     test('a dirty tree behind the line declines, and names what blocks it',
         () async {
       await site.runAsync(() async {
-        final entity = Entity('alfred.mem', from: site.root.path).create();
+        final entity = Entity('alfred.mem', from: site.root.path).create(actor: testActor);
         entity.instance('main').create();
         final where = p.join(site.root.path, entity.name);
         entity.instance('main').materialize(at: where);
@@ -179,7 +179,7 @@ void main() {
             fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
             body: 'x',
           )),
-          actor: const Actor('tester'),
+          actor: Actor('tester', email: 'tester@test.local'),
         );
         expect(bank.advance(), isA<Advanced>());
 
@@ -193,7 +193,7 @@ void main() {
             fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
             body: 'y',
           )),
-          actor: const Actor('tester'),
+          actor: Actor('tester', email: 'tester@test.local'),
         );
 
         final advance = bank.advance();
@@ -212,7 +212,7 @@ void main() {
     test('two acts against one tip: one lands, the other is Contested',
         () async {
       await site.runAsync(() async {
-        final entity = Entity('alfred.mem', from: site.root.path).create();
+        final entity = Entity('alfred.mem', from: site.root.path).create(actor: testActor);
         entity.instance('main').create();
 
         final bank =
@@ -226,7 +226,7 @@ void main() {
             fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
             body: '1',
           )),
-          actor: const Actor('one'),
+          actor: Actor('one', email: 'one@test.local'),
         );
         final second = bank.land(
           'page',
@@ -235,7 +235,7 @@ void main() {
             fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
             body: '2',
           )),
-          actor: const Actor('two'),
+          actor: Actor('two', email: 'two@test.local'),
         );
 
         final results = await Future.wait([first, second]);

@@ -17,7 +17,7 @@ add_presets: [gate]
 
 presets:
   gate:
-    exclude_tags: owed
+    exclude_tags: "owed || material"
   owed:
     include_tags: owed
 

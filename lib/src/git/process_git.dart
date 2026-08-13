@@ -123,27 +123,22 @@ final class ProcessGit implements Git {
         r.exitCode,
       );
 
-  /// The identity the substrate demands. An [Actor] carries a name and at most
-  /// an address; where Git insists on both, the address is derived and means
-  /// nothing to anyone who reads it back.
+  /// The identity the substrate is given, stated whole by whoever acted.
   ///
-  /// **No actor means no identity environment at all.** Overriding Git's own
-  /// cascade — repository config, then global, then system — with an invented
-  /// name signs every unattributed act as a stranger, and a caller that states
-  /// its author in the content is then contradicted by the commit. Where
-  /// nothing is configured anywhere Git refuses with its own well-known
-  /// message, which is the correct answer to an unconfigured machine.
-  static Map<String, String> _identity(Actor? actor) {
-    final who = actor;
-    if (who == null) return const {};
-    final mail = who.email ?? '${who.name}@entity.local';
-    return {
-      'GIT_AUTHOR_NAME': who.name,
-      'GIT_AUTHOR_EMAIL': mail,
-      'GIT_COMMITTER_NAME': who.name,
-      'GIT_COMMITTER_EMAIL': mail,
-    };
-  }
+  /// **Both variables are always set, and nothing is derived here.** Git's own
+  /// cascade — repository config, then global, then system — describes whoever
+  /// owns a source checkout on this machine, and it answers a question nobody
+  /// asked it: one installation serves many beings, and a commit signed from
+  /// that position is a signed lie rather than a missing field. Leaving the
+  /// environment empty is what let it answer, so the environment is never left
+  /// empty; an act with nobody behind it is refused a floor above, where the
+  /// caller is written.
+  static Map<String, String> _identity(Actor actor) => {
+        'GIT_AUTHOR_NAME': actor.name,
+        'GIT_AUTHOR_EMAIL': actor.email,
+        'GIT_COMMITTER_NAME': actor.name,
+        'GIT_COMMITTER_EMAIL': actor.email,
+      };
 
   // ------------------------------------------------------------- the repository
 
@@ -255,7 +250,7 @@ final class ProcessGit implements Git {
     required String tree,
     required List<String> parents,
     required String message,
-    Actor? actor,
+    required Actor actor,
   }) {
     return _git(
       gitDir,
@@ -376,7 +371,7 @@ final class ProcessGit implements Git {
       out.add(RawCommit(
         sha: sha,
         parents: fields[1].trim().isEmpty ? const [] : fields[1].trim().split(' '),
-        author: Actor(fields[2], email: fields[3].isEmpty ? null : fields[3]),
+        author: Attribution(fields[2], fields[3]),
         instant: DateTime.parse(fields[4].trim()),
         message: fields[5].trimRight(),
       ));

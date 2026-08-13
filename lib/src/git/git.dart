@@ -15,7 +15,10 @@ final class RawCommit {
 
   final String sha;
   final List<String> parents;
-  final Actor author;
+  /// Who the commit says wrote it. A read model — a record written before the
+  /// identity was mandatory carries whatever it carried, and reporting that is
+  /// not the same act as signing under it.
+  final Attribution author;
   final DateTime instant;
 
   /// The commit message entire — subject line and trailers. What the ontology
@@ -155,7 +158,7 @@ abstract interface class Git {
     required String tree,
     required List<String> parents,
     required String message,
-    Actor? actor,
+    required Actor actor,
   });
 
   /// The compare-and-swap, and the reason the last step of an action is

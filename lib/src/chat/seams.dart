@@ -145,6 +145,14 @@ abstract interface class ChatArea {
 
   /// Whether a file or directory stands at [path].
   bool exists(String path);
+
+  /// The bytes at [path] as text, or null where nothing stands there.
+  ///
+  /// **A gate that must compare needs to read.** Arrival asks what address
+  /// already holds a seat, and asking the tree outside the bracket would ask a
+  /// state the swap never demanded — which is the race, one floor below the
+  /// compare-and-swap.
+  String? read(String path);
 }
 
 /// What one attempt at [ChatActs.attempt] returned.

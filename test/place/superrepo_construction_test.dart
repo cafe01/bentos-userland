@@ -4,6 +4,8 @@ import 'package:bentos_userland/src/git/process_git.dart';
 import 'package:bentos_userland/src/place/place.dart';
 import 'package:test/test.dart';
 
+import '../entity/helpers.dart';
+
 /// The pin against the real substrate.
 ///
 /// The contract suite proves the primitive's behaviour over a double; it cannot
@@ -47,7 +49,7 @@ void main() {
       File('${work.path}/page.md').writeAsStringSync('a page');
       final tree = git.writeTree(other, workTree: work.path);
       pinned = git.commitTree(other,
-          tree: tree, parents: const [], message: 'genesis');
+          tree: tree, parents: const [], message: 'genesis', actor: testActor);
     });
 
     tearDown(() {

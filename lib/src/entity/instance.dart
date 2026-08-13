@@ -168,10 +168,14 @@ final class Instance {
   /// Asynchronous by both clauses of the law — it runs a body that is not ours,
   /// and it spawns processes. Returns [Landed] or [Refused]; a lost race is a
   /// value, never a throw.
+  ///
+  /// **[actor] is required**, so an act with no stated actor is not
+  /// expressible. The concept was always here — what was wrong is that it could
+  /// be left out, and what filled it then was the machine's own git cascade.
   Future<ActionResult> act(
     String name,
     FutureOr<void> Function(Workspace) body, {
-    Actor? actor,
+    required Actor actor,
     String? say,
   }) async {
     final workspace = beginAct();

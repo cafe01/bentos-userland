@@ -33,7 +33,7 @@ final class OccurrenceLine {
   /// Absent, and never a stand-in name: an invented author is the defect this
   /// system already paid for once, and *nobody knows* is a different fact from
   /// *somebody called unknown*.
-  final Actor? actor;
+  final Attribution? actor;
 
   final DateTime instant;
 
@@ -358,7 +358,7 @@ final class Journal {
           entity: json['entity']! as String,
           event: event,
           actor: switch (json['actor']) {
-            final String named => Actor(named),
+            final String named => Attribution(named, ''),
             _ => null,
           },
           instant: DateTime.parse(json['instant']! as String),

@@ -73,9 +73,10 @@ final class ChatRunner {
           '— there are no private messages and nothing is routed. Everybody '
           'reads everything.\n'
           '\n'
-          'You say who you are. The medium never derives it: pass --identity, '
-          'and a being of the kind that states nothing is refused rather than '
-          'signed in as whoever owns the machine.\n'
+          'You say who you are. The medium never derives it: pass --identity '
+          '"Name <addr>" on every call, or set \$$identityVariable. A caller '
+          'that states nothing is refused — whoever owns this machine is not '
+          'who is speaking.\n'
           '\n'
           'Each participant has its own mark of what it has read, and two '
           'verbs read against it. `monitor --once` hands you everything since '
@@ -121,10 +122,9 @@ final class ChatRunner {
       ..argParser.addOption(
         'identity',
         abbr: 'I',
-        help: 'Who is speaking: "Name <email>", or a bare email. Required of '
-            'a being of the kind, which is never given one by default. '
-            'Ambient otherwise: $identityVariable, then a human\'s own git '
-            'cascade.',
+        help: 'Who is speaking: "Name <addr>", both halves. Required of every '
+            'caller — nothing on this machine may answer for you. '
+            'Ambient otherwise: $identityVariable, set deliberately at launch.',
         valueHelp: 'who',
       )
       ..addCommand(_Join(this))
@@ -353,8 +353,12 @@ final class ChatRunner {
       err.writeln('$chatOntology: $e');
       exitCode = notFoundCode;
     } on NoIdentity catch (e) {
+      // **64, and not 3.** A missing identity is not a gate saying no and not a
+      // race: the command was not sayable. Collapsing it into the refusal code
+      // would tell a retry loop to try again at a command that can never work,
+      // and into *not found* would send the reader looking for a channel.
       err.writeln('$e');
-      exitCode = notFoundCode;
+      exitCode = usageCode;
     } on ChatFailure catch (e) {
       // **A coreutil never exits by stack trace.** The body's own words and its
       // own number: whoever wrote that program knows what its codes mean, and

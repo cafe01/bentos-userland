@@ -5,6 +5,15 @@ import 'package:path/path.dart' as p;
 
 import '../git/fake_git.dart';
 
+/// Who acts, where a fixture's subject is something other than who acted.
+///
+/// **Stated, like every other caller's**, and spelled once so that the suite
+/// says the same thing everywhere it is not the point. A test about identity
+/// states its own actors instead of reaching for this one — the difference
+/// between a fixture that supplies an identity and a gate that asks where a
+/// real one comes from is exactly what let the defect stay green.
+final Actor testActor = Actor('tester', email: 'tester@test.local');
+
 /// The repository an installation of [name] at [placePath] stands in — the
 /// documented layout, spelled once here.
 ///
@@ -50,6 +59,7 @@ String foreignRepository(
       tree: tree,
       parents: const [],
       message: 'initial\n',
+    actor: testActor,
     );
     git.updateRef(gitDir, ref: 'refs/heads/main', newCommit: Commit(sha), expected: null);
     git.updateRef(gitDir, ref: 'HEAD', newCommit: Commit(sha), expected: null);

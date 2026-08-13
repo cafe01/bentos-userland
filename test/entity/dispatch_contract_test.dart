@@ -39,7 +39,7 @@ void main() {
 
   setUp(() {
     site = _place('entity_dispatch');
-    entity = Entity('bentos.llm', from: site.path).create();
+    entity = Entity('bentos.llm', from: site.path).create(actor: testActor);
     gitDir = repositoryOf(site.path, entity.name);
     // **The installed shim is removed, and every test below depends on it.**
     // `create` arms the installation with the shipped publisher, so a ref moved
@@ -91,7 +91,7 @@ void main() {
       tree: git.writeTree(gitDir, workTree: work.path),
       parents: [parent.sha],
       message: Action.messageFor(noun, say: say),
-      actor: Actor(actor),
+      actor: Actor(actor, email: '@test.local'),
     ));
   }
 
@@ -239,7 +239,7 @@ void main() {
         tree: git.writeTree(gitDir, workTree: work.path),
         parents: [tip.sha],
         message: 'no trailer here\n',
-        actor: const Actor('stranger'),
+        actor: Actor('stranger', email: 'stranger@test.local'),
       ));
 
       final woken = File('${site.path}/woken');

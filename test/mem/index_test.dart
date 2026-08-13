@@ -20,7 +20,7 @@ void main() {
   /// — writing a page here is a hand-edit, exactly what [Bank.pages] reads,
   /// with no act and no git involved.
   Directory materialize(String name) {
-    final entity = Entity(name, from: site.root.path).create();
+    final entity = Entity(name, from: site.root.path).create(actor: testActor);
     entity.instance('main').create();
     final where = Directory(p.join(site.root.path, entity.name));
     entity.instance('main').materialize(at: where.path);
