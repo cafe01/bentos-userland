@@ -84,6 +84,20 @@ final class ChatRunner {
           'answer from an error and must not be read as one. Drain before you '
           'speak on arrival, and the room you walked into is yours to read.\n'
           '\n'
+          'An act that lands prints one receipt line first, before anything '
+          'else it has to say: "commit<TAB><sha>" — the commit carrying your '
+          'act. That sha is what --as-of reads history and roster at, and it '
+          'is how your own line is named in the log. An act that does not '
+          'land prints no receipt at all and says why on stderr: exit 3 '
+          'somebody refused, 75 the channel was moving faster than you could '
+          'land in it and nobody decided anything, 1 there is no such '
+          'channel.\n'
+          '\n'
+          'join answers who is here: the receipt, then one '
+          '"roster<TAB>@handle<TAB>name<TAB>here|away: reason" record per '
+          'participant. Read them before you speak — you may be alone in the '
+          'room, and what you say first depends on it.\n'
+          '\n'
           'Verbs take the channel from -c, and the globals come before the '
           'verb.',
     )
@@ -133,6 +147,14 @@ final class ChatRunner {
 
   late final CommandRunner<void> _runner;
 
+  /// What `--help` puts on stdout, verbatim — **and the whole manual a mind
+  /// reaching this program as one tool ever gets**, since its description is
+  /// this text and nothing else about the medium travels with it. Exposed so a
+  /// gate can judge the manual without a process: `CommandRunner` prints its
+  /// usage through `print` rather than through this face's sinks, so an
+  /// in-process run of `--help` captures nothing.
+  String get manual => _runner.usage;
+
   /// The process's answer.
   ///
   /// **0 acted · 1 not found · 3 refused · 6 timed out · 64 usage · 75
@@ -158,6 +180,17 @@ final class ChatRunner {
   static const int timedOutCode = 6;
   static const int usageCode = 64;
   static const int stumbledCode = bodyStumbled;
+
+  /// The word every receipt opens with. Named once so the manual, the face and
+  /// the gates cannot drift apart on what a caller is told to look for.
+  static const String receiptLabel = 'commit';
+
+  /// What each presence record opens with where presence rides under a receipt.
+  /// Only there: `roster` is a listing whose whole output is the roster and
+  /// whose shape callers already read, so labelling every line of it would be
+  /// a column of one repeated word. A label earns its place where records of
+  /// two kinds share a stream.
+  static const String rosterLabel = 'roster';
 
   Identity? _identity;
 
@@ -251,10 +284,20 @@ final class ChatRunner {
   /// top-level `exitCode` setter, which an unqualified assignment inside an
   /// extension binds to in preference to this field — the number then lands on
   /// the process while the caller reads zero, and nothing says so.
+  ///
+  /// **What lands prints a receipt, and the receipt is labelled.** A bare
+  /// forty-hex line is indistinguishable from a cursor, a position or an
+  /// identifier of the caller's own, so a participant holding nothing but
+  /// `--help` cannot tell what it was handed or what to do with it — which is
+  /// the requirement that an act names what it landed as, unmet for as long as
+  /// this printed the value alone. One shape for every act, tab-separated so
+  /// `cut -f2` still gets the commit, and **always the first line of stdout**:
+  /// whatever else a verb has to say about the room, it says beneath its own
+  /// receipt.
   void report(ActResult result) {
     switch (result) {
       case Acted(:final commit):
-        if (commit.isNotEmpty) out.writeln(commit);
+        if (commit.isNotEmpty) out.writeln('$receiptLabel\t$commit');
       case Refused(:final reason):
         // The floor's own words, never paraphrased.
         err.writeln(reason.isEmpty ? '$chatOntology: refused' : reason);
@@ -405,12 +448,29 @@ final class _Join extends _ChatCommand {
 
   @override
   String get description =>
-      'Enter the channel. Idempotent, and it opens one that is not there yet.';
+      'Enter the channel. Idempotent, and it opens one that is not there yet. '
+      'Prints the receipt, then who is here, one "roster" record per line — '
+      'so arriving tells you whether anybody is in the room.';
 
   @override
-  Future<void> run() async => face.report(
-        await channel().join(displayName: argResults!['name'] as String?),
-      );
+  Future<void> run() async {
+    final channel = this.channel();
+    final result = await channel.join(displayName: argResults!['name'] as String?);
+    face.report(result);
+    // **Arrival answers presence.** A bare receipt tells a participant that it
+    // entered and nothing about what it entered, so a being announcing itself
+    // speaks into the dark and cannot know whether anyone is there to hear it
+    // — which the arm that lived a sitting in a room named as worse than not
+    // being able to list channels: not knowing the roster later is friction,
+    // not knowing it at the first line decides what you say next. The listing
+    // is `roster`'s own, read the same way, and it rides *below* the receipt,
+    // which stays the first line for a script that reads one.
+    if (result is! Acted) return;
+    final roster = await channel.roster();
+    for (final participant in roster.participants) {
+      face.out.writeln('${ChatRunner.rosterLabel}\t${rosterLine(participant)}');
+    }
+  }
 }
 
 final class _Leave extends _ChatCommand {
@@ -687,6 +747,21 @@ final class _Monitor extends _ChatCommand {
     if (timeout != null && !wait) {
       usageException('monitor: --timeout only applies with --wait');
     }
+    // **Refused, never absorbed.** Both flags name the same intention from
+    // opposite ends — drain and exit, block and exit — and the wait path
+    // simply never read `--once`, so a caller asking for both was answered by
+    // one of them with nothing said about the other. A flag parsed and
+    // discarded in silence is worse than an error: the caller cannot tell
+    // whether it was unsupported, misspelled, or swallowed by a fault. There
+    // is nothing to honour here — `--wait` already returns after one batch —
+    // so the honest answer is to name the collision and let the caller choose.
+    if (wait && argResults!['once'] as bool) {
+      usageException(
+        'monitor: --once and --wait ask for opposite things — drain whatever '
+        'has landed and exit, or block until something lands and exit. Pick '
+        'one; --wait already returns after a single batch.',
+      );
+    }
     if (wait) return _runWait(timeout: timeout);
 
     final channel = this.channel();
@@ -718,7 +793,7 @@ final class _Monitor extends _ChatCommand {
     try {
       await for (final _ in ticker.ticks) {
         lastConnected = _reportConnection(face.err, ticker, lastConnected);
-        for (final event in await channel.sync()) {
+        for (final event in batch(await channel.sync())) {
           if (scanner == null || _mentioned(event, scanner)) {
             face.out.writeln(eventLine(event));
           }
@@ -789,7 +864,7 @@ final class _Monitor extends _ChatCommand {
       face.recordDrained(coordinate: key, participant: me, cursor: at);
     }
 
-    for (final event in events) {
+    for (final event in batch(events)) {
       if (scanner == null || _mentioned(event, scanner)) {
         face.out.writeln(eventLine(event));
       }

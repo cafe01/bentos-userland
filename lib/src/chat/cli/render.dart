@@ -37,6 +37,29 @@ String messageLine(Message message) {
   return [header, for (final line in lines.skip(1)) '\t\t$line'].join('\n');
 }
 
+/// What a batch of events prints as, once the notices that repeat themselves
+/// are folded out.
+///
+/// **A roster notice states the roster as read at the end of the batch**, so
+/// every membership act in one delta renders the *same* line: two beings
+/// joining between two waits printed `— here: @alfred, @cafe` twice, with
+/// nothing whatever between them to distinguish the two. Reproduced through
+/// real processes, where it read as the batch itself arriving twice — which is
+/// why it was carried for days under the name of the flags that happened to be
+/// in hand. The events are right and the library is right to yield one per
+/// act; what is wrong is a face printing the same sentence about the room as
+/// many times as the room was written to. Only the last survives, and it keeps
+/// its own position, because it is the one the others were already stating.
+List<ChannelEvent> batch(Iterable<ChannelEvent> events) {
+  final all = events.toList();
+  final lastNotice = all.lastIndexWhere((event) => event is RosterChanged);
+  if (lastNotice < 0) return all;
+  return [
+    for (final (at, event) in all.indexed)
+      if (event is! RosterChanged || at == lastNotice) event,
+  ];
+}
+
 /// What `monitor` prints when something lands. Speech is a transcript line;
 /// everything else is a notice, marked so a reader can tell an utterance from a
 /// fact about the room at a glance.
