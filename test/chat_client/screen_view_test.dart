@@ -816,8 +816,11 @@ void main() {
         // exact shape that once painted the transcript straight through the
         // bar. The clip is what stops it, and the bar and the composer's own
         // row are where the damage would show.
+        // Counting up from the bottom border: the composer, the rule above
+        // it, then the bar — the two rules that articulate the three regions
+        // each own a row of their own.
         final state = tester.terminalState;
-        final barRow = state.getTextAt(0, state.size.height.toInt() - 3) ?? '';
+        final barRow = state.getTextAt(0, state.size.height.toInt() - 4) ?? '';
         final inputRow =
             state.getTextAt(0, state.size.height.toInt() - 2) ?? '';
         expect(barRow, contains('[1:fabrica]'));

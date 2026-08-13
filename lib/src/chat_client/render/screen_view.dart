@@ -90,24 +90,29 @@ class ChatScreenView extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
+    final chrome = _colorOf(TuiTheme.of(context), Role.chrome);
     return DecoratedBox(
       // R5.5: one framing border around the whole program, so no region
       // sits flush against the terminal's own edge on every side. Drawn
       // by the framework from the constraints its child respects, never
       // by hand arithmetic — which is what keeps it out of the overflow
       // defect the transcript already carries a guard for.
+      //
+      // The header rides *in* the top rule rather than on a row of its
+      // own. A frame flush with the window edge is read as the terminal
+      // emulator's own chrome — measured, on a border that was drawn all
+      // along and reported absent by two readers — so the frame earns its
+      // cells only when something of ours is visibly threaded through it.
       decoration: BoxDecoration(
-        border: BoxBorder.all(
-          color: _colorOf(TuiTheme.of(context), Role.chrome),
+        border: BoxBorder.all(color: chrome),
+        title: BorderTitle(
+          text: _headerText(model),
+          style: TextStyle(color: _colorOf(TuiTheme.of(context), Role.body)),
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header and bar stay flush against the frame: each is a
-          // single line that already carries its own visual weight, and
-          // a second cell there buys nothing.
-          _Header(model: model),
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -132,9 +137,7 @@ class ChatScreenView extends StatelessComponent {
                       ),
                     ),
                     if (showRoster) ...[
-                      VerticalDivider(
-                        color: _colorOf(TuiTheme.of(context), Role.chrome),
-                      ),
+                      VerticalDivider(color: chrome),
                       SizedBox(
                         width: _rosterWidth.toDouble(),
                         // The roster's own clip, sized to its own
@@ -156,12 +159,26 @@ class ChatScreenView extends StatelessComponent {
               },
             ),
           ),
+          // Three regions, three rules: the bar is neither transcript nor
+          // composer, and without a rule on each side it reads as one more
+          // line of conversation that happens to hold a clock.
+          Divider(color: chrome),
           _Bar(model: model),
+          Divider(color: chrome),
           _InputLine(model: model),
         ],
       ),
     );
   }
+}
+
+/// What the top rule carries: the coordinate, then the topic behind an em
+/// dash. One string, because the framework's [BorderTitle] embeds text and
+/// not a component — which is also why the topic cannot be styled apart
+/// from the coordinate here.
+String _headerText(ScreenModel model) {
+  final topic = model.topic;
+  return topic == null ? model.coordinate : '${model.coordinate} — $topic';
 }
 
 /// One cell of horizontal padding — spent inside the transcript and the
@@ -176,35 +193,6 @@ class _Pad extends StatelessComponent {
   @override
   Component build(BuildContext context) =>
       Padding(padding: const EdgeInsets.symmetric(horizontal: 1), child: child);
-}
-
-class _Header extends StatelessComponent {
-  const _Header({required this.model});
-
-  final ScreenModel model;
-
-  @override
-  Component build(BuildContext context) {
-    final topic = model.topic;
-    return Row(
-      children: [
-        Text(
-          model.coordinate,
-          style: _styleOf(context, Role.body, weight: FontWeight.bold),
-        ),
-        if (topic != null) ...[
-          const Text('  — '),
-          Expanded(
-            child: Text(
-              topic,
-              overflow: TextOverflow.clip,
-              style: _styleOf(context, Role.secondary),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
 }
 
 /// The scrollable buffer — a [ListView] over [ScreenModel.lines], the unread
@@ -232,7 +220,14 @@ class _Transcript extends StatelessComponent {
     final boundary = model.unreadBoundaryIndex;
     final items = <Object>[];
     for (var i = lines.length - 1; i >= 0; i--) {
-      items.add(lines[i]);
+      // The clock is printed on the first line of a run within one displayed
+      // minute — the *topmost* one, which in this newest-to-oldest walk is
+      // the line whose older neighbour reads a different minute. Decided
+      // here, where both neighbours are in hand, rather than by a row asking
+      // about a sibling it cannot see.
+      final showClock =
+          i == 0 || _clock(lines[i - 1].at) != _clock(lines[i].at);
+      items.add(_Row(lines[i], showClock: showClock));
       if (i == boundary) items.add(_unreadMarker);
     }
 
@@ -246,9 +241,9 @@ class _Transcript extends StatelessComponent {
             itemCount: items.length,
             itemBuilder: (context, i) {
               final item = items[i];
-              return item == _unreadMarker
-                  ? const _UnreadMarker()
-                  : _TranscriptRow(line: item as TranscriptLine);
+              if (item == _unreadMarker) return const _UnreadMarker();
+              final row = item as _Row;
+              return _TranscriptRow(line: row.line, showClock: row.showClock);
             },
           ),
         ),
@@ -298,31 +293,89 @@ class _MoreBelowMarker extends StatelessComponent {
   }
 }
 
-class _TranscriptRow extends StatelessComponent {
-  const _TranscriptRow({required this.line});
+/// One transcript line and whether its clock is printed — paired where the
+/// run is visible, and consumed inside one `build()`.
+final class _Row {
+  const _Row(this.line, {required this.showClock});
 
   final TranscriptLine line;
+  final bool showClock;
+}
+
+/// `HH:MM`, and the blank the suppressed clock leaves behind.
+const int _clockWidth = 5;
+
+/// Ten cells: `@mariela` is eight, and a column that a long handle may push
+/// is a column that is not a column. Anything longer loses its tail to an
+/// ellipsis rather than the speech losing its left edge.
+const int _authorWidth = 10;
+
+/// A transcript is read down its left edge: time, author, speech, each at a
+/// fixed column. Speech is the only elastic one, so a line that wraps hangs
+/// under itself — the framework's own flex doing it, since the speech column
+/// is a box of its own and text cannot leave it.
+class _TranscriptRow extends StatelessComponent {
+  const _TranscriptRow({required this.line, required this.showClock});
+
+  final TranscriptLine line;
+  final bool showClock;
 
   @override
   Component build(BuildContext context) {
     // The role comes from the core's own total mapping — a notice and a
     // warning are told apart by `SystemLineKind`, never by reading the text.
-    return Text(
-      _lineText(line),
-      overflow: TextOverflow.clip,
-      style: _styleOf(context, roleOfLine(line)),
+    final quiet = _styleOf(context, Role.secondary, weight: FontWeight.dim);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: _clockWidth.toDouble(),
+          child: Text(showClock ? _clock(line.at) : '', style: quiet),
+        ),
+        const Text(' '),
+        SizedBox(
+          width: _authorWidth.toDouble(),
+          child: Text(
+            _fit(_author(line), _authorWidth),
+            overflow: TextOverflow.clip,
+            style: quiet,
+          ),
+        ),
+        const Text(' '),
+        Expanded(
+          child: Text(
+            _speech(line),
+            overflow: TextOverflow.clip,
+            style: _styleOf(context, roleOfLine(line)),
+          ),
+        ),
+      ],
     );
   }
 }
 
-/// The prose one [TranscriptLine] draws — the single place that composes it.
-String _lineText(TranscriptLine line) => switch (line) {
-  SpokenLine(message: final message) =>
-    '${_clock(message.spoken)} @${message.author.local}  ${message.body}',
-  TopicLine(topic: final topic, by: final by, at: final at) =>
-    '${_clock(at)}  *  ${by.local} changed topic to "$topic"',
-  SystemLine(text: final text, at: final at) => '${_clock(at)}  ! $text',
+/// Who spoke, in the author column — `*` for a line nobody said.
+String _author(TranscriptLine line) => switch (line) {
+  SpokenLine(message: final message) => '@${message.author.local}',
+  TopicLine() || SystemLine() => '*',
 };
+
+/// What the speech column carries: the utterance itself, or what the line
+/// reports about the room.
+String _speech(TranscriptLine line) => switch (line) {
+  SpokenLine(message: final message) => message.body,
+  TopicLine(topic: final topic, by: final by) =>
+    '${by.local} changed topic to "$topic"',
+  SystemLine(text: final text) => text,
+};
+
+/// Cut to a column, counting grapheme clusters and not code units, with the
+/// last cell spent on the ellipsis that says a cut happened.
+String _fit(String text, int width) {
+  final clusters = text.characters;
+  if (clusters.length <= width) return text;
+  return '${clusters.take(width - 1)}…';
+}
 
 String _clock(DateTime at) {
   final local = at.toLocal();
