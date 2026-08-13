@@ -82,6 +82,84 @@ void main() {
     });
   });
 
+  /// Somebody else taking a seat, landed straight on the tree for the same
+  /// reason [speak] is: every act through [run] signs under one identity.
+  void enter(String local, {String name = 'Café'}) => floor.tree.land(
+        noun: 'membership',
+        authorName: name,
+        authorEmail: '$local@bentos.life',
+        writes: {'$participantsPath/$local/joined': '2026-08-06T12:00:00Z\n'},
+      );
+
+  group('what a batch prints', () {
+    test('two membership acts in one batch print one roster notice, not one '
+        'per act', () async {
+      // The double print, reproduced: a roster notice states the roster as
+      // read at the end of the batch, so two of them in one delta are the
+      // same sentence twice with nothing between them to tell them apart. It
+      // read as the batch arriving twice, which is how it was carried for
+      // days under the name of whatever flags were in hand.
+      await seated();
+      enter('cafe');
+      enter('john', name: 'John');
+
+      final result = await run(
+        ['monitor', '--wait', '--timeout', '5', '--interval', '0.05'],
+      );
+
+      expect(result.exitCode, 0);
+      expect(
+        result.lines.where((line) => line.startsWith('— here:')),
+        hasLength(1),
+      );
+    });
+
+    test('and the notice that survives is the one that states the room as it '
+        'now stands', () async {
+      await seated();
+      enter('cafe');
+      enter('john', name: 'John');
+
+      final result = await run(
+        ['monitor', '--wait', '--timeout', '5', '--interval', '0.05'],
+      );
+
+      final notice =
+          result.lines.firstWhere((line) => line.startsWith('— here:'));
+      expect(notice, contains('@cafe'));
+      expect(notice, contains('@john'));
+    });
+
+    test('speech between two notices keeps its place', () async {
+      // Folding notices out must not reorder a transcript around them.
+      await seated();
+      enter('cafe');
+      speak('hello');
+      enter('john', name: 'John');
+
+      final result = await run(
+        ['monitor', '--wait', '--timeout', '5', '--interval', '0.05'],
+      );
+
+      final said = result.lines.indexWhere((line) => line.contains('hello'));
+      final notice = result.lines.indexWhere((line) => line.startsWith('— here:'));
+      expect(said, isNonNegative);
+      expect(notice, greaterThan(said));
+    });
+
+    test('--once and --wait together are refused, never one of them silently '
+        'ignored', () async {
+      // Accept-and-ignore is the outcome ruled out: the wait path never read
+      // --once, so a caller asking for both was answered by one of them with
+      // nothing said about the other.
+      final result = await run(['monitor', '--wait', '--once']);
+
+      expect(result.exitCode, 64);
+      expect(result.err, contains('--once'));
+      expect(result.err, contains('--wait'));
+    });
+  });
+
   group('the burst window', () {
     test('opens on the first qualifying event and returns everything drained '
         'while it is open, not one waking per line', () async {

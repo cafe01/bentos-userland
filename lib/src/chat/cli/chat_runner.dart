@@ -747,6 +747,21 @@ final class _Monitor extends _ChatCommand {
     if (timeout != null && !wait) {
       usageException('monitor: --timeout only applies with --wait');
     }
+    // **Refused, never absorbed.** Both flags name the same intention from
+    // opposite ends — drain and exit, block and exit — and the wait path
+    // simply never read `--once`, so a caller asking for both was answered by
+    // one of them with nothing said about the other. A flag parsed and
+    // discarded in silence is worse than an error: the caller cannot tell
+    // whether it was unsupported, misspelled, or swallowed by a fault. There
+    // is nothing to honour here — `--wait` already returns after one batch —
+    // so the honest answer is to name the collision and let the caller choose.
+    if (wait && argResults!['once'] as bool) {
+      usageException(
+        'monitor: --once and --wait ask for opposite things — drain whatever '
+        'has landed and exit, or block until something lands and exit. Pick '
+        'one; --wait already returns after a single batch.',
+      );
+    }
     if (wait) return _runWait(timeout: timeout);
 
     final channel = this.channel();
@@ -778,7 +793,7 @@ final class _Monitor extends _ChatCommand {
     try {
       await for (final _ in ticker.ticks) {
         lastConnected = _reportConnection(face.err, ticker, lastConnected);
-        for (final event in await channel.sync()) {
+        for (final event in batch(await channel.sync())) {
           if (scanner == null || _mentioned(event, scanner)) {
             face.out.writeln(eventLine(event));
           }
@@ -849,7 +864,7 @@ final class _Monitor extends _ChatCommand {
       face.recordDrained(coordinate: key, participant: me, cursor: at);
     }
 
-    for (final event in events) {
+    for (final event in batch(events)) {
       if (scanner == null || _mentioned(event, scanner)) {
         face.out.writeln(eventLine(event));
       }
