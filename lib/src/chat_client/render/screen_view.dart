@@ -156,7 +156,10 @@ class ChatScreenView extends StatelessComponent {
                         // transcript, one column over.
                         child: ClipRect(
                           child: _Pad(
-                            child: _Roster(participants: model.participants),
+                            child: _Roster(
+                              participants: model.participants,
+                              width: _rosterWidth - 2,
+                            ),
                           ),
                         ),
                       ),
@@ -403,9 +406,15 @@ String _clock(DateTime at) {
 }
 
 class _Roster extends StatelessComponent {
-  const _Roster({required this.participants});
+  const _Roster({required this.participants, this.width});
 
   final List<Participant> participants;
+
+  /// The cells a line may occupy, or null in the overlay, where the width is
+  /// the screen and a long reason is meant to be readable. Clipping trims a
+  /// line the layout engine already produced; only cutting the string before
+  /// layout stops a row from wrapping through its siblings.
+  final int? width;
 
   @override
   Component build(BuildContext context) {
@@ -417,9 +426,11 @@ class _Roster extends StatelessComponent {
 
   List<Component> _participantRows(BuildContext context, Participant p) {
     final dot = p.isAway ? '○' : '●';
+    final w = width;
+    String cut(String s) => w == null ? s : _fit(s, w);
     final rows = <Component>[
       Text(
-        '$dot ${p.handle.local}',
+        cut('$dot ${p.handle.local}'),
         overflow: TextOverflow.clip,
         style: _styleOf(context, Role.body),
       ),
@@ -428,7 +439,7 @@ class _Roster extends StatelessComponent {
     if (reason != null && reason.isNotEmpty) {
       rows.add(
         Text(
-          '  away: $reason',
+          cut('  away: $reason'),
           overflow: TextOverflow.clip,
           style: _styleOf(context, Role.secondary),
         ),
