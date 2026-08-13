@@ -89,8 +89,14 @@ void runChannelContract(ChannelConstruction construct) {
 
     test('exhausting the bound is Stumbled, and never a refusal', () async {
       seated();
-      acts.contestNext('message', defaultAttempts);
-      expect(await open().say('green'), isA<Stumbled>());
+      // **A bound of its own, and small.** The claim is about the outcome at
+      // the bound, not about the shipped number — and a loser waits real
+      // backoff between attempts, so exhausting `defaultAttempts` here would
+      // buy the whole doubling series in wall clock to prove a thing the
+      // caller's own bound proves in a second. The shipped number's adequacy
+      // is a material claim and is measured by the storm gate.
+      acts.contestNext('message', 4);
+      expect(await open(attempts: 4).say('green'), isA<Stumbled>());
     });
 
     test('a stumble reports the bound this caller set', () async {

@@ -51,6 +51,15 @@ final class FakeFloor implements ChatFloor {
   /// The names the face asked for, in order.
   final List<String> opened = [];
 
+  /// The bound the channels this floor opens are built with.
+  ///
+  /// **Lowered by any fixture that means to exhaust it**, since a loser waits
+  /// real backoff between attempts and the shipped bound would be bought in
+  /// wall clock. Nothing about *what a stumble is* depends on the number; that
+  /// the shipped one carries a live room is a material claim, measured by the
+  /// storm gate and not here.
+  int attempts = defaultAttempts;
+
   /// Who each opened channel was signed under, in order.
   final List<Identity> signed = [];
 
@@ -98,6 +107,7 @@ final class FakeFloor implements ChatFloor {
       identity: signer,
       ticker: () => ticker,
       cursor: cursor,
+      attempts: attempts,
       // Fixed, so the printed lines this gate judges do not move with the
       // wall clock — the same instant the retired shell's doubles hard-coded.
       clock: () => DateTime.utc(2026, 8, 6, 12),
@@ -302,7 +312,8 @@ void main() {
       // channel must not read as a hostile one at the exact boundary where a
       // script reads it.
       await seated();
-      floor.actsDouble.contestNext('message', defaultAttempts);
+      floor.attempts = 4;
+      floor.actsDouble.contestNext('message', 4);
 
       final result = await run(['say', 'hello']);
 
@@ -350,7 +361,8 @@ void main() {
     test('a stumble too, since it is the line a busy channel prints most',
         () async {
       await seated();
-      floor.actsDouble.contestNext('message', defaultAttempts);
+      floor.attempts = 4;
+      floor.actsDouble.contestNext('message', 4);
 
       final result = await run(['say', 'hello']);
 

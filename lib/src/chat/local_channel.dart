@@ -175,17 +175,42 @@ final class LocalChannel implements Channel {
         case ChatGateRefused(:final reason):
           return Refused(reason);
         case ChatContested():
-          // Staggered, so two writers racing each other do not keep colliding
-          // in step.
-          if (attempt < _attempts) {
-            await Future<void>.delayed(
-              Duration(milliseconds: 100 * (1 + _entropy.nextInt(3))),
-            );
-          }
+          if (attempt < _attempts) await Future<void>.delayed(_backoff(attempt));
       }
     }
     return Stumbled(_attempts);
   }
+
+  /// How long a loser waits before opening the bracket again — **full jitter**,
+  /// uniform in `[0, base * 2^(n-1)]`, capped at [_backoffCap].
+  ///
+  /// The uniform lower bound of zero is the whole mechanism: a *flat* wait, of
+  /// any width, leaves two writers that met once meeting again with the same
+  /// probability, so the per-attempt loss never decays and the tail stays
+  /// geometric — a bound then truncates that tail rather than removing it, which
+  /// is what eight attempts were doing. Doubling the window each time spreads
+  /// the writers that keep colliding over an interval that outgrows the bracket
+  /// they collide inside, and the loss decays.
+  ///
+  /// [_backoffBase] is the order of one bracket — materialize an area, write,
+  /// commit-tree, swap — since a window narrower than the act it separates
+  /// cannot separate anything. **The delay is never a deadline**: the bound is
+  /// [_attempts] and only [_attempts], so a slower machine retries slower and
+  /// gets the same number of chances.
+  static Duration _backoff(int attempt) {
+    final window = _backoffBase.inMilliseconds * (1 << (attempt - 1));
+    final bounded = window > _backoffCap.inMilliseconds
+        ? _backoffCap.inMilliseconds
+        : window;
+    return Duration(milliseconds: _entropy.nextInt(bounded + 1));
+  }
+
+  /// The first window, and the order of one act bracket.
+  static const Duration _backoffBase = Duration(milliseconds: 100);
+
+  /// Where the doubling stops. Past this the window is already far wider than
+  /// any bracket, and growing it only makes a losing writer slow to give up.
+  static const Duration _backoffCap = Duration(seconds: 4);
 
   /// The one gate of this application, asked of the attempt's own area: a
   /// member is a seat, and a seat is a directory.

@@ -81,6 +81,53 @@ void main() {
     });
   });
 
+  group('birth', () {
+    // Birth is a compare-and-swap at the ref — `expected: null`, which the
+    // substrate reads as *this must not exist*. What that buys is the case
+    // below it: several actors arriving at one instant, which is ordinary for
+    // anything an external will enters through, and which read-then-create
+    // could only ever lose.
+    test('a name already born refuses the deliberate birth, in the ontology\'s '
+        'own words', () {
+      site.run(() {
+        final e = Entity('bentos.llm', from: site.root.path).create();
+        e.instance('s1').create();
+        expect(
+          () => e.instance('s1').create(),
+          throwsA(isA<InstanceExists>()),
+          reason: 'a caller that typed the constructor asked to MAKE one, and '
+              'did not — and it hears that from this ontology rather than as '
+              "git's own `cannot lock ref`, which names a mechanism the caller "
+              'never used',
+        );
+      });
+    });
+
+    test('ensureBorn is idempotent, and says who did the birthing', () {
+      site.run(() {
+        final e = Entity('bentos.llm', from: site.root.path).create();
+        final instance = e.instance('s1');
+        expect(instance.ensureBorn(), isTrue, reason: 'nobody had');
+        final born = instance.tip;
+        expect(instance.ensureBorn(), isFalse, reason: 'somebody already had');
+        expect(
+          instance.tip,
+          born,
+          reason: 'the second call moved nothing: losing the birth race and '
+              'never having run it are the same world',
+        );
+      });
+    });
+
+    // **The race itself is not witnessed here, and this file cannot witness
+    // it**: one process, one `FakeGit`, and no way to interleave two callers
+    // between the read and the swap — a green obtained by serialization reads
+    // exactly like the strong kind. What quantifies over the isolation
+    // boundary is the storm, in
+    // `test/chat/material/storm_material_test.dart`: four operating-system
+    // processes joining an unborn channel at one instant.
+  });
+
   group('the repository is not on the surface', () {
     test('the API exposes no git directory', () {
       final surface = Entity('x', from: site.root.path) as dynamic;
