@@ -12,6 +12,7 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:bentos_userland/bentos_chat.dart';
 import 'package:bentos_userland/chat_client.dart' show Ticker;
@@ -168,8 +169,22 @@ final class Run {
 
 void main() {
   late FakeFloor floor;
+  late Directory stateDir;
+  late File cursorFile;
 
-  setUp(() => floor = FakeFloor());
+  setUp(() {
+    floor = FakeFloor();
+    // **Given, never defaulted.** Two verbs of this face persist a drain mark,
+    // and left to itself the default resolves under `$HOME` — absent in a test
+    // environment, so it landed on `./.local/state/` in the package itself.
+    // That file survived the process: one test's mark decided the next test's
+    // batch, and the whole suite's, run after run. A gate reading state no
+    // fixture wrote is measuring nothing it can name.
+    stateDir = Directory.systemTemp.createTempSync('chat-face-state-');
+    cursorFile = File('${stateDir.path}/monitor-state.json');
+  });
+
+  tearDown(() => stateDir.deleteSync(recursive: true));
 
   Future<Run> run(
     List<String> args, {
@@ -186,6 +201,7 @@ void main() {
       environment: env,
       readStdin: () async => stdin,
       floor: floor,
+      monitorCursorFile: cursorFile,
     );
     await face.run(args);
     return Run(face.exitCode, out.toString(), err.toString());
@@ -194,6 +210,24 @@ void main() {
   /// Seats the caller, so the gate under every writing body is satisfied and a
   /// claim about `say` is about `say`.
   Future<void> seated() => run(['join']);
+
+  /// Somebody else's line, landed straight on the tree — speech this face's
+  /// caller did not write and has therefore never read.
+  void speak(
+    String body, {
+    String email = 'cafe@bentos.life',
+    String name = 'Café',
+  }) {
+    final n = 'm${floor.tree.acts.length + 1}';
+    floor.tree.land(
+      noun: 'message',
+      authorName: name,
+      authorEmail: email,
+      writes: {
+        '$messagesPath/2026/08/06/$n.md': 'author: $name <$email>\n\n$body\n',
+      },
+    );
+  }
 
   group('the exit table', () {
     test('an act that lands exits 0 and prints a labelled receipt', () async {
@@ -695,37 +729,73 @@ void main() {
   });
 
   group('watching', () {
-    test('--once returns instead of blocking, and starts at the tip', () async {
+    test('--once returns instead of blocking, and hands over what it drained',
+        () async {
+      // Somebody else was here first, and this caller has never read the room.
+      speak('hello');
       await seated();
-      await run(['say', 'hello']);
 
       final result = await run(['monitor', '--once']);
 
-      // Watching begins now: a monitor given no `--history` is not a second
-      // spelling of `history`, and dumping a conversation somebody has been in
-      // all day is the opposite of what they asked for.
+      expect(result.exitCode, 0);
+      expect(result.out, contains('hello'));
+    });
+
+    test('a second drain hands over only what landed since the first',
+        () async {
+      speak('hello');
+      await seated();
+      await run(['monitor', '--once']);
+
+      speak('still here?');
+      final result = await run(['monitor', '--once']);
+
+      // The half that rots in silence: a drain that keeps re-reading the room
+      // looks correct at the first call and is useless at every call after.
+      expect(result.out, contains('still here?'));
+      expect(result.out, isNot(contains('hello')));
+    });
+
+    test('a drain that finds nothing new prints nothing and stays quiet',
+        () async {
+      speak('hello');
+      await seated();
+      await run(['monitor', '--once']);
+
+      final result = await run(['monitor', '--once']);
+
       expect(result.exitCode, 0);
       expect(result.out, isEmpty);
     });
 
-    test('--history is the only thing that prints the past', () async {
+    test('--history prints the past beside the drain, each answering its own '
+        'question', () async {
+      speak('hello');
       await seated();
-      await run(['say', 'hello']);
+      await run(['monitor', '--once']);
 
       final result = await run(['monitor', '--once', '--history', '10']);
 
+      // Nothing is new, so the backlog is the whole output: `--history` keeps
+      // its meaning and does not become a second spelling of the drain.
       expect(result.out, contains('hello'));
+      expect('hello'.allMatches(result.out), hasLength(1));
     });
 
-    test('the backlog is not printed twice as an event', () async {
+    test('a drain under --mention never marks read what it kept off stdout',
+        () async {
+      speak('nothing to do with you');
       await seated();
-      await run(['say', 'hello']);
 
-      final result = await run(['monitor', '--once', '--history', '10']);
+      final filtered = await run(['monitor', '--once', '--mention']);
+      final everything = await run(['monitor', '--once']);
 
-      // Printed once as backlog; the cursor was wound to the tip before
-      // watching, so it must not arrive again as news.
-      expect('hello'.allMatches(result.out), hasLength(1));
+      // The predicate withheld the line, so the mark may not claim it was
+      // read: the next unfiltered drain must still carry it. Advancing here
+      // would lose speech silently, which is the one thing a mark must never
+      // do — the same refusal `say` already makes over unread speech.
+      expect(filtered.out, isNot(contains('nothing to do with you')));
+      expect(everything.out, contains('nothing to do with you'));
     });
 
     test('--interval takes seconds', () async {
