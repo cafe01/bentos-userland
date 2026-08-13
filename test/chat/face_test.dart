@@ -541,6 +541,67 @@ void main() {
     });
   });
 
+  group('arriving', () {
+    test('join answers who is here, under the receipt', () async {
+      // A being that enters and is told only a sha announces itself into the
+      // dark. The receipt still comes first, so a script reading one line is
+      // untouched.
+      final result = await run(['join', '--name', 'Alfred']);
+
+      expect(result.exitCode, 0);
+      expect(result.lines.first, 'commit\tc100000');
+      expect(result.lines[1], 'roster\t@alfred\tAlfred\there');
+    });
+
+    test('a room already occupied is listed whole to whoever walks in',
+        () async {
+      await run(['--identity', 'Café <cafe@bentos.life>', 'join', '--name', 'Café']);
+
+      final result = await run(
+        ['--identity', 'Alfred <alfred@bentos.life>', 'join', '--name', 'Alfred'],
+      );
+
+      expect(
+        result.lines.skip(1),
+        containsAll(<String>[
+          'roster\t@cafe\tCafé\there',
+          'roster\t@alfred\tAlfred\there',
+        ]),
+      );
+    });
+
+    test('presence rides in the record, so away is visible on arrival',
+        () async {
+      await run(['--identity', 'Café <cafe@bentos.life>', 'join', '--name', 'Café']);
+      await run(['--identity', 'Café <cafe@bentos.life>', 'away', 'at the dentist']);
+
+      final result = await run(['--identity', 'alfred@bentos.life', 'join']);
+
+      expect(
+        result.lines.skip(1),
+        anyElement('roster\t@cafe\tCafé\taway: at the dentist'),
+      );
+    });
+
+    test('a join that does not land lists nobody', () async {
+      // Nothing was entered, so there is no room to report — and a caller
+      // greping for presence must not find any over an act that failed.
+      floor.tree.birth();
+      floor.actsDouble.barNext('membership', 'no');
+
+      final result = await run(['join']);
+
+      expect(result.exitCode, 3);
+      expect(result.out, isEmpty);
+    });
+
+    test('the manual says join answers presence', () async {
+      final manual = ChatRunner(floor: floor).manual;
+
+      expect(manual, contains('roster<TAB>@handle'));
+    });
+  });
+
   group('reading', () {
     test('the roster is one record per line, tab-separated', () async {
       await run(['join', '--name', 'Alfred']);

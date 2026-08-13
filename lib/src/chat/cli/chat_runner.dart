@@ -93,6 +93,11 @@ final class ChatRunner {
           'land in it and nobody decided anything, 1 there is no such '
           'channel.\n'
           '\n'
+          'join answers who is here: the receipt, then one '
+          '"roster<TAB>@handle<TAB>name<TAB>here|away: reason" record per '
+          'participant. Read them before you speak — you may be alone in the '
+          'room, and what you say first depends on it.\n'
+          '\n'
           'Verbs take the channel from -c, and the globals come before the '
           'verb.',
     )
@@ -179,6 +184,13 @@ final class ChatRunner {
   /// The word every receipt opens with. Named once so the manual, the face and
   /// the gates cannot drift apart on what a caller is told to look for.
   static const String receiptLabel = 'commit';
+
+  /// What each presence record opens with where presence rides under a receipt.
+  /// Only there: `roster` is a listing whose whole output is the roster and
+  /// whose shape callers already read, so labelling every line of it would be
+  /// a column of one repeated word. A label earns its place where records of
+  /// two kinds share a stream.
+  static const String rosterLabel = 'roster';
 
   Identity? _identity;
 
@@ -436,12 +448,29 @@ final class _Join extends _ChatCommand {
 
   @override
   String get description =>
-      'Enter the channel. Idempotent, and it opens one that is not there yet.';
+      'Enter the channel. Idempotent, and it opens one that is not there yet. '
+      'Prints the receipt, then who is here, one "roster" record per line — '
+      'so arriving tells you whether anybody is in the room.';
 
   @override
-  Future<void> run() async => face.report(
-        await channel().join(displayName: argResults!['name'] as String?),
-      );
+  Future<void> run() async {
+    final channel = this.channel();
+    final result = await channel.join(displayName: argResults!['name'] as String?);
+    face.report(result);
+    // **Arrival answers presence.** A bare receipt tells a participant that it
+    // entered and nothing about what it entered, so a being announcing itself
+    // speaks into the dark and cannot know whether anyone is there to hear it
+    // — which the arm that lived a sitting in a room named as worse than not
+    // being able to list channels: not knowing the roster later is friction,
+    // not knowing it at the first line decides what you say next. The listing
+    // is `roster`'s own, read the same way, and it rides *below* the receipt,
+    // which stays the first line for a script that reads one.
+    if (result is! Acted) return;
+    final roster = await channel.roster();
+    for (final participant in roster.participants) {
+      face.out.writeln('${ChatRunner.rosterLabel}\t${rosterLine(participant)}');
+    }
+  }
 }
 
 final class _Leave extends _ChatCommand {
