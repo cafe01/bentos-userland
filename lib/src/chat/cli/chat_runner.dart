@@ -77,12 +77,16 @@ final class ChatRunner {
           'and a being of the kind that states nothing is refused rather than '
           'signed in as whoever owns the machine.\n'
           '\n'
-          'Each participant has its own mark of what it has read. `monitor '
-          '--wait` blocks until somebody else speaks and hands you everything '
-          'since your mark, then moves it; your own speech never wakes you. '
-          'Nothing landing before --timeout exits 6, which is a different '
-          'answer from an error and must not be read as one. Drain before you '
-          'speak on arrival, and the room you walked into is yours to read.\n'
+          'Each participant has its own mark of what it has read, and two '
+          'verbs read against it. `monitor --once` hands you everything since '
+          'your mark and returns. `monitor --wait` blocks until somebody else '
+          'speaks and hands you the same, then returns; your own speech never '
+          'wakes you. Both move the mark over what they printed. Nothing '
+          'landing before --timeout exits 6, which is a different answer from '
+          'an error and must not be read as one. You have no mark in a channel '
+          'you have never read, so your first drain is the whole room: drain '
+          'before you speak on arrival, and the room you walked into is yours '
+          'to read.\n'
           '\n'
           'An act that lands prints one receipt line first, before anything '
           'else it has to say: "commit<TAB><sha>" — the commit carrying your '
@@ -708,7 +712,11 @@ final class _Monitor extends _ChatCommand {
       )
       ..addFlag(
         'once',
-        help: 'Drain what has landed and exit, instead of blocking.',
+        help: 'Drain everything since my mark and exit, instead of blocking, '
+            'moving the mark over what it printed. The same mark --wait '
+            'keeps, so the two never hand you one batch twice — and the '
+            'first drain of a channel is the room whole, since you have no '
+            'mark in it yet.',
         negatable: false,
       )
       ..addFlag(
@@ -763,6 +771,7 @@ final class _Monitor extends _ChatCommand {
       );
     }
     if (wait) return _runWait(timeout: timeout);
+    if (argResults!['once'] as bool) return _runOnce();
 
     final channel = this.channel();
     final scanner = _mentionScanner(channel);
@@ -780,9 +789,10 @@ final class _Monitor extends _ChatCommand {
     }
     // The backlog is printed, so what has already landed must not arrive a
     // second time as an event: the cursor is wound to the tip before watching.
+    // **This is the blocking watch only** — a keyboard asking to see what
+    // happens from now on. `--once` leaves above, because winding the cursor
+    // and then returning is a drain into nothing.
     await channel.sync();
-
-    if (argResults!['once'] as bool) return;
 
     // **The doorbell, not the clock.** One tick means *look again* — a burst
     // of dispatch already coalesced by [ChatFloor.dispatchTicker] — and this
@@ -801,6 +811,69 @@ final class _Monitor extends _ChatCommand {
       }
     } finally {
       ticker.dispose();
+    }
+  }
+
+  /// Drain and exit — **`--wait`'s non-blocking twin**, and the two now share
+  /// the one mark instead of only one of them keeping it.
+  ///
+  /// It used to open a channel at no cursor, fetch the batch, throw it away and
+  /// return: the `sync` below the backlog exists to wind the watch loop past
+  /// what it had already printed, and `--once` returned right after it. So a
+  /// drain printed nothing, ever, for anybody — while its own help said it
+  /// drains and the manual told an arriving participant to drain before
+  /// speaking. A being that joined a room and did the natural thing was handed
+  /// silence and could not tell it from an empty room.
+  ///
+  /// Nothing new is decided here. [Channel.sync]'s contract already rules what
+  /// a first read sees — *a channel opened at no cursor sees the conversation
+  /// whole* — and [MonitorCursors] already keys a mark per participant. This
+  /// applies both to the verb that never had them.
+  ///
+  /// **The mark advances over what was printed, and no further.** Under
+  /// `--mention` the predicate keeps speech off stdout, and marking that speech
+  /// read would lose it silently — so the mark stays where it is, exactly as
+  /// `say` refuses to advance over another participant's unread line. The cost
+  /// is a filtered drain repeating its own batch, which is visible; the cost of
+  /// the other choice is speech nobody ever sees.
+  Future<void> _runOnce() async {
+    // Validated even though nothing below paces on it — see [_maybeWarnInterval].
+    _interval;
+    _maybeWarnInterval();
+
+    final key = coordinate.whole;
+    // Resolved before the channel exists, because the cursor is fixed at
+    // construction — the same order [_runWait] keeps, and for the same reason.
+    final me = identity.handle.email;
+    final resuming = MonitorCursors.load(file: face.monitorCursorFile).of(key, me);
+    final channel = this.channel(cursor: resuming);
+    final scanner = _mentionScanner(channel);
+
+    // The past on demand, and it keeps its own meaning beside the drain: a
+    // backlog answers *what was said* and a drain answers *what is new to me*.
+    // The two overlap when both are asked for, and that is not double
+    // reporting — it is two questions with one honest answer each.
+    if (_backlog != null) {
+      for (final message in await channel.history(limit: _backlog)) {
+        if (scanner == null || scanner.mentions(message.body)) {
+          face.out.writeln(messageLine(message));
+        }
+      }
+    }
+
+    final events = await channel.sync();
+    var withheld = false;
+    for (final event in batch(events)) {
+      if (scanner == null || _mentioned(event, scanner)) {
+        face.out.writeln(eventLine(event));
+      } else {
+        withheld = true;
+      }
+    }
+
+    final at = channel.cursor;
+    if (at != null && !withheld) {
+      face.recordDrained(coordinate: key, participant: me, cursor: at);
     }
   }
 
