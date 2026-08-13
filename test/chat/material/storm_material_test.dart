@@ -43,6 +43,22 @@ const Duration preflight = Duration(seconds: 12);
 /// beings joining at once is a claim of its own, and it has its own gate below.
 const int _generous = 64;
 
+/// **The red count in this band is not stable run to run, and a single run is
+/// not evidence.** Measured on one unchanged tree minutes apart: 11 passed / 3
+/// failed, then 13 passed / 1 failed. These gates drive real processes over the
+/// real filesystem, so what they observe moves with whatever else the machine is
+/// doing — a suite in another worktree, another storm, a full disk.
+///
+/// The one **stable** red is the concurrent-birth gate at the foot of this file:
+/// four writers joining a room that does not exist yet, which throws because
+/// birth is read-then-create outside the retry loop. Its twin — a join carried
+/// under a live storm at the product's own bound — is load-dependent by nature,
+/// and it is the one that flips.
+///
+/// So: read this band across runs, never from one. A reader who takes a single
+/// run for the state of the tree can talk themselves into a regression that is
+/// not there, or into a cure that did not happen — and the bound under load is
+/// judged in exactly this band.
 void main() {
   late Directory plot;
 
