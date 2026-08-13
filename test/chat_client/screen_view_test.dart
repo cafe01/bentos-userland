@@ -954,4 +954,100 @@ void main() {
       });
     });
   });
+
+  group('the program says what it answers to — R5.9', () {
+    /// The composing row: the last row inside the frame, which is where
+    /// [ChatScreenView] puts the input line.
+    String composerRow(TerminalState state) =>
+        state.getTextAt(0, state.size.height.toInt() - 2) ?? '';
+
+    test('an empty composer carries the hint', () async {
+      await testNocterm('hint', (tester) async {
+        await tester.pumpComponent(
+          ChatScreenView(
+            model: _model(composingText: ''),
+            scrollController: AutoScrollController(),
+            background: TerminalBackground.dark,
+          ),
+        );
+        final row = composerRow(tester.terminalState);
+        expect(row, contains('/help'));
+        expect(row, contains('Ctrl+R'));
+      });
+    });
+
+    test('the hint is secondary, never speech', () async {
+      await testNocterm('hint — role', (tester) async {
+        await tester.pumpComponent(
+          ChatScreenView(
+            model: _model(composingText: ''),
+            scrollController: AutoScrollController(),
+            background: TerminalBackground.dark,
+          ),
+        );
+        final state = tester.terminalState;
+        final match = state.findText('/help').first;
+        expect(
+          state.getCellAt(match.x, match.y)!.style.color,
+          const Color(0x9299A6),
+        );
+      });
+    });
+
+    test('the first typed character takes the hint away', () async {
+      await testNocterm('hint — leaves', (tester) async {
+        await tester.pumpComponent(
+          ChatScreenView(
+            model: _model(composingText: 'a', composingCursor: 1),
+            scrollController: AutoScrollController(),
+            background: TerminalBackground.dark,
+          ),
+        );
+        final row = composerRow(tester.terminalState);
+        expect(row, isNot(contains('/help')));
+        expect(row, contains('> a'));
+      });
+    });
+
+    test('the hint never moves the caret off its own cell', () async {
+      await testNocterm('hint — caret', (tester) async {
+        await tester.pumpComponent(
+          ChatScreenView(
+            model: _model(composingText: ''),
+            scrollController: AutoScrollController(),
+            background: TerminalBackground.dark,
+          ),
+        );
+        final state = tester.terminalState;
+        final y = state.size.height.toInt() - 2;
+        final row = state.getTextAt(0, y) ?? '';
+        // The frame owns column 0, then the prompt: the caret is the cell
+        // right after it, reversed, and the hint begins only after that.
+        final promptEnd = row.indexOf('> ') + 2;
+        expect(state.getCellAt(promptEnd, y)!.style.reverse, isTrue);
+        expect(state.findText('/help').first.x, greaterThan(promptEnd));
+      });
+    });
+
+    test('a narrow terminal trims the hint rather than breaking the frame', () async {
+      await testNocterm('hint — narrow', (tester) async {
+        await tester.pumpComponent(
+          ChatScreenView(
+            model: _model(composingText: ''),
+            scrollController: AutoScrollController(),
+            background: TerminalBackground.dark,
+          ),
+        );
+        final state = tester.terminalState;
+        final width = state.size.width.toInt();
+        final row = composerRow(state);
+        // Trimmed, not wrapped and not overrun: the hint is there, its tail
+        // is not, and the frame still owns the last column.
+        expect(row, contains('/help'));
+        expect(row, isNot(contains('Ctrl+C')));
+        expect(row.length, width);
+        expect(row[width - 1], '│');
+      }, size: const Size(30, 12));
+    });
+  });
 }

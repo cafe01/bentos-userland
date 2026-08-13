@@ -524,13 +524,50 @@ class _InputLine extends StatelessComponent {
           ),
         ),
         Expanded(
-          child: _CaretText(
-            text: model.composingText,
-            cursor: model.composingCursor,
-            active: focused,
-          ),
+          // R5.9: an empty composer says what the program answers to. A
+          // function of the text being empty and nothing else — no field on
+          // the model, no state anywhere — so it leaves on the first
+          // keystroke and R5.10 stays true.
+          child: model.composingText.isEmpty
+              ? _Hint(active: focused)
+              : _CaretText(
+                  text: model.composingText,
+                  cursor: model.composingCursor,
+                  active: focused,
+                ),
         ),
       ],
+    );
+  }
+}
+
+/// The empty composer's hint: the caret first, then in secondary the two
+/// things the program answers to that a person cannot otherwise discover —
+/// the help listing, and the one binding that is not a slash command.
+class _Hint extends StatelessComponent {
+  const _Hint({required this.active});
+
+  final bool active;
+
+  static const String text = '/help for commands · Ctrl+R for who is here';
+
+  @override
+  Component build(BuildContext context) {
+    return RichText(
+      // Clipped like every other row: a narrow terminal trims the hint
+      // rather than running it past the frame.
+      overflow: TextOverflow.clip,
+      text: TextSpan(
+        children: [
+          // The caret keeps the composer's own first cell. The hint sits
+          // after it and never moves it.
+          TextSpan(
+            text: ' ',
+            style: active ? const TextStyle(reverse: true) : null,
+          ),
+          TextSpan(text: text, style: _styleOf(context, Role.secondary)),
+        ],
+      ),
     );
   }
 }

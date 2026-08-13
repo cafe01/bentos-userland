@@ -313,6 +313,24 @@ void main() {
           expect(text, contains(verb));
         }
       });
+
+      test('/help names itself and the bindings that are not commands — R5.9', () async {
+        final channel = FakeChannel(name: 'fabrica', me: _me);
+        final program = await _program(channel);
+
+        await _type(program, '/help');
+
+        final text = program.model.lines.whereType<SystemLine>().map((l) => l.text).join('\n');
+        // The listing is the only place a person learns what the program
+        // answers to without reading its source, so what has no slash to
+        // discover it by must be named here.
+        expect(text, contains('/help'));
+        expect(text, contains('/quit'));
+        expect(text, contains('Ctrl+R'));
+        expect(text, contains('Ctrl+C'));
+        expect(text, contains('Alt+1'));
+        expect(text, contains('Tab'));
+      });
     });
 
     group('opening a room at runtime — R3, R4.3', () {
