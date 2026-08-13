@@ -203,26 +203,28 @@ void main() {
     });
   });
 
-  test('a downed doorbell is visible in the bar, and clears once it is back',
-      () async {
-    await testNocterm('bar — dispatch down', (tester) async {
-      await tester.pumpComponent(
-        ChatScreenView(
-          model: _model(dispatchConnected: false),
-          scrollController: AutoScrollController(),
-        ),
-      );
-      expect(tester.terminalState, containsText('reconnecting'));
+  test(
+    'a downed doorbell is visible in the bar, and clears once it is back',
+    () async {
+      await testNocterm('bar — dispatch down', (tester) async {
+        await tester.pumpComponent(
+          ChatScreenView(
+            model: _model(dispatchConnected: false),
+            scrollController: AutoScrollController(),
+          ),
+        );
+        expect(tester.terminalState, containsText('reconnecting'));
 
-      await tester.pumpComponent(
-        ChatScreenView(
-          model: _model(dispatchConnected: true),
-          scrollController: AutoScrollController(),
-        ),
-      );
-      expect(tester.terminalState, isNot(containsText('reconnecting')));
-    });
-  });
+        await tester.pumpComponent(
+          ChatScreenView(
+            model: _model(dispatchConnected: true),
+            scrollController: AutoScrollController(),
+          ),
+        );
+        expect(tester.terminalState, isNot(containsText('reconnecting')));
+      });
+    },
+  );
 
   test('shows the roster when the terminal is wide enough', () async {
     await testNocterm('roster shown', (tester) async {
@@ -379,7 +381,8 @@ void main() {
       await testNocterm('per-room scroll', (tester) async {
         final fabrica = FakeChannel(name: 'fabrica', me: _alfred);
         fabrica.syncResult = [
-          for (var i = 0; i < 40; i++) Spoke(_msg('cafe01', 'line $i', minute: i)),
+          for (var i = 0; i < 40; i++)
+            Spoke(_msg('cafe01', 'line $i', minute: i)),
         ];
         final design = FakeChannel(name: 'design', me: _alfred);
         final program = ChatProgram(
@@ -397,20 +400,30 @@ void main() {
         await tester.pumpComponent(ChatApp(program: program));
         await tester.pump();
 
-        await tester.sendKeyEvent(const KeyboardEvent(logicalKey: LogicalKey.pageUp));
+        await tester.sendKeyEvent(
+          const KeyboardEvent(logicalKey: LogicalKey.pageUp),
+        );
         // `_onKey` is unawaited from `onKeyEvent`, so the scroll and the
         // resulting rebuild land a pump after the key is dispatched.
         await tester.pump();
         expect(tester.terminalState, containsText('more below'));
 
         await tester.sendKeyEvent(
-          const KeyboardEvent(logicalKey: LogicalKey.digit2, character: '2', modifiers: ModifierKeys(alt: true)),
+          const KeyboardEvent(
+            logicalKey: LogicalKey.digit2,
+            character: '2',
+            modifiers: ModifierKeys(alt: true),
+          ),
         );
         await tester.pump();
         expect(program.session.currentIndex, 1);
 
         await tester.sendKeyEvent(
-          const KeyboardEvent(logicalKey: LogicalKey.digit1, character: '1', modifiers: ModifierKeys(alt: true)),
+          const KeyboardEvent(
+            logicalKey: LogicalKey.digit1,
+            character: '1',
+            modifiers: ModifierKeys(alt: true),
+          ),
         );
         await tester.pump();
         expect(tester.terminalState, containsText('more below'));
@@ -581,4 +594,134 @@ void main() {
       });
     },
   );
+
+  group('which colour table — R5.6', () {
+    test('the person\'s own word outranks everything', () {
+      expect(
+        resolveBackground({'BENTOS_CHAT_THEME': 'light', 'COLORFGBG': '15;0'}),
+        TerminalBackground.light,
+      );
+      expect(
+        resolveBackground({'BENTOS_CHAT_THEME': 'DARK ', 'COLORFGBG': '0;15'}),
+        TerminalBackground.dark,
+      );
+    });
+
+    test('COLORFGBG is read where a terminal sets it', () {
+      expect(
+        resolveBackground({'COLORFGBG': '0;15'}),
+        TerminalBackground.light,
+      );
+      expect(resolveBackground({'COLORFGBG': '15;0'}), TerminalBackground.dark);
+      expect(
+        resolveBackground({'COLORFGBG': '15;default;0'}),
+        TerminalBackground.dark,
+      );
+    });
+
+    test('anything unstated or unparseable falls to dark, silently', () {
+      expect(resolveBackground({}), TerminalBackground.dark);
+      expect(resolveBackground({'COLORFGBG': ''}), TerminalBackground.dark);
+      expect(
+        resolveBackground({'COLORFGBG': '15;default'}),
+        TerminalBackground.dark,
+      );
+      expect(
+        resolveBackground({'BENTOS_CHAT_THEME': 'sepia'}),
+        TerminalBackground.dark,
+      );
+    });
+  });
+
+  group('a role becomes a colour once — R5.7', () {
+    /// The colour actually painted into the cell the text landed in — the
+    /// only reading that proves the table reached the screen, rather than
+    /// proving the table exists.
+    Color colourOf(TerminalState state, String text) {
+      final match = state.findText(text).first;
+      return state.getCellAt(match.x, match.y)!.style.color!;
+    }
+
+    test('two facts of different kinds do not read alike', () async {
+      await testNocterm('roles — warning against notice', (tester) async {
+        final at = DateTime(2026, 8, 7, 14, 5);
+        await tester.pumpComponent(
+          ChatScreenView(
+            background: TerminalBackground.dark,
+            model: _model(
+              topic: null,
+              lines: [
+                SpokenLine(_msg('cafe01', 'SPOKEN', minute: 1)),
+                SystemLine('NOTICED', at, kind: SystemLineKind.notice),
+                SystemLine('WARNED', at, kind: SystemLineKind.warning),
+              ],
+            ),
+            scrollController: AutoScrollController(),
+          ),
+        );
+
+        final state = tester.terminalState;
+        final spoken = colourOf(state, 'SPOKEN');
+        final notice = colourOf(state, 'NOTICED');
+        final warning = colourOf(state, 'WARNED');
+
+        expect(spoken.isDefault, isTrue, reason: 'primary is the terminal own');
+        expect(notice, isNot(warning));
+        expect(warning, const Color(0xFF8B94));
+        expect(notice, const Color(0x9299A6));
+      });
+    });
+
+    test('a mention is the loudest role in the bar', () async {
+      await testNocterm('roles — mentioned tab', (tester) async {
+        await tester.pumpComponent(
+          ChatScreenView(
+            background: TerminalBackground.dark,
+            model: _model(
+              tabs: const [
+                RoomTab(
+                  index: 0,
+                  name: 'fabrica',
+                  isCurrent: false,
+                  activityLevel: ActivityLevel.mention,
+                  activityCount: 3,
+                ),
+                RoomTab(
+                  index: 1,
+                  name: 'design',
+                  isCurrent: false,
+                  activityLevel: ActivityLevel.none,
+                  activityCount: 0,
+                ),
+              ],
+            ),
+            scrollController: AutoScrollController(),
+          ),
+        );
+
+        final state = tester.terminalState;
+        expect(colourOf(state, '[1:fabrica'), const Color(0xBB86FC));
+        expect(colourOf(state, '[2:design'), const Color(0x9299A6));
+      });
+    });
+
+    test('the same screen paints differently on a light terminal', () async {
+      await testNocterm('roles — light table', (tester) async {
+        final at = DateTime(2026, 8, 7, 14, 5);
+        await tester.pumpComponent(
+          ChatScreenView(
+            background: TerminalBackground.light,
+            model: _model(
+              topic: null,
+              lines: [SystemLine('WARNED', at, kind: SystemLineKind.warning)],
+            ),
+            scrollController: AutoScrollController(),
+          ),
+        );
+        // Not the dark table's warning: a colour chosen for one background
+        // and reused on the other is exactly what R5.6 refuses.
+        expect(colourOf(tester.terminalState, 'WARNED'), const Color(0xB02A20));
+      });
+    });
+  });
 }
