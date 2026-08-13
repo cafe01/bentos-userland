@@ -84,6 +84,15 @@ final class ChatRunner {
           'answer from an error and must not be read as one. Drain before you '
           'speak on arrival, and the room you walked into is yours to read.\n'
           '\n'
+          'An act that lands prints one receipt line first, before anything '
+          'else it has to say: "commit<TAB><sha>" — the commit carrying your '
+          'act. That sha is what --as-of reads history and roster at, and it '
+          'is how your own line is named in the log. An act that does not '
+          'land prints no receipt at all and says why on stderr: exit 3 '
+          'somebody refused, 75 the channel was moving faster than you could '
+          'land in it and nobody decided anything, 1 there is no such '
+          'channel.\n'
+          '\n'
           'Verbs take the channel from -c, and the globals come before the '
           'verb.',
     )
@@ -133,6 +142,14 @@ final class ChatRunner {
 
   late final CommandRunner<void> _runner;
 
+  /// What `--help` puts on stdout, verbatim — **and the whole manual a mind
+  /// reaching this program as one tool ever gets**, since its description is
+  /// this text and nothing else about the medium travels with it. Exposed so a
+  /// gate can judge the manual without a process: `CommandRunner` prints its
+  /// usage through `print` rather than through this face's sinks, so an
+  /// in-process run of `--help` captures nothing.
+  String get manual => _runner.usage;
+
   /// The process's answer.
   ///
   /// **0 acted · 1 not found · 3 refused · 6 timed out · 64 usage · 75
@@ -158,6 +175,10 @@ final class ChatRunner {
   static const int timedOutCode = 6;
   static const int usageCode = 64;
   static const int stumbledCode = bodyStumbled;
+
+  /// The word every receipt opens with. Named once so the manual, the face and
+  /// the gates cannot drift apart on what a caller is told to look for.
+  static const String receiptLabel = 'commit';
 
   Identity? _identity;
 
@@ -251,10 +272,20 @@ final class ChatRunner {
   /// top-level `exitCode` setter, which an unqualified assignment inside an
   /// extension binds to in preference to this field — the number then lands on
   /// the process while the caller reads zero, and nothing says so.
+  ///
+  /// **What lands prints a receipt, and the receipt is labelled.** A bare
+  /// forty-hex line is indistinguishable from a cursor, a position or an
+  /// identifier of the caller's own, so a participant holding nothing but
+  /// `--help` cannot tell what it was handed or what to do with it — which is
+  /// the requirement that an act names what it landed as, unmet for as long as
+  /// this printed the value alone. One shape for every act, tab-separated so
+  /// `cut -f2` still gets the commit, and **always the first line of stdout**:
+  /// whatever else a verb has to say about the room, it says beneath its own
+  /// receipt.
   void report(ActResult result) {
     switch (result) {
       case Acted(:final commit):
-        if (commit.isNotEmpty) out.writeln(commit);
+        if (commit.isNotEmpty) out.writeln('$receiptLabel\t$commit');
       case Refused(:final reason):
         // The floor's own words, never paraphrased.
         err.writeln(reason.isEmpty ? '$chatOntology: refused' : reason);

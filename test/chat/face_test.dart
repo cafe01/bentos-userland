@@ -196,12 +196,59 @@ void main() {
   Future<void> seated() => run(['join']);
 
   group('the exit table', () {
-    test('an act that lands exits 0 and prints its commit', () async {
+    test('an act that lands exits 0 and prints a labelled receipt', () async {
       final result = await run(['join']);
 
       expect(result.exitCode, 0);
-      expect(result.lines.single, 'c100000');
+      // Labelled, because a bare forty-hex line is indistinguishable from a
+      // cursor or a position at the call site, and a participant holding
+      // nothing but --help cannot ask what it was handed.
+      expect(result.lines.first, 'commit\tc100000');
       expect(result.err, isEmpty);
+    });
+
+    test('the receipt is the first line of stdout for every act', () async {
+      // The position is the contract: whatever else a verb says about the
+      // room, a script reading one line reads the receipt.
+      await seated();
+
+      for (final act in [
+        ['say', 'hello'],
+        ['topic', 'the install gate'],
+        ['away', 'at the dentist'],
+        ['back'],
+        ['leave'],
+      ]) {
+        final result = await run(act);
+
+        expect(result.exitCode, 0, reason: act.first);
+        expect(
+          result.lines.first.split('\t').first,
+          'commit',
+          reason: '${act.first} opened with something other than its receipt',
+        );
+        expect(result.lines.first.split('\t')[1], isNotEmpty);
+      }
+    });
+
+    test('an act that does not land prints no receipt at all', () async {
+      // A caller that greps for the label must never find one over speech
+      // that never happened.
+      floor.tree.birth();
+
+      final result = await run(['say', 'hello']);
+
+      expect(result.exitCode, 3);
+      expect(result.out, isEmpty);
+    });
+
+    test('the manual states what the receipt is and what reads it', () async {
+      // R4.5: the help text is the whole manual a mind gets, so a value it
+      // prints and never names does not exist for the next participant.
+      final manual = ChatRunner(floor: floor).manual;
+
+      expect(manual, contains('commit<TAB><sha>'));
+      expect(manual, contains('--as-of'));
     });
 
     test('a refusal exits 3, in the floor\'s own words on stderr', () async {
