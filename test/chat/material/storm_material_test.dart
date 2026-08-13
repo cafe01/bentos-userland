@@ -49,11 +49,14 @@ const int _generous = 64;
 /// real filesystem, so what they observe moves with whatever else the machine is
 /// doing — a suite in another worktree, another storm, a full disk.
 ///
-/// The one **stable** red is the concurrent-birth gate at the foot of this file:
-/// four writers joining a room that does not exist yet, which throws because
-/// birth is read-then-create outside the retry loop. Its twin — a join carried
-/// under a live storm at the product's own bound — is load-dependent by nature,
-/// and it is the one that flips.
+/// Both readings above predate the cures. The concurrent-birth gate was the
+/// stable red — birth was read-then-create outside the retry loop — and its
+/// twin, a join carried under a live storm at the product's own bound, was the
+/// one that flipped. Both are **green now**, measured 14/14 on three
+/// consecutive runs of this band after the compare-and-swap birth and the
+/// decaying retry landed. The flapping was never about those two defects
+/// though: it is what real processes over a real filesystem do, so it outlives
+/// the cures and the next load-dependent gate will flap the same way.
 ///
 /// So: read this band across runs, never from one. A reader who takes a single
 /// run for the state of the tree can talk themselves into a regression that is
