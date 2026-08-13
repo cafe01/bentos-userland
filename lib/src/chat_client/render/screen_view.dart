@@ -12,6 +12,7 @@
 library;
 
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:characters/characters.dart';
 import 'package:nocterm/nocterm.dart' hide Key;
@@ -22,6 +23,7 @@ import '../app.dart';
 import '../input.dart';
 import '../screen_model.dart';
 import '../session.dart';
+import '../theme.dart';
 import '../transcript.dart';
 
 /// Below this width the roster panel is not worth the columns it costs —
@@ -33,12 +35,119 @@ const int _rosterWidthThreshold = 60;
 
 const int _rosterWidth = 14;
 
+/// Which of the two colour tables a terminal is painted for.
+///
+/// nocterm has no adaptive colour and cannot see the background: `Color`
+/// carries RGB and a terminal-default sentinel, and nothing anywhere probes
+/// what the terminal is painted on. Its own `Colors` constants are a
+/// dark-theme palette — `Colors.grey` scores 2.87:1 on white — so R5.6 is
+/// discharged by two tuned tables against a *stated* background rather than
+/// by one set of hues surviving both.
+enum TerminalBackground { light, dark }
+
+/// The one table from [Role] to colour, and the only place in the client a
+/// colour is named.
+///
+/// **`primary` is the terminal's own foreground in both tables** — the one
+/// colour that cannot be wrong, and the one the person already chose.
+/// **`chrome` is deliberately below the threshold text is held to**, since
+/// it paints frame glyphs and never a word: a border that competes with
+/// speech is drawn too loud. Violet and red are different hue families on
+/// purpose — *you were mentioned* and *the doorbell died* are facts of
+/// different kinds, and R5.7 forbids them reading alike.
+///
+/// Contrast, computed against white and against `#18181C`:
+///
+/// | role | light | dark |
+/// |---|---|---|
+/// | secondary | 6.05 | 6.18 |
+/// | highlight | 5.70 | 6.68 |
+/// | warning | 6.57 | 7.90 |
+/// | chrome | 2.87 | 2.93 |
+const Map<Role, Color> _lightTable = {
+  Role.primary: Color.defaultColor,
+  Role.secondary: Color(0x5C6370),
+  Role.highlight: Color(0x7C3AED),
+  Role.warning: Color(0xB02A20),
+  Role.chrome: Color(0x9299A6),
+};
+
+const Map<Role, Color> _darkTable = {
+  Role.primary: Color.defaultColor,
+  Role.secondary: Color(0x9299A6),
+  Role.highlight: Color(0xBB86FC),
+  Role.warning: Color(0xFF8B94),
+  Role.chrome: Color(0x5C6370),
+};
+
+/// Which table this terminal reads, from the environment alone.
+///
+/// `BENTOS_CHAT_THEME` is the person's own word and outranks everything.
+/// `COLORFGBG` is a convention several terminals set and many do not —
+/// Ghostty does not — so it is a free improvement where present and never a
+/// mechanism to rely on; its background is the field after the last `;`,
+/// and ANSI 0–6 and 8 are dark. Dark is the default because an unset
+/// terminal is far more often dark. **The cost is accepted and stated**: a
+/// person on a light terminal who declares nothing reads the dark table
+/// silently, at 2.24:1 for a warning, with an environment variable to reach
+/// for.
+TerminalBackground resolveBackground(Map<String, String> environment) {
+  final declared = environment['BENTOS_CHAT_THEME']?.trim().toLowerCase();
+  if (declared == 'light') return TerminalBackground.light;
+  if (declared == 'dark') return TerminalBackground.dark;
+
+  final fgbg = environment['COLORFGBG'];
+  if (fgbg != null && fgbg.contains(';')) {
+    final background = int.tryParse(fgbg.split(';').last.trim());
+    if (background != null) {
+      final dark = background <= 6 || background == 8;
+      return dark ? TerminalBackground.dark : TerminalBackground.light;
+    }
+  }
+
+  return TerminalBackground.dark;
+}
+
+/// The palette in force for the subtree — an inherited value so that no
+/// component below carries it through a constructor, and so the suite can
+/// paint the same screen against either background.
+class Palette extends InheritedComponent {
+  const Palette({super.key, required this.background, required super.child});
+
+  final TerminalBackground background;
+
+  Color color(Role role) => switch (background) {
+    TerminalBackground.light => _lightTable[role]!,
+    TerminalBackground.dark => _darkTable[role]!,
+  };
+
+  static Palette of(BuildContext context) =>
+      context.dependOnInheritedComponentOfExactType<Palette>() ??
+      const Palette(background: TerminalBackground.dark, child: SizedBox());
+
+  @override
+  bool updateShouldNotify(Palette oldComponent) =>
+      background != oldComponent.background;
+}
+
+/// A [TextStyle] carrying one role's colour, and nothing chosen at a call
+/// site — [FontWeight] stays a separate decision, since weight says
+/// *current* and colour says *what kind of thing this is*.
+TextStyle _styleOf(BuildContext context, Role role, {FontWeight? weight}) =>
+    TextStyle(color: Palette.of(context).color(role), fontWeight: weight);
+
 class ChatScreenView extends StatelessComponent {
-  const ChatScreenView({
+  ChatScreenView({
     super.key,
     required this.model,
     required this.scrollController,
-  });
+    TerminalBackground? background,
+  }) : background = background ?? resolveBackground(Platform.environment);
+
+  /// Which colour table this screen paints with. Resolved from the
+  /// environment once, at the top, and never re-read below: a component
+  /// deciding this for itself is the second answer R5.7 forbids.
+  final TerminalBackground background;
 
   final ScreenModel model;
 
@@ -50,38 +159,101 @@ class ChatScreenView extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _Header(model: model),
-        Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final showRoster = constraints.maxWidth >= _rosterWidthThreshold;
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(
-                    child: _Transcript(
-                      model: model,
-                      controller: scrollController,
-                    ),
-                  ),
-                  if (showRoster)
-                    SizedBox(
-                      width: _rosterWidth.toDouble(),
-                      child: _Roster(participants: model.participants),
-                    ),
-                ],
-              );
-            },
+    return Palette(
+      background: background,
+      child: Builder(
+        builder: (context) => DecoratedBox(
+          // R5.5: one framing border around the whole program, so no region
+          // sits flush against the terminal's own edge on every side. Drawn
+          // by the framework from the constraints its child respects, never
+          // by hand arithmetic — which is what keeps it out of the overflow
+          // defect the transcript already carries a guard for.
+          decoration: BoxDecoration(
+            border: BoxBorder.all(
+              color: Palette.of(context).color(Role.chrome),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Header and bar stay flush against the frame: each is a
+              // single line that already carries its own visual weight, and
+              // a second cell there buys nothing.
+              _Header(model: model),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    // The roster whole, in place of the transcript — R5.8.
+                    // Available at every width, never a second mechanism
+                    // gated on how narrow the terminal is.
+                    if (model.rosterOverlay) {
+                      return _Pad(
+                        child: _Roster(participants: model.participants),
+                      );
+                    }
+
+                    final showRoster =
+                        constraints.maxWidth >= _rosterWidthThreshold;
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: _Pad(
+                            child: _Transcript(
+                              model: model,
+                              controller: scrollController,
+                            ),
+                          ),
+                        ),
+                        if (showRoster) ...[
+                          VerticalDivider(
+                            color: Palette.of(context).color(Role.chrome),
+                          ),
+                          SizedBox(
+                            width: _rosterWidth.toDouble(),
+                            // The roster's own clip, sized to its own
+                            // column: clipping text trims a line the layout
+                            // engine already produced, and does not stop a
+                            // row from being laid out taller or wider than
+                            // the column it sits in. A long display name is
+                            // exactly the shape that once broke the
+                            // transcript, one column over.
+                            child: ClipRect(
+                              child: _Pad(
+                                child: _Roster(
+                                  participants: model.participants,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    );
+                  },
+                ),
+              ),
+              _Bar(model: model),
+              _InputLine(model: model),
+            ],
           ),
         ),
-        _Bar(model: model),
-        _InputLine(model: model),
-      ],
+      ),
     );
   }
+}
+
+/// One cell of horizontal padding — spent inside the transcript and the
+/// roster, where content runs to a boundary and position alone stops
+/// distinguishing regions. Nothing else spends a cell without a sentence
+/// beside it saying why.
+class _Pad extends StatelessComponent {
+  const _Pad({required this.child});
+
+  final Component child;
+
+  @override
+  Component build(BuildContext context) =>
+      Padding(padding: const EdgeInsets.symmetric(horizontal: 1), child: child);
 }
 
 class _Header extends StatelessComponent {
@@ -96,7 +268,7 @@ class _Header extends StatelessComponent {
       children: [
         Text(
           model.coordinate,
-          style: const TextStyle(fontWeight: FontWeight.bold),
+          style: _styleOf(context, Role.primary, weight: FontWeight.bold),
         ),
         if (topic != null) ...[
           const Text('  — '),
@@ -104,7 +276,7 @@ class _Header extends StatelessComponent {
             child: Text(
               topic,
               overflow: TextOverflow.clip,
-              style: const TextStyle(color: Colors.grey),
+              style: _styleOf(context, Role.secondary),
             ),
           ),
         ],
@@ -160,8 +332,9 @@ class _Transcript extends StatelessComponent {
         ),
         AnimatedBuilder(
           animation: controller,
-          builder: (context, _) =>
-              controller.isAutoScrollEnabled ? const SizedBox() : const _MoreBelowMarker(),
+          builder: (context, _) => controller.isAutoScrollEnabled
+              ? const SizedBox()
+              : const _MoreBelowMarker(),
         ),
       ],
     );
@@ -179,9 +352,11 @@ class _UnreadMarker extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    return const Text(
+    // The unread boundary is *look here* — the same fact a mention is, and
+    // therefore the same role, not a second loud colour beside it.
+    return Text(
       '─────────────── new messages ───────────────',
-      style: TextStyle(color: Colors.yellow),
+      style: _styleOf(context, Role.highlight),
     );
   }
 }
@@ -191,9 +366,12 @@ class _MoreBelowMarker extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    return const Text(
+    return Text(
       '── more below ──',
-      style: TextStyle(color: Colors.grey, reverse: true),
+      style: TextStyle(
+        color: Palette.of(context).color(Role.secondary),
+        reverse: true,
+      ),
     );
   }
 }
@@ -205,20 +383,13 @@ class _TranscriptRow extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    final text = _lineText(line);
-    return switch (line) {
-      SpokenLine() => Text(text, overflow: TextOverflow.clip),
-      TopicLine() => Text(
-        text,
-        overflow: TextOverflow.clip,
-        style: const TextStyle(color: Colors.grey),
-      ),
-      SystemLine() => Text(
-        text,
-        overflow: TextOverflow.clip,
-        style: const TextStyle(color: Colors.yellow),
-      ),
-    };
+    // The role comes from the core's own total mapping — a notice and a
+    // warning are told apart by `SystemLineKind`, never by reading the text.
+    return Text(
+      _lineText(line),
+      overflow: TextOverflow.clip,
+      style: _styleOf(context, roleOfLine(line)),
+    );
   }
 }
 
@@ -245,14 +416,18 @@ class _Roster extends StatelessComponent {
   Component build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [for (final p in participants) ..._participantRows(p)],
+      children: [for (final p in participants) ..._participantRows(context, p)],
     );
   }
 
-  List<Component> _participantRows(Participant p) {
+  List<Component> _participantRows(BuildContext context, Participant p) {
     final dot = p.isAway ? '○' : '●';
     final rows = <Component>[
-      Text('$dot ${p.handle.local}', overflow: TextOverflow.clip),
+      Text(
+        '$dot ${p.handle.local}',
+        overflow: TextOverflow.clip,
+        style: _styleOf(context, Role.primary),
+      ),
     ];
     final reason = p.away;
     if (reason != null && reason.isNotEmpty) {
@@ -260,7 +435,7 @@ class _Roster extends StatelessComponent {
         Text(
           '  away: $reason',
           overflow: TextOverflow.clip,
-          style: const TextStyle(color: Colors.grey),
+          style: _styleOf(context, Role.secondary),
         ),
       );
     }
@@ -287,15 +462,18 @@ class _Bar extends StatelessComponent {
         for (final tab in model.tabs) ...[_TabSlot(tab: tab), const Text(' ')],
         const Spacer(),
         if (!model.dispatchConnected) ...[
-          const Text(
+          Text(
             '⚠ reconnecting',
-            style: TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold),
+            style: _styleOf(context, Role.warning, weight: FontWeight.bold),
           ),
           const Text('  '),
         ],
-        Text('${model.me} $dot$presence'),
+        Text(
+          '${model.me} $dot$presence',
+          style: _styleOf(context, Role.primary),
+        ),
         const Text('  '),
-        Text(_clock(model.now)),
+        Text(_clock(model.now), style: _styleOf(context, Role.secondary)),
       ],
     );
   }
@@ -315,11 +493,10 @@ class _TabSlot extends StatelessComponent {
     };
     return Text(
       '[${tab.index + 1}:${tab.name}$suffix]',
-      style: TextStyle(
-        fontWeight: tab.isCurrent ? FontWeight.bold : null,
-        color: tab.activityLevel == ActivityLevel.mention
-            ? Colors.yellow
-            : null,
+      style: _styleOf(
+        context,
+        roleOfTab(tab),
+        weight: tab.isCurrent ? FontWeight.bold : null,
       ),
     );
   }
@@ -340,16 +517,68 @@ class _InputLine extends StatelessComponent {
       children: [
         Text(
           '> ',
-          style: TextStyle(fontWeight: focused ? FontWeight.bold : null),
-        ),
-        Expanded(
-          child: _CaretText(
-            text: model.composingText,
-            cursor: model.composingCursor,
-            active: focused,
+          style: _styleOf(
+            context,
+            Role.primary,
+            weight: focused ? FontWeight.bold : null,
           ),
         ),
+        Expanded(
+          // R5.9: an empty composer says what the program answers to. A
+          // function of the text being empty and nothing else — no field on
+          // the model, no state anywhere — so it leaves on the first
+          // keystroke and R5.10 stays true.
+          child: model.composingText.isEmpty
+              ? _Hint(active: focused)
+              : _CaretText(
+                  text: model.composingText,
+                  cursor: model.composingCursor,
+                  active: focused,
+                ),
+        ),
       ],
+    );
+  }
+}
+
+/// The empty composer's hint: the caret first, then in secondary the two
+/// things the program answers to that a person cannot otherwise discover —
+/// the help listing, and the one binding that is not a slash command.
+class _Hint extends StatelessComponent {
+  const _Hint({required this.active});
+
+  final bool active;
+
+  static const String text = '/help for commands · Ctrl+R for who is here';
+
+  @override
+  Component build(BuildContext context) {
+    // Cut to the room actually available, rather than left to the
+    // framework's clip: measured at 30 columns, an overflowing line keeps
+    // its *tail* and loses its head — which drops the caret and starts the
+    // hint mid-sentence. The caret's cell is reserved first, and what is
+    // left is what the hint may spend.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final room = constraints.maxWidth.toInt() - 1;
+        final shown = room <= 0
+            ? ''
+            : text.characters.take(room).toString();
+        return RichText(
+          overflow: TextOverflow.clip,
+          text: TextSpan(
+            children: [
+              // The caret keeps the composer's own first cell. The hint
+              // sits after it and never moves it.
+              TextSpan(
+                text: ' ',
+                style: active ? const TextStyle(reverse: true) : null,
+              ),
+              TextSpan(text: shown, style: _styleOf(context, Role.secondary)),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -522,6 +751,12 @@ KeyPress? _translate(KeyboardEvent event) {
   // nocterm as this synthetic Ctrl+V, the pasted text sitting in its own
   // clipboard buffer rather than on the event. Reading it back is the same
   // move nocterm's own TextField makes.
+  // Ctrl+R shows the roster whole — R5.8. Nothing in this composer does a
+  // reverse search, so there is no collision to arbitrate.
+  if (event.isControlPressed && event.logicalKey == LogicalKey.keyR) {
+    return const KeyPress(Key.toggleRoster);
+  }
+
   if (event.isControlPressed && event.logicalKey == LogicalKey.keyV) {
     final text = ClipboardManager.paste();
     if (text == null || text.isEmpty) return null;

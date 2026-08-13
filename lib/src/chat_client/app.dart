@@ -229,6 +229,9 @@ final class ChatProgram {
     '/back — declare yourself back',
     '/topic [text] — read, or change, the current room\'s topic',
     '/list — list the channels at this place',
+    '/help — this listing',
+    '/quit — leave the program',
+    'Ctrl+R — show who is here · Alt+1…9 — go to a room · Tab — transcript or composer · Ctrl+C — quit',
   ];
 
   /// The room to act on for `/join`: the current one when [coordinate] is

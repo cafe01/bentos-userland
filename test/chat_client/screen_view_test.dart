@@ -203,26 +203,28 @@ void main() {
     });
   });
 
-  test('a downed doorbell is visible in the bar, and clears once it is back',
-      () async {
-    await testNocterm('bar — dispatch down', (tester) async {
-      await tester.pumpComponent(
-        ChatScreenView(
-          model: _model(dispatchConnected: false),
-          scrollController: AutoScrollController(),
-        ),
-      );
-      expect(tester.terminalState, containsText('reconnecting'));
+  test(
+    'a downed doorbell is visible in the bar, and clears once it is back',
+    () async {
+      await testNocterm('bar — dispatch down', (tester) async {
+        await tester.pumpComponent(
+          ChatScreenView(
+            model: _model(dispatchConnected: false),
+            scrollController: AutoScrollController(),
+          ),
+        );
+        expect(tester.terminalState, containsText('reconnecting'));
 
-      await tester.pumpComponent(
-        ChatScreenView(
-          model: _model(dispatchConnected: true),
-          scrollController: AutoScrollController(),
-        ),
-      );
-      expect(tester.terminalState, isNot(containsText('reconnecting')));
-    });
-  });
+        await tester.pumpComponent(
+          ChatScreenView(
+            model: _model(dispatchConnected: true),
+            scrollController: AutoScrollController(),
+          ),
+        );
+        expect(tester.terminalState, isNot(containsText('reconnecting')));
+      });
+    },
+  );
 
   test('shows the roster when the terminal is wide enough', () async {
     await testNocterm('roster shown', (tester) async {
@@ -379,7 +381,8 @@ void main() {
       await testNocterm('per-room scroll', (tester) async {
         final fabrica = FakeChannel(name: 'fabrica', me: _alfred);
         fabrica.syncResult = [
-          for (var i = 0; i < 40; i++) Spoke(_msg('cafe01', 'line $i', minute: i)),
+          for (var i = 0; i < 40; i++)
+            Spoke(_msg('cafe01', 'line $i', minute: i)),
         ];
         final design = FakeChannel(name: 'design', me: _alfred);
         final program = ChatProgram(
@@ -397,20 +400,30 @@ void main() {
         await tester.pumpComponent(ChatApp(program: program));
         await tester.pump();
 
-        await tester.sendKeyEvent(const KeyboardEvent(logicalKey: LogicalKey.pageUp));
+        await tester.sendKeyEvent(
+          const KeyboardEvent(logicalKey: LogicalKey.pageUp),
+        );
         // `_onKey` is unawaited from `onKeyEvent`, so the scroll and the
         // resulting rebuild land a pump after the key is dispatched.
         await tester.pump();
         expect(tester.terminalState, containsText('more below'));
 
         await tester.sendKeyEvent(
-          const KeyboardEvent(logicalKey: LogicalKey.digit2, character: '2', modifiers: ModifierKeys(alt: true)),
+          const KeyboardEvent(
+            logicalKey: LogicalKey.digit2,
+            character: '2',
+            modifiers: ModifierKeys(alt: true),
+          ),
         );
         await tester.pump();
         expect(program.session.currentIndex, 1);
 
         await tester.sendKeyEvent(
-          const KeyboardEvent(logicalKey: LogicalKey.digit1, character: '1', modifiers: ModifierKeys(alt: true)),
+          const KeyboardEvent(
+            logicalKey: LogicalKey.digit1,
+            character: '1',
+            modifiers: ModifierKeys(alt: true),
+          ),
         );
         await tester.pump();
         expect(tester.terminalState, containsText('more below'));
@@ -505,7 +518,9 @@ void main() {
           expect(barRow, isNot(contains('PADLINE')));
           expect(barRow, contains('[1:fabrica]'));
           expect(inputRow, isNot(contains('PADLINE')));
-          expect(inputRow, startsWith('> '));
+          // The frame's left edge, then the prompt: the composer owns its
+          // row from the first cell inside the border — R5.5.
+          expect(inputRow, startsWith('│> '));
         }, size: const Size(80, 24));
       },
     );
@@ -545,9 +560,12 @@ void main() {
           expect(barRow, isNot(contains('GIANTWORD')));
           expect(barRow, contains('[1:fabrica]'));
 
-          final inputRow = state.getTextAt(0, 23) ?? '';
+          // The composer's row is the last one inside the frame — the
+          // bottom border now owns the terminal's final row.
+          final inputRow =
+              state.getTextAt(0, state.size.height.toInt() - 2) ?? '';
           expect(inputRow, isNot(contains('GIANTWORD')));
-          expect(inputRow, startsWith('> '));
+          expect(inputRow, startsWith('│> '));
         }, size: const Size(80, 24));
       },
     );
@@ -581,4 +599,458 @@ void main() {
       });
     },
   );
+
+  group('the frame and the padding — R5.5', () {
+    test('one border wraps the program, so nothing sits flush', () async {
+      await testNocterm('frame', (tester) async {
+        await tester.pumpComponent(
+          ChatScreenView(
+            model: _model(),
+            scrollController: AutoScrollController(),
+            background: TerminalBackground.dark,
+          ),
+        );
+
+        final state = tester.terminalState;
+        final width = state.size.width.toInt();
+        final height = state.size.height.toInt();
+        final top = state.getTextAt(0, 0) ?? '';
+        final bottom = state.getTextAt(0, height - 1) ?? '';
+
+        expect(top, startsWith('┌'));
+        expect(top, endsWith('┐'));
+        expect(bottom, startsWith('└'));
+        expect(bottom, endsWith('┘'));
+        // Every row between the corners is bounded on both sides: no region
+        // reaches the terminal's own edge.
+        for (var y = 1; y < height - 1; y++) {
+          final row = state.getTextAt(0, y) ?? '';
+          expect(row[0], '│', reason: 'row $y is flush on the left');
+          expect(row[width - 1], '│', reason: 'row $y is flush on the right');
+        }
+      });
+    });
+
+    test('the border is chrome, never a text role', () async {
+      await testNocterm('frame — chrome', (tester) async {
+        await tester.pumpComponent(
+          ChatScreenView(
+            model: _model(),
+            scrollController: AutoScrollController(),
+            background: TerminalBackground.dark,
+          ),
+        );
+        final corner = tester.terminalState.getCellAt(0, 0)!;
+        expect(corner.char, '┌');
+        expect(corner.style.color, const Color(0x5C6370));
+      });
+    });
+
+    test('the transcript is padded one cell inside the frame', () async {
+      await testNocterm('padding', (tester) async {
+        await tester.pumpComponent(
+          ChatScreenView(
+            model: _model(lines: [SpokenLine(_msg('cafe01', 'PADDED'))]),
+            scrollController: AutoScrollController(),
+          ),
+        );
+        final state = tester.terminalState;
+        final match = state.findText('PADDED').single;
+        final row = state.getTextAt(0, match.y) ?? '';
+        // The frame owns column 0; the padding owns column 1; the
+        // transcript's own text begins after it.
+        expect(row.substring(0, 2), '│ ');
+      });
+    });
+  });
+
+  group('the roster overlay — R5.8', () {
+    final _roster = [
+      Participant(handle: _cafe, joined: DateTime(2026)),
+      Participant(
+        handle: Handle('mariela', 'bentos.life'),
+        joined: DateTime(2026),
+      ),
+    ];
+
+    test('shows the roster whole, in place of the transcript', () async {
+      await testNocterm('roster overlay', (tester) async {
+        await tester.pumpComponent(
+          ChatScreenView(
+            model: _model(
+              rosterOverlay: true,
+              participants: _roster,
+              lines: [SpokenLine(_msg('cafe01', 'HIDDENSPEECH'))],
+            ),
+            scrollController: AutoScrollController(),
+          ),
+        );
+        final state = tester.terminalState;
+        expect(state, containsText('cafe01'));
+        expect(state, containsText('mariela'));
+        expect(state, isNot(containsText('HIDDENSPEECH')));
+      });
+    });
+
+    test('is available at a width that already shows the column', () async {
+      await testNocterm('roster overlay — wide', (tester) async {
+        await tester.pumpComponent(
+          ChatScreenView(
+            model: _model(
+              rosterOverlay: true,
+              participants: _roster,
+              lines: [SpokenLine(_msg('cafe01', 'HIDDENSPEECH'))],
+            ),
+            scrollController: AutoScrollController(),
+          ),
+        );
+        // One mechanism, never a second one gated on how narrow the
+        // terminal is: at 100 columns the column would have fitted, and the
+        // overlay still replaces the transcript.
+        expect(tester.terminalState, isNot(containsText('HIDDENSPEECH')));
+        expect(tester.terminalState, containsText('mariela'));
+      }, size: const Size(100, 24));
+    });
+
+    test(
+      'Ctrl+R toggles it, and toggling back restores the transcript',
+      () async {
+        await testNocterm('roster overlay — Ctrl+R', (tester) async {
+          final channel = FakeChannel(name: 'fabrica', me: _alfred);
+          final program = ChatProgram(
+            channels: [channel],
+            ticker: _NullTicker(),
+            floor: FakeChatFloor(),
+            place: '/fake/place',
+          );
+          await program.start();
+          await tester.pumpComponent(ChatApp(program: program));
+
+          expect(program.session.rosterOverlay, isFalse);
+          await tester.sendKeyEvent(
+            const KeyboardEvent(
+              logicalKey: LogicalKey.keyR,
+              modifiers: ModifierKeys(ctrl: true),
+            ),
+          );
+          expect(program.session.rosterOverlay, isTrue);
+
+          await tester.sendKeyEvent(
+            const KeyboardEvent(
+              logicalKey: LogicalKey.keyR,
+              modifiers: ModifierKeys(ctrl: true),
+            ),
+          );
+          expect(program.session.rosterOverlay, isFalse);
+        });
+      },
+    );
+
+    test(
+      'a display name too wide for the column cannot paint past it',
+      () async {
+        await testNocterm('roster — overrun', (tester) async {
+          await tester.pumpComponent(
+            ChatScreenView(
+              model: _model(
+                lines: [SpokenLine(_msg('cafe01', 'SPEECHHERE'))],
+                participants: [
+                  Participant(
+                    handle: Handle('ROSTEROVERRUNNINGNAME', 'bentos.life'),
+                    joined: DateTime(2026),
+                    away: 'AWAYREASONTHATRUNSFARPASTTHECOLUMN',
+                  ),
+                ],
+              ),
+              scrollController: AutoScrollController(),
+            ),
+          );
+
+          final state = tester.terminalState;
+          final speechY = state.findText('SPEECHHERE').single.y;
+          final speechRow = state.getTextAt(0, speechY) ?? '';
+          // The clip is what keeps the roster inside its own column: a name
+          // built to overrun its budget is trimmed, never bled into the
+          // transcript beside it or through the frame.
+          expect(speechRow, isNot(contains('ROSTEROVERRUN')));
+          expect(speechRow, endsWith('│'));
+          for (var y = 1; y < state.size.height.toInt() - 1; y++) {
+            final row = state.getTextAt(0, y) ?? '';
+            expect(row, isNot(contains('AWAYREASONTHATRUNSFARPAST')));
+          }
+        }, size: const Size(80, 24));
+      },
+    );
+
+    test('a roster longer than the screen cannot paint into the bar', () async {
+      await testNocterm('roster — taller than its column', (tester) async {
+        await tester.pumpComponent(
+          ChatScreenView(
+            model: _model(
+              lines: [SpokenLine(_msg('cafe01', 'SPEECHHERE'))],
+              participants: [
+                for (var i = 0; i < 40; i++)
+                  Participant(
+                    handle: Handle('member$i', 'bentos.life'),
+                    joined: DateTime(2026),
+                  ),
+              ],
+              tabs: const [
+                RoomTab(
+                  index: 0,
+                  name: 'fabrica',
+                  isCurrent: true,
+                  activityLevel: ActivityLevel.none,
+                  activityCount: 0,
+                ),
+              ],
+            ),
+            scrollController: AutoScrollController(),
+          ),
+        );
+
+        // The region is laid out taller than the column it sits in — the
+        // exact shape that once painted the transcript straight through the
+        // bar. The clip is what stops it, and the bar and the composer's own
+        // row are where the damage would show.
+        final state = tester.terminalState;
+        final barRow = state.getTextAt(0, state.size.height.toInt() - 3) ?? '';
+        final inputRow =
+            state.getTextAt(0, state.size.height.toInt() - 2) ?? '';
+        expect(barRow, contains('[1:fabrica]'));
+        expect(barRow, isNot(contains('member')));
+        expect(inputRow, startsWith('│> '));
+        expect(inputRow, isNot(contains('member')));
+      }, size: const Size(80, 24));
+    });
+  });
+
+  group('which colour table — R5.6', () {
+    test('the person\'s own word outranks everything', () {
+      expect(
+        resolveBackground({'BENTOS_CHAT_THEME': 'light', 'COLORFGBG': '15;0'}),
+        TerminalBackground.light,
+      );
+      expect(
+        resolveBackground({'BENTOS_CHAT_THEME': 'DARK ', 'COLORFGBG': '0;15'}),
+        TerminalBackground.dark,
+      );
+    });
+
+    test('COLORFGBG is read where a terminal sets it', () {
+      expect(
+        resolveBackground({'COLORFGBG': '0;15'}),
+        TerminalBackground.light,
+      );
+      expect(resolveBackground({'COLORFGBG': '15;0'}), TerminalBackground.dark);
+      expect(
+        resolveBackground({'COLORFGBG': '15;default;0'}),
+        TerminalBackground.dark,
+      );
+    });
+
+    test('anything unstated or unparseable falls to dark, silently', () {
+      expect(resolveBackground({}), TerminalBackground.dark);
+      expect(resolveBackground({'COLORFGBG': ''}), TerminalBackground.dark);
+      expect(
+        resolveBackground({'COLORFGBG': '15;default'}),
+        TerminalBackground.dark,
+      );
+      expect(
+        resolveBackground({'BENTOS_CHAT_THEME': 'sepia'}),
+        TerminalBackground.dark,
+      );
+    });
+  });
+
+  group('a role becomes a colour once — R5.7', () {
+    /// The colour actually painted into the cell the text landed in — the
+    /// only reading that proves the table reached the screen, rather than
+    /// proving the table exists.
+    Color colourOf(TerminalState state, String text) {
+      final match = state.findText(text).first;
+      return state.getCellAt(match.x, match.y)!.style.color!;
+    }
+
+    test('two facts of different kinds do not read alike', () async {
+      await testNocterm('roles — warning against notice', (tester) async {
+        final at = DateTime(2026, 8, 7, 14, 5);
+        await tester.pumpComponent(
+          ChatScreenView(
+            background: TerminalBackground.dark,
+            model: _model(
+              topic: null,
+              lines: [
+                SpokenLine(_msg('cafe01', 'SPOKEN', minute: 1)),
+                SystemLine('NOTICED', at, kind: SystemLineKind.notice),
+                SystemLine('WARNED', at, kind: SystemLineKind.warning),
+              ],
+            ),
+            scrollController: AutoScrollController(),
+          ),
+        );
+
+        final state = tester.terminalState;
+        final spoken = colourOf(state, 'SPOKEN');
+        final notice = colourOf(state, 'NOTICED');
+        final warning = colourOf(state, 'WARNED');
+
+        expect(spoken.isDefault, isTrue, reason: 'primary is the terminal own');
+        expect(notice, isNot(warning));
+        expect(warning, const Color(0xFF8B94));
+        expect(notice, const Color(0x9299A6));
+      });
+    });
+
+    test('a mention is the loudest role in the bar', () async {
+      await testNocterm('roles — mentioned tab', (tester) async {
+        await tester.pumpComponent(
+          ChatScreenView(
+            background: TerminalBackground.dark,
+            model: _model(
+              tabs: const [
+                RoomTab(
+                  index: 0,
+                  name: 'fabrica',
+                  isCurrent: false,
+                  activityLevel: ActivityLevel.mention,
+                  activityCount: 3,
+                ),
+                RoomTab(
+                  index: 1,
+                  name: 'design',
+                  isCurrent: false,
+                  activityLevel: ActivityLevel.none,
+                  activityCount: 0,
+                ),
+              ],
+            ),
+            scrollController: AutoScrollController(),
+          ),
+        );
+
+        final state = tester.terminalState;
+        expect(colourOf(state, '[1:fabrica'), const Color(0xBB86FC));
+        expect(colourOf(state, '[2:design'), const Color(0x9299A6));
+      });
+    });
+
+    test('the same screen paints differently on a light terminal', () async {
+      await testNocterm('roles — light table', (tester) async {
+        final at = DateTime(2026, 8, 7, 14, 5);
+        await tester.pumpComponent(
+          ChatScreenView(
+            background: TerminalBackground.light,
+            model: _model(
+              topic: null,
+              lines: [SystemLine('WARNED', at, kind: SystemLineKind.warning)],
+            ),
+            scrollController: AutoScrollController(),
+          ),
+        );
+        // Not the dark table's warning: a colour chosen for one background
+        // and reused on the other is exactly what R5.6 refuses.
+        expect(colourOf(tester.terminalState, 'WARNED'), const Color(0xB02A20));
+      });
+    });
+  });
+
+  group('the program says what it answers to — R5.9', () {
+    /// The composing row: the last row inside the frame, which is where
+    /// [ChatScreenView] puts the input line.
+    String composerRow(TerminalState state) =>
+        state.getTextAt(0, state.size.height.toInt() - 2) ?? '';
+
+    test('an empty composer carries the hint', () async {
+      await testNocterm('hint', (tester) async {
+        await tester.pumpComponent(
+          ChatScreenView(
+            model: _model(composingText: ''),
+            scrollController: AutoScrollController(),
+            background: TerminalBackground.dark,
+          ),
+        );
+        final row = composerRow(tester.terminalState);
+        expect(row, contains('/help'));
+        expect(row, contains('Ctrl+R'));
+      });
+    });
+
+    test('the hint is secondary, never speech', () async {
+      await testNocterm('hint — role', (tester) async {
+        await tester.pumpComponent(
+          ChatScreenView(
+            model: _model(composingText: ''),
+            scrollController: AutoScrollController(),
+            background: TerminalBackground.dark,
+          ),
+        );
+        final state = tester.terminalState;
+        final match = state.findText('/help').first;
+        expect(
+          state.getCellAt(match.x, match.y)!.style.color,
+          const Color(0x9299A6),
+        );
+      });
+    });
+
+    test('the first typed character takes the hint away', () async {
+      await testNocterm('hint — leaves', (tester) async {
+        await tester.pumpComponent(
+          ChatScreenView(
+            model: _model(composingText: 'a', composingCursor: 1),
+            scrollController: AutoScrollController(),
+            background: TerminalBackground.dark,
+          ),
+        );
+        final row = composerRow(tester.terminalState);
+        expect(row, isNot(contains('/help')));
+        expect(row, contains('> a'));
+      });
+    });
+
+    test('the hint never moves the caret off its own cell', () async {
+      await testNocterm('hint — caret', (tester) async {
+        await tester.pumpComponent(
+          ChatScreenView(
+            model: _model(composingText: ''),
+            scrollController: AutoScrollController(),
+            background: TerminalBackground.dark,
+          ),
+        );
+        final state = tester.terminalState;
+        final y = state.size.height.toInt() - 2;
+        final row = state.getTextAt(0, y) ?? '';
+        // The frame owns column 0, then the prompt: the caret is the cell
+        // right after it, reversed, and the hint begins only after that.
+        final promptEnd = row.indexOf('> ') + 2;
+        expect(state.getCellAt(promptEnd, y)!.style.reverse, isTrue);
+        expect(state.findText('/help').first.x, greaterThan(promptEnd));
+      });
+    });
+
+    test('a narrow terminal trims the hint rather than breaking the frame', () async {
+      await testNocterm('hint — narrow', (tester) async {
+        await tester.pumpComponent(
+          ChatScreenView(
+            model: _model(composingText: ''),
+            scrollController: AutoScrollController(),
+            background: TerminalBackground.dark,
+          ),
+        );
+        final state = tester.terminalState;
+        final width = state.size.width.toInt();
+        final row = composerRow(state);
+        // Trimmed, not wrapped and not overrun: the hint is there, its tail
+        // is not, and the frame still owns the last column.
+        expect(row, contains('/help'));
+        expect(row, isNot(contains('Ctrl+C')));
+        // The head is what survives, and the caret survives with it: the
+        // framework's own clip keeps the tail instead, which drops both.
+        expect(row, contains('> '));
+        expect(row.length, width);
+        expect(row[width - 1], '│');
+      }, size: const Size(30, 12));
+    });
+  });
 }
