@@ -14,5 +14,6 @@ export 'src/chat_client/room.dart';
 export 'src/chat_client/room_command.dart';
 export 'src/chat_client/screen_model.dart';
 export 'src/chat_client/session.dart';
+export 'src/chat_client/theme.dart';
 export 'src/chat_client/ticker.dart';
 export 'src/chat_client/transcript.dart';
