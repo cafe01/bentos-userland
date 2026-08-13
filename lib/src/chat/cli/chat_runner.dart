@@ -183,7 +183,12 @@ final class ChatRunner {
   static const int refusedCode = 3;
   static const int timedOutCode = 6;
   static const int usageCode = 64;
-  static const int stumbledCode = bodyStumbled;
+
+  /// `EX_TEMPFAIL`. The one code of the six that is not the entity's: the ref
+  /// moved and nobody decided anything, which the entity spells 4 and this face
+  /// spells 75, because `chat` publishes its own contract and a caller told to
+  /// *try again* is reading sysexits, not the primitive underneath.
+  static const int stumbledCode = 75;
 
   /// The word every receipt opens with. Named once so the manual, the face and
   /// the gates cannot drift apart on what a caller is told to look for.

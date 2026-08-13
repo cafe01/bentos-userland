@@ -29,35 +29,18 @@ final class BodyOutcome {
   final String stderr;
 }
 
-/// The exit code a body uses to say **a gate refused**.
-///
-/// > [!warning] This is false, and it is stated here as law.
-/// > No body in the `bentos.chat` genesis ever exits 3. The membership gate
-/// > refuses with `return 1` (`bin/lib.sh:121`), and nothing in the entity
-/// > exits 3 at all. Nothing in Dart reads this constant either, so the
-/// > mismatch has never been able to fail: it is a claim quoted back as
-/// > documentation, which is the shape everyone downstream then cites.
-/// >
-/// > **The missing piece is the decision, not the value**: either the bodies
-/// > adopt 3 and a gate holds them to it, or this constant is corrected to 1,
-/// > or it is deleted with [bodyUsage] as vocabulary the in-process act
-/// > bracket left behind. Measured 12/08/2026 by the storm gate's sweep; kept
-/// > rather than guessed at, since the choice belongs to whoever owns the
-/// > medium's exit-code contract.
-const int bodyRefused = 3;
-
-/// The exit code a body uses to say **the ref moved every time** — `EX_TEMPFAIL`.
-const int bodyStumbled = 75;
-
-/// The exit code a body uses for a malformed call — `EX_USAGE`.
-///
-/// True of the bodies — nine of them exit 64 on a malformed argv — and **read
-/// by nobody**: no caller in this package mentions this constant outside its
-/// own declaration. Unlike [bodyRefused] it says something accurate; what it
-/// lacks is a reader, and therefore any gate. [bodyStumbled] is the one of the
-/// three that is both true and live (`ChatRunner.stumbledCode`, against
-/// `bin/lib.sh`'s `EX_TEMPFAIL`).
-const int bodyUsage = 64;
+// The exit codes a *body* uses are gone from here, and the deletion is the
+// point rather than a tidy-up. `bodyRefused`, `bodyStumbled` and `bodyUsage`
+// described what an entity's shell bodies exit — `<entity>/bin/*.sh`, a shape
+// the platform has since abandoned. Two of the three were read by nobody, and
+// the third was only lending its value to `ChatRunner.stumbledCode`, which now
+// states 75 beside the five codes it already owned.
+//
+// The comment that stood here declared `bodyRefused = 3` false, having measured
+// it against `bin/lib.sh` and found `return 1`. The value was right and the
+// authority was wrong: 3 is *barred* in the entity's own contract, and what the
+// shell bodies did was fail to adopt it. A claim nobody could exercise, checked
+// against a concept on its way out, and quoted downstream as law.
 
 /// The environment variable the bodies read their retry bound from.
 ///
