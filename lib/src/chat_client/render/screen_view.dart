@@ -161,40 +161,99 @@ class ChatScreenView extends StatelessComponent {
   Component build(BuildContext context) {
     return Palette(
       background: background,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _Header(model: model),
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final showRoster =
-                    constraints.maxWidth >= _rosterWidthThreshold;
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(
-                      child: _Transcript(
-                        model: model,
-                        controller: scrollController,
-                      ),
-                    ),
-                    if (showRoster)
-                      SizedBox(
-                        width: _rosterWidth.toDouble(),
-                        child: _Roster(participants: model.participants),
-                      ),
-                  ],
-                );
-              },
+      child: Builder(
+        builder: (context) => DecoratedBox(
+          // R5.5: one framing border around the whole program, so no region
+          // sits flush against the terminal's own edge on every side. Drawn
+          // by the framework from the constraints its child respects, never
+          // by hand arithmetic — which is what keeps it out of the overflow
+          // defect the transcript already carries a guard for.
+          decoration: BoxDecoration(
+            border: BoxBorder.all(
+              color: Palette.of(context).color(Role.chrome),
             ),
           ),
-          _Bar(model: model),
-          _InputLine(model: model),
-        ],
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Header and bar stay flush against the frame: each is a
+              // single line that already carries its own visual weight, and
+              // a second cell there buys nothing.
+              _Header(model: model),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    // The roster whole, in place of the transcript — R5.8.
+                    // Available at every width, never a second mechanism
+                    // gated on how narrow the terminal is.
+                    if (model.rosterOverlay) {
+                      return _Pad(
+                        child: _Roster(participants: model.participants),
+                      );
+                    }
+
+                    final showRoster =
+                        constraints.maxWidth >= _rosterWidthThreshold;
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: _Pad(
+                            child: _Transcript(
+                              model: model,
+                              controller: scrollController,
+                            ),
+                          ),
+                        ),
+                        if (showRoster) ...[
+                          VerticalDivider(
+                            color: Palette.of(context).color(Role.chrome),
+                          ),
+                          SizedBox(
+                            width: _rosterWidth.toDouble(),
+                            // The roster's own clip, sized to its own
+                            // column: clipping text trims a line the layout
+                            // engine already produced, and does not stop a
+                            // row from being laid out taller or wider than
+                            // the column it sits in. A long display name is
+                            // exactly the shape that once broke the
+                            // transcript, one column over.
+                            child: ClipRect(
+                              child: _Pad(
+                                child: _Roster(
+                                  participants: model.participants,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    );
+                  },
+                ),
+              ),
+              _Bar(model: model),
+              _InputLine(model: model),
+            ],
+          ),
+        ),
       ),
     );
   }
+}
+
+/// One cell of horizontal padding — spent inside the transcript and the
+/// roster, where content runs to a boundary and position alone stops
+/// distinguishing regions. Nothing else spends a cell without a sentence
+/// beside it saying why.
+class _Pad extends StatelessComponent {
+  const _Pad({required this.child});
+
+  final Component child;
+
+  @override
+  Component build(BuildContext context) =>
+      Padding(padding: const EdgeInsets.symmetric(horizontal: 1), child: child);
 }
 
 class _Header extends StatelessComponent {
@@ -644,6 +703,12 @@ KeyPress? _translate(KeyboardEvent event) {
   // nocterm as this synthetic Ctrl+V, the pasted text sitting in its own
   // clipboard buffer rather than on the event. Reading it back is the same
   // move nocterm's own TextField makes.
+  // Ctrl+R shows the roster whole — R5.8. Nothing in this composer does a
+  // reverse search, so there is no collision to arbitrate.
+  if (event.isControlPressed && event.logicalKey == LogicalKey.keyR) {
+    return const KeyPress(Key.toggleRoster);
+  }
+
   if (event.isControlPressed && event.logicalKey == LogicalKey.keyV) {
     final text = ClipboardManager.paste();
     if (text == null || text.isEmpty) return null;
