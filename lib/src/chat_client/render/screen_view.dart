@@ -103,6 +103,13 @@ class ChatScreenView extends StatelessComponent {
       // emulator's own chrome — measured, on a border that was drawn all
       // along and reported absent by two readers — so the frame earns its
       // cells only when something of ours is visibly threaded through it.
+      //
+      // There are no junction glyphs where a rule meets this border, and
+      // that is settled rather than pending: nocterm draws the border and
+      // each divider as separate render objects that cannot see one another,
+      // so `├ ┤ ┬ ┴` would cost a custom render object of ours replacing all
+      // three, owned forever, to buy four cells. A rule that runs wall to
+      // wall already reads as a rule.
       decoration: BoxDecoration(
         border: BoxBorder.all(color: chrome),
         title: BorderTitle(
@@ -210,25 +217,34 @@ class _Transcript extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    // `ListView(reverse: true)` places item 0 at the bottom edge, so item 0
-    // must be the newest line — the idiom nocterm inherits from Flutter for
-    // exactly this shape of list. Walked newest-to-oldest once, with the
-    // unread marker spliced in right after the boundary line: that is the
-    // "next" item in this direction, since the marker sits above it —
-    // toward older lines — when read top to bottom.
+    // The list runs oldest-first and is **not** reversed: a room with six
+    // lines in an eighty-row terminal fills from the top and grows down,
+    // which is what every terminal chat since irssi looks like. Reversing it
+    // would anchor those six lines at the foot under a screen of void —
+    // a web idiom that survives on the web because of a visual density this
+    // medium does not have, and framing the void only made it louder.
+    //
+    // Nothing is traded for it. Newest-at-the-foot, follow-the-foot and
+    // scrollback all still come from the framework, and from its *normal*
+    // branch rather than its reversed one: [AutoScrollController] reads the
+    // axis direction the list publishes and takes "bottom" to mean
+    // `maxScrollExtent`, jumping there whenever content grows while the
+    // reader is already at the foot. Laziness is untouched — this is still
+    // `ListView.builder`, building only what the viewport shows.
     final lines = model.lines;
     final boundary = model.unreadBoundaryIndex;
     final items = <Object>[];
-    for (var i = lines.length - 1; i >= 0; i--) {
+    for (var i = 0; i < lines.length; i++) {
+      // The marker sits immediately above the first unread line, which in
+      // this order is immediately before it.
+      if (i == boundary) items.add(_unreadMarker);
       // The clock is printed on the first line of a run within one displayed
-      // minute — the *topmost* one, which in this newest-to-oldest walk is
-      // the line whose older neighbour reads a different minute. Decided
-      // here, where both neighbours are in hand, rather than by a row asking
-      // about a sibling it cannot see.
+      // minute — the topmost, whose older neighbour reads a different
+      // minute. Decided here, where both neighbours are in hand, rather than
+      // by a row asking about a sibling it cannot see.
       final showClock =
           i == 0 || _clock(lines[i - 1].at) != _clock(lines[i].at);
       items.add(_Row(lines[i], showClock: showClock));
-      if (i == boundary) items.add(_unreadMarker);
     }
 
     return Column(
@@ -236,7 +252,6 @@ class _Transcript extends StatelessComponent {
       children: [
         Expanded(
           child: ListView.builder(
-            reverse: true,
             controller: controller,
             itemCount: items.length,
             itemBuilder: (context, i) {
@@ -314,6 +329,11 @@ const int _authorWidth = 10;
 /// fixed column. Speech is the only elastic one, so a line that wraps hangs
 /// under itself — the framework's own flex doing it, since the speech column
 /// is a box of its own and text cannot leave it.
+///
+/// A wrap that breaks at a space keeps that space at the head of the
+/// continuation, so such a line starts one cell right of the column. It is
+/// the framework's paragraph layout, not our composition, and one cell of
+/// drift is not worth fighting a layout engine for.
 class _TranscriptRow extends StatelessComponent {
   const _TranscriptRow({required this.line, required this.showClock});
 
@@ -665,21 +685,21 @@ class _ChatAppState extends State<ChatApp> {
   }
 
   void _scroll(AutoScrollController controller, ScrollStep step) {
-    // `reverse: true` puts the newest line at offset 0, so *up* — toward
-    // older lines — is *growing* offset: the controller's own `scrollUp`
-    // shrinks it and would move the wrong way. This inverts exactly the way
-    // nocterm's own mouse-wheel handler does for a reversed `ListView`
-    // (`RenderListViewport.handleMouseWheel`), so the keyboard and the wheel
-    // agree.
+    // The list is not reversed, so offset grows downward and the controller's
+    // own verbs already mean what they say — *up* is toward older lines and
+    // toward offset zero. No inversion here, and none in nocterm's mouse
+    // wheel either (`RenderListViewport.handleMouseWheel` inverts only for a
+    // reversed list), so the keyboard and the wheel agree by construction
+    // rather than by two matching corrections.
     switch (step) {
       case ScrollStep.lineUp:
-        controller.scrollDown(1);
-      case ScrollStep.lineDown:
         controller.scrollUp(1);
+      case ScrollStep.lineDown:
+        controller.scrollDown(1);
       case ScrollStep.pageUp:
-        controller.scrollDown(controller.viewportDimension);
-      case ScrollStep.pageDown:
         controller.scrollUp(controller.viewportDimension);
+      case ScrollStep.pageDown:
+        controller.scrollDown(controller.viewportDimension);
     }
   }
 
