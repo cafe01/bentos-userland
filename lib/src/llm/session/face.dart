@@ -283,18 +283,14 @@ abstract interface class SessionFace {
     Vantage vantage = const Vantage.here(),
   });
 
-  /// `result` — the executor's seat, occupied by hand: the person types what the
-  /// call returned, or marks it failed. They enter by the same door a program
-  /// enters, and what distinguishes the two is the author on the commit.
-  ///
-  /// Owed by the floor: `bentos.llm` has no deposit for a result nobody ran.
-  Future<Deposited> result(
-    Coordinate coord,
-    String callId,
-    String text, {
-    bool failed = false,
-    Vantage vantage = const Vantage.here(),
-  });
+  // `result` stood here, and it is deleted rather than deferred. It offered a
+  // person the executor's seat and declared `bentos.llm: user.result` owed for
+  // it — a function that does not exist and must not: the manifest declares
+  // twelve, and the deposit for a call's outcome is `executor.run`'s
+  // `function-result`. **The act is the executor's.** Who occupies that seat —
+  // a program, or a person typing by hand in a playground — is an application's
+  // affair, and no ontology verb is minted for the second case. A face that
+  // wants a hand-typed result deposits as the executor and signs it as itself.
 
   // ── seeing ─────────────────────────────────────────────────────────────
 

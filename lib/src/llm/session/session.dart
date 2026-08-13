@@ -212,20 +212,6 @@ final class Session implements SessionFace {
     return mine < 0 ? turns : turns.sublist(mine + 1);
   }
 
-  @override
-  Future<Deposited> result(
-    Coordinate coord,
-    String callId,
-    String text, {
-    bool failed = false,
-    Vantage vantage = const Vantage.here(),
-  }) async =>
-      throw const OwedByFloor(
-        'result',
-        'bentos.llm: user.result <call-id> <text> [--failed] — a deposit for a '
-            'result nobody ran',
-      );
-
   // ── seeing ───────────────────────────────────────────────────────────────
 
   @override

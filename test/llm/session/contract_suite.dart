@@ -586,32 +586,12 @@ void runSessionContract(SessionConstruction construction) {
       tags: 'owed',
     );
 
-    test('the executor seat refuses, naming the deposit that is missing',
-        () async {
-      await expectLater(
-        () => faceOver().result(demo, 'call_A', '28'),
-        throwsA(isA<OwedByFloor>().having(
-          (e) => e.owed,
-          'owed',
-          allOf(contains('bentos.llm'), contains('user.result')),
-        )),
-        reason: 'if this failed because result now works, bentos.llm shipped a '
-            'deposit for a result nobody ran: delete this claim and drop the '
-            '`owed` tag from the one below it',
-      );
-    });
-
-    test(
-      'a person types a result and it enters by the door a program enters',
-      () async {
-        floor.functions['user.result'] = (_) => deposited(later.value);
-        final landed = await faceOver().result(demo, 'call_A', '28');
-        expect(landed.sha.value, later.value);
-        final run = floor.callsTo('run').single;
-        expect(run.argument, contains('call_A'));
-      },
-      tags: 'owed',
-    );
+    // The two `result` claims are deleted, not retired. They asserted a debt
+    // that was never owed: `user.result` is in no manifest, and the ontology
+    // has no verb for a person filling the executor's seat — the act is the
+    // executor's, and who sits there is an application's business. A seam must
+    // name a piece somebody actually owes, or it manufactures the obligation it
+    // then reports.
 
     test('the ambient coordinate refuses, naming the front that owes it',
         () async {
