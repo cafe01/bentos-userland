@@ -1,10 +1,26 @@
 # Tags declared so the runner knows them and a typo is an error rather than a
 # silently empty selection.
 #
-#   dart test -x owed -x material     the gate that runs fifty times a day
-#   dart test -t owed                 what the floor still owes, reported
+#   dart test                         the gate that runs fifty times a day
+#   dart test -P owed                 what the floor still owes, reported
 #   dart test -t material test/llm/session/material
 #                                     the real binaries, on their own target
+#
+# The `gate` preset applies by default, and it is what keeps the verdict
+# readable: a suite that is permanently red has no verdict, and a seam nobody
+# can tell from a new defect has stopped being a seam. The debt is not hidden —
+# every owed claim has a green partner in the default run that proves the floor
+# refuses and names the missing piece. The exclusion is a preset rather than a
+# bare `exclude_tags` because that key wins over `-t owed` and would make the
+# ledger unreachable.
+add_presets: [gate]
+
+presets:
+  gate:
+    exclude_tags: owed
+  owed:
+    include_tags: owed
+
 tags:
   owed:
   material:
