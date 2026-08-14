@@ -268,6 +268,13 @@ final class EntityRunner {
       // branch on is *I did not touch what is there*.
       err.writeln('entity: barred — $e');
       exitCode = barredCode;
+    } on InstallPathObstructed catch (e) {
+      // Barred, and for the same reason as every other refusal in this family:
+      // nothing was cloned and nothing was registered. The message carries the
+      // command the operator must run, because clearing another repository's
+      // index is their act and never this coreutil's.
+      err.writeln('entity: barred — $e');
+      exitCode = barredCode;
     } on InstanceExists catch (e) {
       // The name is taken, and this coreutil declined to touch what stands
       // there — the same reading as [EntityAlreadyInstalled] one level up.

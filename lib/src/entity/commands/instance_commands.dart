@@ -28,7 +28,7 @@ final class NewCommand extends EntityCommand {
 
   @override
   Future<void> run() async {
-    final rest = argResults!.rest;
+    final rest = positionals;
     if (rest.length < 2) usageException('new: <name> <instance> are required');
     final from = argResults!['from'] as String?;
     final born = cli
@@ -133,7 +133,7 @@ final class ShowCommand extends EntityCommand {
 
   @override
   Future<void> run() async {
-    final rest = argResults!.rest;
+    final rest = positionals;
     if (rest.length < 2) usageException('show: <coord> <action> are required');
     final instance = cli.instanceAt(coordinate(), place: placeOption);
     // The second argument selects by object name, which is what a log line

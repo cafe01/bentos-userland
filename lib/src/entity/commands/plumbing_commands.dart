@@ -149,7 +149,7 @@ final class CommitCommand extends EntityCommand {
 
   @override
   Future<void> run() async {
-    final rest = argResults!.rest;
+    final rest = positionals;
     if (rest.length < 2) usageException('commit: <coord> <action> are required');
     final area = argResults!['worktree'] as String?;
     if (area == null) usageException('commit: -w <path> is required');
@@ -201,7 +201,7 @@ final class EmitCommand extends EntityCommand {
 
   @override
   Future<void> run() async {
-    final rest = argResults!.rest;
+    final rest = positionals;
     if (rest.length < 2) usageException('emit: <name> <phase> are required');
     final entity = cli.entityNamed(rest[0], place: placeOption);
     final phase = _phaseOf(rest[1]);

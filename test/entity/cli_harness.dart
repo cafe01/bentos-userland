@@ -184,6 +184,15 @@ final class WatchedGit implements Git {
       _inner.stagedGitlink(workTree, path);
 
   @override
+  List<({String mode, String sha, String path})> stagedEntries(
+          String workTree, String path) =>
+      _inner.stagedEntries(workTree, path);
+
+  @override
+  void unstageGitlink(String workTree, String path) =>
+      _inner.unstageGitlink(workTree, path);
+
+  @override
   List<Remote> remotes(String gitDir) => _inner.remotes(gitDir);
 
   @override

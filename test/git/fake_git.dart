@@ -478,10 +478,39 @@ class FakeGit implements Git {
   List<String> branchesIn(String workTree) =>
       [...?branchNames[workTree]]..sort();
 
+  /// Makes the pin fail the way the real substrate fails it — `update-index
+  /// --cacheinfo 160000` refusing over tracked blobs at the same path.
+  ///
+  /// The one failure a map-shaped index cannot produce on its own, and the one
+  /// a caller must be judged against: it lands **inside** `register`, after the
+  /// clone and after the `.gitmodules` line, which is precisely the interval
+  /// where a half-installation is born.
+  bool failStageGitlink = false;
+
   @override
   void stageGitlink(String workTree, {required String path, required Commit at}) {
+    if (failStageGitlink) {
+      throw ProcessException('git', ['update-index', '--cacheinfo', path],
+          "'$path' appears as both a file and as a directory", 128);
+    }
     (index[workTree] ??= {})[path] = (mode: '160000', sha: at.sha);
   }
+
+  @override
+  void unstageGitlink(String workTree, String path) {
+    index[workTree]?.remove(path);
+  }
+
+  @override
+  List<({String mode, String sha, String path})> stagedEntries(
+    String workTree,
+    String path,
+  ) =>
+      [
+        for (final entry in (index[workTree] ?? const {}).entries)
+          if (entry.key == path || p.isWithin(path, entry.key))
+            (mode: entry.value.mode, sha: entry.value.sha, path: entry.key),
+      ];
 
   @override
   Commit? stagedGitlink(String workTree, String path) {

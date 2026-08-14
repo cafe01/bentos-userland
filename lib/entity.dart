@@ -12,6 +12,7 @@ export 'src/entity/entity.dart' hide gitDirOf, placeOf;
 export 'src/entity/entity_runner.dart';
 export 'src/entity/event.dart';
 export 'src/entity/installation_life.dart';
+export 'src/entity/installation_state.dart';
 // The journal itself stays internal, like the arming tables beside it — but
 // `Entity.deliveries` hands back its record type, and `Entity.listen`'s stream
 // can raise its gap, so both must be nameable by a caller outside this

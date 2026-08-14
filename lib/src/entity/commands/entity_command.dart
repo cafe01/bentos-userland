@@ -20,11 +20,43 @@ abstract base class EntityCommand extends Command<void> {
   /// The global `-C` as parsed by the runner's own parser.
   String? get placeOption => globalResults?['place'] as String?;
 
+  /// **This verb's own positionals — the words before `--`, and never one of
+  /// somebody else's command line.**
+  ///
+  /// The parser folds both sides of the separator into `rest`, so every arity
+  /// question asked of `rest` counts the body's words as if the caller had
+  /// typed them: `act <coord> -- git status` reads three positionals, passes a
+  /// `rest.length < 2` guard, and lands an act named `git`. A guard that admits
+  /// a malformed command line is worse than no guard, because what it admits is
+  /// signed and durable.
+  ///
+  /// The body is taken from the raw argument list by [body], and the raw list
+  /// is where the separator still stands — so the count of words after it is
+  /// exactly what must come off the tail of `rest`.
+  ///
+  /// **Only for the verbs that declare a body**, through [takesBody]. `run`
+  /// hands its whole tail to a foreign program and reads `--` as one of that
+  /// program's own words; subtracting a body there would take the caller's
+  /// arguments away from the thing they were typed for. Which words are this
+  /// verb's is a fact about the verb, and the base may not assume it.
+  List<String> get positionals {
+    final rest = argResults!.rest;
+    if (!_takesBody) return rest;
+    final trailing = body().length;
+    return trailing == 0 ? rest : rest.sublist(0, rest.length - trailing);
+  }
+
+  /// Declares that this verb's command line ends in `-- <command>`: everything
+  /// after the sentinel is somebody else's program, and none of it is a
+  /// positional of this verb.
+  void takesBody() => _takesBody = true;
+  bool _takesBody = false;
+
   /// The first positional, or a usage failure naming what was wanted.
   String positional(String label) {
-    final rest = argResults!.rest;
-    if (rest.isEmpty) usageException('$name: <$label> is required');
-    return rest.first;
+    final words = positionals;
+    if (words.isEmpty) usageException('$name: <$label> is required');
+    return words.first;
   }
 
   /// The words after `--`: a program, and the second half of the two verbs

@@ -330,13 +330,25 @@ final class Place {
     _writePin(record['path'] ?? name, sha);
   }
 
-  /// Forgets an installation. Structural: the plot's contents are not this
-  /// primitive's to delete, because what a tenant keeps under its grant is the
-  /// tenant's alone.
+  /// Forgets an installation — **both of the place's own marks**: the record in
+  /// `.gitmodules` and the gitlink in the index.
+  ///
+  /// Structural still: the plot's contents are not this primitive's to delete,
+  /// because what a tenant keeps under its grant is the tenant's alone. The pin
+  /// is not the tenant's, it is this place's own tree entry, and forgetting a
+  /// registration while leaving its gitlink standing would produce exactly the
+  /// half-state that `register`'s two writes already made possible.
   void unregister(String name) {
     final records = _modules;
-    if (records.remove(name) == null) return;
+    final record = records.remove(name);
+    if (record == null) return;
     _writeModules(records);
+    final workTree = _superproject;
+    if (workTree == null) return;
+    ambientGit.unstageGitlink(
+      workTree,
+      _indexPath(workTree, record['path'] ?? name),
+    );
   }
 
   /// The registration file: `.gitmodules` in the place's own tree, standard
@@ -388,6 +400,38 @@ final class Place {
   /// directories inside one repository, and the gitlink belongs to that
   /// repository's index at the path it knows the installation by.
   String? get _superproject => ambientGit.topLevel(root.path);
+
+  /// The repository this place lies in, or null where it lies in none —
+  /// **whether a pin is possible here at all.**
+  ///
+  /// Public because the absence is a fact a tenant must be able to read before
+  /// it judges its own installation. A place outside a repository holds no
+  /// gitlink, so a reader that only saw the empty pin could not tell *this
+  /// registration is unfinished* from *this ground has no index*, and would
+  /// call every place outside a repository broken forever.
+  String? get superproject => _superproject;
+
+  /// The index entries standing at [path] that are **not** the pin — ordinary
+  /// tracked files under an installation's own path.
+  ///
+  /// The one state that makes [register] fail from below: `update-index
+  /// --cacheinfo 160000` refuses to replace tracked blobs with a gitlink, and
+  /// git's sentence for it names a file the caller never mentioned. Asked
+  /// **before** anything is written, it turns that crash into a refusal that
+  /// costs nothing.
+  ///
+  /// The primitive reports; it does not clear. Removing another repository's
+  /// tracked content from its own index is the act of whoever inhabits the
+  /// place, never of the tenant asking to move in.
+  List<String> obstructions(String path) {
+    final workTree = _superproject;
+    if (workTree == null) return const [];
+    final at = _indexPath(workTree, path);
+    return [
+      for (final entry in ambientGit.stagedEntries(workTree, at))
+        if (entry.mode != '160000') entry.path,
+    ];
+  }
 
   String _indexPath(String workTree, String path) =>
       p.relative(p.join(root.path, path), from: workTree);

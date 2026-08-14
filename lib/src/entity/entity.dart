@@ -12,6 +12,7 @@ import 'event.dart';
 import 'journal.dart';
 import 'transaction.dart';
 import '../git/git_ambient.dart';
+import 'installation_state.dart';
 import 'instance.dart';
 import 'manifest.dart';
 import 'materialization.dart';
@@ -197,60 +198,84 @@ final class Entity {
     void Function(String complaint)? warn,
   }) async {
     final place = Place(at ?? Directory.current.path);
+    // What this invocation creates, recorded as it is created. A constructor
+    // that throws leaves nothing behind — and *nothing behind* means nothing
+    // **of its own**: a clone that was already there, a record somebody else
+    // wrote, an arming that predates the call are all another party's, and an
+    // undo that cannot tell them apart is a second destructive verb wearing a
+    // recovery's clothes.
+    final ledger = _InstallLedger(place);
     final String name;
     final String gitDir;
-    if (as != null) {
-      name = as;
-      gitDir = p.join(place.plot(plotNamespace).path, name, repositoryDirName);
-      _refuseIfTaken(place, name, gitDir);
-      await ambientGit.clone(source, gitDir);
-      _ensureGenesis(gitDir);
-    } else {
-      final staging = Directory.systemTemp.createTempSync('entity-install-');
-      final stagingGitDir = p.join(staging.path, repositoryDirName);
-      try {
-        await ambientGit.clone(source, stagingGitDir);
-        _ensureGenesis(stagingGitDir);
-        name = _declaredName(stagingGitDir) ?? _nameFromSource(source);
+    try {
+      if (as != null) {
+        name = as;
         gitDir = p.join(place.plot(plotNamespace).path, name, repositoryDirName);
-        // Asked here, where the name is finally known and before one byte has
-        // been written into the place: the staging clone is ours and disposable,
-        // so a refusal from this line leaves the site exactly as it stood.
         _refuseIfTaken(place, name, gitDir);
-        await ambientGit.clone(stagingGitDir, gitDir);
+        ledger.willClone(gitDir);
+        await ambientGit.clone(source, gitDir);
         _ensureGenesis(gitDir);
-      } finally {
-        if (staging.existsSync()) staging.deleteSync(recursive: true);
+      } else {
+        final staging = Directory.systemTemp.createTempSync('entity-install-');
+        final stagingGitDir = p.join(staging.path, repositoryDirName);
+        try {
+          await ambientGit.clone(source, stagingGitDir);
+          _ensureGenesis(stagingGitDir);
+          name = _declaredName(stagingGitDir) ?? _nameFromSource(source);
+          gitDir =
+              p.join(place.plot(plotNamespace).path, name, repositoryDirName);
+          // Asked here, where the name is finally known and before one byte has
+          // been written into the place: the staging clone is ours and
+          // disposable, so a refusal from this line leaves the site exactly as
+          // it stood.
+          _refuseIfTaken(place, name, gitDir);
+          ledger.willClone(gitDir);
+          await ambientGit.clone(stagingGitDir, gitDir);
+          _ensureGenesis(gitDir);
+        } finally {
+          if (staging.existsSync()) staging.deleteSync(recursive: true);
+        }
       }
+      // **Origin is `source`, said once rather than derived from two paths.**
+      // The `--as` path cloned from `source` directly and already agrees; the
+      // staged path cloned from a temp directory it then deleted, so without
+      // this line `remote.origin.url` names a corpse — `git fetch origin` exits
+      // 128, and so does every `publish` and every plain fetch a human runs
+      // from inside the installation. It went unnoticed for the whole of
+      // `install`'s life because nothing ever read back what the constructor
+      // wrote; `upgrade` is the first verb to read it. See [Git.setRemoteUrl]
+      // for why this is not `addRemote`.
+      ambientGit.setRemoteUrl(gitDir, name: 'origin', url: source);
+      // Declared **before** the call and not after it, because registering is
+      // itself two writes — the record, then the pin — and the failure that
+      // started all of this lands between them. A ledger written on return
+      // learns nothing about the half that already happened.
+      ledger.registering(name);
+      place.register(
+        name,
+        url: source,
+        path: name,
+        sha: ambientGit.revParse(gitDir, genesisRef)?.sha ?? '',
+      );
+      ArmingTables(gitDir, entity: name).ensureArmed();
+      // No *instance* is checked out: a site that only reacts holds no instance
+      // worktree at all, and bringing one down is the place's own recursive
+      // verb. The class is the other half — its tree is where the executables
+      // the manifest names actually stand, and arming has just written lines
+      // that point at them.
+      final installed = Entity(name, from: place.root.path);
+      // The class first, the table after: arming writes lines that point at
+      // bodies, and a line armed before its body stands is a window in which an
+      // act wakes something that is not there yet.
+      installed.stageClass();
+      installed._armDeclared(place, warn: warn);
+      return installed;
+    } on Object {
+      // The undo runs before the failure travels, so the caller that reads the
+      // exception is already looking at a site the exception describes.
+      ledger.rollBack();
+      rethrow;
     }
-    // **Origin is `source`, said once rather than derived from two paths.** The
-    // `--as` path cloned from `source` directly and already agrees; the staged
-    // path cloned from a temp directory it then deleted, so without this line
-    // `remote.origin.url` names a corpse — `git fetch origin` exits 128, and so
-    // does every `publish` and every plain fetch a human runs from inside the
-    // installation. It went unnoticed for the whole of `install`'s life because
-    // nothing ever read back what the constructor wrote; `upgrade` is the first
-    // verb to read it. See [Git.setRemoteUrl] for why this is not `addRemote`.
-    ambientGit.setRemoteUrl(gitDir, name: 'origin', url: source);
-    place.register(
-      name,
-      url: source,
-      path: name,
-      sha: ambientGit.revParse(gitDir, genesisRef)?.sha ?? '',
-    );
-    ArmingTables(gitDir, entity: name).ensureArmed();
-    // No *instance* is checked out: a site that only reacts holds no instance
-    // worktree at all, and bringing one down is the place's own recursive verb.
-    // The class is the other half — its tree is where the executables the
-    // manifest names actually stand, and arming has just written lines that
-    // point at them.
-    final installed = Entity(name, from: place.root.path);
-    // The class first, the table after: arming writes lines that point at
-    // bodies, and a line armed before its body stands is a window in which an
-    // act wakes something that is not there yet.
-    installed.stageClass();
-    installed._armDeclared(place, warn: warn);
-    return installed;
   }
 
   /// Arms every reaction the manifest declares, through the same rewrite
@@ -276,23 +301,37 @@ final class Entity {
     );
   }
 
-  /// Refuses to install over an installation that already stands here.
+  /// Refuses to install where the ground is not free — **before one byte is
+  /// written**, so that every refusal here costs nothing and leaves the site
+  /// exactly as it stood.
   ///
-  /// **Two states, and neither is ours to overwrite.** A registered name is an
-  /// installation someone made, with its own tables, its own remotes and
-  /// possibly its own line of history — clobbering it is not what a second
-  /// `install` means, and what it *does* mean (fetch, re-stage, re-arm) is a
-  /// verb of its own that does not exist yet. A directory standing with no
-  /// registration is stranger still: nothing here knows what it is, so it is
-  /// named and left exactly where it is.
+  /// **Four states, and none of them is ours to overwrite.**
   ///
-  /// The value of saying it here is the shape of the alternative. Without this,
-  /// the answer was the substrate's own — an unhandled `git clone` failure, a
-  /// stack trace and exit 255 — which names no cure and no owner, and which a
-  /// script cannot branch on.
+  /// A **complete installation** is one someone made, with its own tables, its
+  /// own remotes and possibly its own line of history; clobbering it is not
+  /// what a second `install` means, and the local half of what it *does* mean
+  /// is `refit`'s.
+  ///
+  /// A **partial installation** is the state this constructor's own rollback
+  /// now prevents, still reachable from a crash below us or from an older
+  /// vintage of this code. It is reported fact by fact, because *incomplete* on
+  /// its own tells an operator nothing they can act on.
+  ///
+  /// A **directory with no registration** is stranger still: nothing here knows
+  /// what it is, so it is named and left exactly where it is.
+  ///
+  /// A **path already tracked as files** in the repository the place lies in is
+  /// the one refusal that reads the index rather than the disk. Without it the
+  /// answer came from the substrate — `update-index --cacheinfo` failing over a
+  /// blob the caller never mentioned, mid-install, after the clone had landed.
   static void _refuseIfTaken(Place place, String name, String gitDir) {
-    if (place.lookup(name) != null) {
-      throw EntityAlreadyInstalled(name, place.root.path);
+    final state = InstallationState.read(place, name);
+    if (state.registered) {
+      throw EntityAlreadyInstalled(
+        name,
+        place.root.path,
+        incomplete: state.partial ? state : null,
+      );
     }
     final standing = Directory(p.dirname(gitDir));
     if (standing.existsSync() && standing.listSync().isNotEmpty) {
@@ -300,6 +339,15 @@ final class Entity {
         name,
         place.root.path,
         unregistered: standing.path,
+      );
+    }
+    final obstructions = place.obstructions(name);
+    if (obstructions.isNotEmpty) {
+      throw InstallPathObstructed(
+        name,
+        place: place.root.path,
+        workTree: place.superproject!,
+        paths: obstructions,
       );
     }
   }
@@ -679,7 +727,12 @@ final class EntityNotInstalled implements Exception {
 /// did not touch what is there*. The same reading `WorktreeNotOurs` gets, for
 /// the same reason.
 final class EntityAlreadyInstalled implements Exception {
-  const EntityAlreadyInstalled(this.name, this.place, {this.unregistered});
+  const EntityAlreadyInstalled(
+    this.name,
+    this.place, {
+    this.unregistered,
+    this.incomplete,
+  });
 
   final String name;
   final String place;
@@ -689,11 +742,136 @@ final class EntityAlreadyInstalled implements Exception {
   /// knows what it is.
   final String? unregistered;
 
+  /// The state read at the place, when what stands there is **half** an
+  /// installation. Null where the installation is whole.
+  ///
+  /// The old message said *already installed* to an operator staring at a site
+  /// that plainly did not work, because the only fact it read was the
+  /// registration. What is missing is now in the sentence.
+  final InstallationState? incomplete;
+
   @override
-  String toString() => unregistered == null
-      ? '$name is already installed at $place'
-      : '$name cannot be installed at $place: '
+  String toString() {
+    if (unregistered != null) {
+      return '$name cannot be installed at $place: '
           'a directory stands at $unregistered that this place never registered';
+    }
+    if (incomplete == null) return '$name is already installed at $place';
+    final state = incomplete!;
+    return '$name is half-installed at $place — '
+        'standing: ${state.standing.join(', ')}; '
+        'missing: ${state.missing.join(', ')}. '
+        'Install will not resume it and will not overwrite it. '
+        '${state.missing.length == 1 && (state.missing.single == 'arming' || state.missing.single == 'class tree') ? 'Run `entity refit $name` — it rewrites the shim and re-stages the class, with no network.' : 'Nothing repairs a missing registration or pin: remove the plot directory and the `.gitmodules` entry for $name, then install again.'}';
+  }
+}
+
+/// The place's own repository already tracks files where the installation's
+/// gitlink must go.
+///
+/// **The refusal that used to be a crash.** The pin is a tree entry of mode
+/// `160000`, and git will not put one over tracked blobs at the same path:
+/// `update-index --cacheinfo` exits non-zero naming a file the operator never
+/// mentioned, in the middle of an install that had already cloned. Asked
+/// before anything is written, it costs nothing and names its own cure.
+///
+/// **The cure is stated and never performed.** Removing tracked content from
+/// the index of the repository that contains this place is the act of whoever
+/// inhabits it; a tenant that ran `git rm` on its landlord's index would be
+/// deciding, on its own account, that somebody else's tracked files no longer
+/// matter.
+final class InstallPathObstructed implements Exception {
+  const InstallPathObstructed(
+    this.name, {
+    required this.place,
+    required this.workTree,
+    required this.paths,
+  });
+
+  final String name;
+  final String place;
+
+  /// The repository holding the index — very often not the place itself.
+  final String workTree;
+
+  /// The tracked paths standing in the way, as that index spells them.
+  final List<String> paths;
+
+  /// The index path the gitlink would occupy: the common root of what is in
+  /// the way, which is what the operator must clear.
+  String get at => p.relative(p.join(place, name), from: workTree);
+
+  @override
+  String toString() => '$name cannot be installed at $place: '
+      'the repository at $workTree already tracks '
+      '${paths.length} file${paths.length == 1 ? '' : 's'} under $at '
+      '(${paths.take(3).join(', ')}${paths.length > 3 ? ', …' : ''}), '
+      'and an installation is pinned there as a gitlink, which git will not '
+      'write over tracked files. Nothing was cloned and nothing was '
+      'registered. Clear the path in that repository and install again:\n'
+      '  git -C $workTree rm -r --cached $at';
+}
+
+/// What one `install` created, so that a failure can undo **only that**.
+///
+/// Not a general transaction: the constructor's own guard has already refused
+/// every ground that was not free, so everything recorded here was brought into
+/// existence by this call. Where that premise could not be established — a plot
+/// directory that already stood, empty — the ledger records the narrower fact
+/// and removes only its own children.
+final class _InstallLedger {
+  _InstallLedger(this.place);
+
+  final Place place;
+
+  /// The installation directory, and whether this call is what made it.
+  String? _plotDir;
+  bool _plotDirWasOurs = false;
+  String? _registered;
+
+  /// Called with the repository path *before* the clone, which is the only
+  /// moment the prior state of the directory can still be observed.
+  void willClone(String gitDir) {
+    _plotDir = p.dirname(gitDir);
+    _plotDirWasOurs = !Directory(_plotDir!).existsSync();
+  }
+
+  /// Called **before** `Place.register`, which writes twice — the record and
+  /// the pin — and can therefore fail with the first write already on disk.
+  void registering(String name) => _registered = name;
+
+  /// Undoes this call's own writes, newest first, and **never throws**: the
+  /// failure that triggered the undo is the one the caller must see, and an
+  /// exception raised in here would replace it with a story about the cleanup.
+  void rollBack() {
+    final registered = _registered;
+    if (registered != null) {
+      try {
+        place.unregister(registered);
+      } on Object {
+        // Recorded nowhere and rightly: what the caller is about to read is
+        // the original failure, and this line's own trouble is visible in the
+        // site's state, which `install` will report on the next attempt.
+      }
+    }
+    final plotDir = _plotDir;
+    if (plotDir == null) return;
+    try {
+      final directory = Directory(plotDir);
+      if (!directory.existsSync()) return;
+      if (_plotDirWasOurs) {
+        directory.deleteSync(recursive: true);
+        return;
+      }
+      // The directory was found, empty, and is therefore not ours to remove —
+      // only what this call put inside it is.
+      for (final child in directory.listSync()) {
+        child.deleteSync(recursive: true);
+      }
+    } on Object {
+      // Same reasoning as above.
+    }
+  }
 }
 
 /// The internal escape hatch — **not exported** from `lib/entity.dart`.

@@ -61,7 +61,7 @@ final class RunCommand extends EntityCommand {
 
   @override
   Future<void> run() async {
-    final rest = argResults!.rest;
+    final rest = positionals;
     if (rest.length < 2) usageException('run: <coord> <function> are required');
     final (coord, _) = ambientCoordinate();
     if (coord.path != null) {

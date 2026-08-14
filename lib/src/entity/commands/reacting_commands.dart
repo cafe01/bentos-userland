@@ -58,7 +58,9 @@ final class OnceCommand extends ArmingCommand {
 
 /// What `on` and `once` share: everything but whether the line survives firing.
 abstract base class ArmingCommand extends EntityCommand {
-  ArmingCommand(super.cli);
+  ArmingCommand(super.cli) {
+    takesBody();
+  }
 
   /// Whether the line removes itself when it fires.
   bool get spent;
@@ -93,7 +95,7 @@ abstract base class ArmingCommand extends EntityCommand {
 
   @override
   Future<void> run() async {
-    final rest = argResults!.rest;
+    final rest = positionals;
     if (rest.length < 2) usageException('$name: <coord> <event> are required');
     final woken = body();
     if (woken.isEmpty) {
@@ -139,7 +141,7 @@ final class OffCommand extends EntityCommand {
 
   @override
   Future<void> run() async {
-    final rest = argResults!.rest;
+    final rest = positionals;
     if (rest.length < 2) usageException('off: <coord> <id> are required');
     cli.entityNamed(coordinate().entity, place: placeOption).off(rest[1]);
   }
@@ -199,7 +201,7 @@ final class ListenCommand extends EntityCommand {
 
   @override
   Future<void> run() async {
-    final rest = argResults!.rest;
+    final rest = positionals;
     if (rest.length < 2) {
       usageException('listen: <name> <event> are required');
     }
@@ -265,7 +267,7 @@ final class DeliveriesCommand extends EntityCommand {
 
   @override
   Future<void> run() async {
-    final rest = argResults!.rest;
+    final rest = positionals;
     if (rest.length < 2) {
       usageException('deliveries: <name> <event> are required');
     }

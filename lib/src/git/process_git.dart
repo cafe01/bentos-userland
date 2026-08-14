@@ -586,6 +586,46 @@ final class ProcessGit implements Git {
   }
 
   @override
+  void unstageGitlink(String workTree, String path) {
+    // `--force-remove` drops the entry whether or not the file stands on disk,
+    // which is the only form that reaches a gitlink: the directory it names is
+    // a repository the superproject never reads.
+    _run(
+      ['update-index', '--force-remove', '--', path],
+      workingDirectory: workTree,
+    );
+  }
+
+  @override
+  List<({String mode, String sha, String path})> stagedEntries(
+    String workTree,
+    String path,
+  ) {
+    final result = _run(
+      ['ls-files', '--stage', '-z', '--', path],
+      workingDirectory: workTree,
+    );
+    if (result.exitCode != 0) return const [];
+    final entries = <({String mode, String sha, String path})>[];
+    for (final record in _text(result.stdout).split('\x00')) {
+      if (record.trim().isEmpty) continue;
+      // `<mode> <sha> <stage>\t<path>` — and the path may hold spaces, so the
+      // tab is the only safe split and `-z` is what makes the record boundary
+      // safe as well.
+      final halves = record.split('\t');
+      if (halves.length < 2) continue;
+      final fields = halves.first.split(' ');
+      if (fields.length < 2) continue;
+      entries.add((
+        mode: fields[0],
+        sha: fields[1],
+        path: halves.sublist(1).join('\t'),
+      ));
+    }
+    return entries;
+  }
+
+  @override
   Commit? stagedGitlink(String workTree, String path) {
     final result = _run(
       ['ls-files', '--stage', '-z', '--', path],

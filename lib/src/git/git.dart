@@ -321,6 +321,35 @@ abstract interface class Git {
   /// different thing entirely.
   Commit? stagedGitlink(String workTree, String path);
 
+  /// Removes the index entry at [path] — `git update-index --force-remove`.
+  ///
+  /// The pin's undo, and the reason it exists is symmetry rather than
+  /// convenience: a registration that can be written and not withdrawn cannot
+  /// be rolled back, and a constructor that cannot roll back leaves half an
+  /// installation behind every time it throws.
+  ///
+  /// Silent where nothing is staged there: removing what is not there is the
+  /// state the caller asked for.
+  void unstageGitlink(String workTree, String path);
+
+  /// Every index entry at or under [path], mode included — `git ls-files
+  /// --stage`, unfiltered.
+  ///
+  /// [stagedGitlink] answers *is the pin here*; this answers *what else is*,
+  /// and the difference is the whole of a legible refusal. `update-index
+  /// --cacheinfo 160000` fails when ordinary blobs are already tracked under
+  /// the path, and the caller that asked only about a gitlink saw `null` — an
+  /// absence indistinguishable from empty ground — and walked into git's own
+  /// sentence about a file it never mentioned.
+  ///
+  /// Returns the entries as the index holds them, mode unparsed: whether mode
+  /// `100644` under an installation's path is a fault is the caller's question
+  /// and not the port's.
+  List<({String mode, String sha, String path})> stagedEntries(
+    String workTree,
+    String path,
+  );
+
   /// The declared remotes.
   List<Remote> remotes(String gitDir);
 

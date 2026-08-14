@@ -122,6 +122,26 @@ void main() {
       expect(r.err, contains('-- <command>'));
     });
 
+    test('the body\'s words are not counted as this verb\'s positionals',
+        () async {
+      // The parser folds both sides of `--` into one list. Counted there, a
+      // caller who omitted the action passes the arity guard and the body's
+      // program name is signed into the ledger as the noun of the act — the
+      // one defect class the ledger cannot survive, because what it admits is
+      // durable and looks deliberate ever after.
+      final r = await cli.run(
+        ['act', 't.chat:c1', ...Cli.signed, '--', ...writes('1.txt', 'hello')],
+      );
+
+      expect(r.code, EntityRunner.usageCode);
+      expect(r.err, contains('<action>'));
+
+      final log = await cli.run(['log', 't.chat:c1']);
+      expect(log.out, isEmpty,
+          reason: 'no act may land, and none named after the body\'s program');
+      expect(log.out, isNot(contains('\tsh\t')));
+    });
+
     test('a body that cannot start is a clean answer, not a crash', () async {
       // The body runs in the act's private area, so `./x` never resolves
       // against the caller's directory. That is the isolation working — and

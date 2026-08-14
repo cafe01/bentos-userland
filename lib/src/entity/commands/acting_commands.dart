@@ -17,6 +17,7 @@ import 'entity_command.dart';
 final class ActCommand extends EntityCommand {
   ActCommand(super.cli) {
     takesActor();
+    takesBody();
     argParser.addOption(
         'say',
         help: 'The legible sentence, stored and never interpreted.',
@@ -32,7 +33,7 @@ final class ActCommand extends EntityCommand {
 
   @override
   Future<void> run() async {
-    final rest = argResults!.rest;
+    final rest = positionals;
     if (rest.length < 2) usageException('act: <coord> <action> are required');
     final written = body();
     if (written.isEmpty) {
@@ -216,7 +217,7 @@ final class RefreshCommand extends EntityCommand {
 
   @override
   Future<void> run() async {
-    final rest = argResults!.rest;
+    final rest = positionals;
     if (rest.length < 2) usageException('refresh: <coord> <path> are required');
     final path = cli.locate(rest[1]);
     final standing = cli.instanceAt(coordinate(), place: placeOption);

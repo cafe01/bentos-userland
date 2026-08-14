@@ -749,6 +749,115 @@ void main() {
     });
   });
 
+  group('install onto ground the containing repository already tracks', () {
+    // **The reported failure, reproduced.** A place inside a repository that
+    // already tracks files at the installation's own path: git will not write a
+    // gitlink over tracked blobs, so `update-index --cacheinfo 160000` exits
+    // non-zero — mid-install, after the clone, after the `.gitmodules` line.
+    // Only the real substrate refuses this; the fake's index is a map and
+    // accepts anything, so a green here is a green about the machine.
+
+    /// A repository, stood up by Git itself, holding a place at its root and
+    /// tracked content at the path an installation would take.
+    Directory occupied(String label, String name) {
+      final root = Directory(
+          Directory.systemTemp.createTempSync(label).resolveSymbolicLinksSync());
+      addTearDown(() {
+        if (root.existsSync()) root.deleteSync(recursive: true);
+      });
+      Directory('${root.path}/.place').createSync(recursive: true);
+      File('${root.path}/.place/place.yaml').writeAsStringSync('name: $label\n');
+      Directory('${root.path}/$name').createSync(recursive: true);
+      File('${root.path}/$name/notes.md').writeAsStringSync('mine\n');
+      for (final args in [
+        ['init', '-q', root.path],
+        ['-C', root.path, 'add', '-A'],
+        ['-C', root.path, '-c', 'user.name=t', '-c', 'user.email=t@t',
+          'commit', '-qm', 'occupied'],
+      ]) {
+        final r = Process.runSync('git', args);
+        expect(r.exitCode, 0, reason: '${r.stdout}${r.stderr}');
+      }
+      return root;
+    }
+
+    test('is refused before the clone, naming the command that clears it',
+        () async {
+      const git = ProcessGit();
+      final origin = _place('entity_obstructed_origin_');
+      addTearDown(() {
+        if (origin.existsSync()) origin.deleteSync(recursive: true);
+      });
+      final source = foreignRepository(
+        git,
+        origin.path,
+        dirName: 't.source',
+        declaredName: 't.imported',
+      );
+      final there = occupied('entity_obstructed_there_', 't.imported');
+
+      await expectLater(
+        Entity.install(source, at: there.path),
+        throwsA(isA<InstallPathObstructed>()),
+      );
+
+      // What the operator reads. The old answer was git's own sentence about
+      // `t.imported/notes.md`, a file nobody typed, with no cure in it.
+      final said = await Entity.install(source, at: there.path)
+          .then<Object?>((_) => null, onError: (Object e) => e);
+      final sentence = said.toString();
+      expect(sentence, contains('t.imported/notes.md'));
+      expect(sentence, contains('already tracks'));
+      expect(sentence, contains('git -C ${there.path} rm -r --cached t.imported'));
+      expect(sentence, contains('Nothing was cloned'));
+
+      // And the world, after. Nothing of ours anywhere: the refusal is free.
+      expect(Directory('${there.path}/.place/entity/t.imported').existsSync(),
+          isFalse,
+          reason: 'no clone');
+      expect(File('${there.path}/.gitmodules').existsSync(), isFalse,
+          reason: 'no registration');
+      final staged = Process.runSync(
+          'git', ['-C', there.path, 'ls-files', '--stage', '--', 't.imported']);
+      expect(staged.stdout.toString(), isNot(contains('160000')),
+          reason: 'no gitlink');
+      expect(staged.stdout.toString(), contains('t.imported/notes.md'),
+          reason: "the operator's own tracked file is untouched");
+      expect(File('${there.path}/t.imported/notes.md').readAsStringSync(),
+          'mine\n');
+    });
+
+    test('the same install succeeds once the operator clears the path',
+        () async {
+      const git = ProcessGit();
+      final origin = _place('entity_cleared_origin_');
+      addTearDown(() {
+        if (origin.existsSync()) origin.deleteSync(recursive: true);
+      });
+      final source = foreignRepository(
+        git,
+        origin.path,
+        dirName: 't.source',
+        declaredName: 't.imported',
+      );
+      final there = occupied('entity_cleared_there_', 't.imported');
+
+      // The cure the refusal printed, run verbatim by the operator.
+      final cleared = Process.runSync(
+          'git', ['-C', there.path, 'rm', '-r', '-q', '--cached', 't.imported']);
+      expect(cleared.exitCode, 0, reason: cleared.stderr.toString());
+
+      final installed = await Entity.install(source, at: there.path);
+
+      expect(installed.name, 't.imported');
+      expect(installed.genesis.sha, isNotEmpty);
+      final staged = Process.runSync(
+          'git', ['-C', there.path, 'ls-files', '--stage', '--', 't.imported']);
+      expect(staged.stdout.toString(), contains('160000'),
+          reason: 'the pin the crash never reached');
+    });
+  });
+
   group('release deletes disk, so possession is the whole question', () {
     // The one family where a wrong answer costs a directory instead of an error
     // message, and the only substrate that can be asked: the fake models

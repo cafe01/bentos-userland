@@ -236,7 +236,7 @@ final class PublishCommand extends EntityCommand {
 
   @override
   Future<void> run() async {
-    final rest = argResults!.rest;
+    final rest = positionals;
     if (rest.length < 2) usageException('publish: <name> <remote> are required');
     await cli.entityNamed(rest[0], place: placeOption).publish(cli.locate(rest[1]));
   }
@@ -269,7 +269,7 @@ final class FetchCommand extends EntityCommand {
 
   @override
   Future<void> run() async {
-    final rest = argResults!.rest;
+    final rest = positionals;
     if (rest.length < 2) usageException('fetch: <coord> <remote> are required');
     final coord = coordinate();
     final entity = cli.entityNamed(coord.entity, place: placeOption);
