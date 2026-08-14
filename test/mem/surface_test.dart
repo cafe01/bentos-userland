@@ -357,38 +357,98 @@ void main() {
       });
     });
 
-    test('walk names every bank it crossed, in the order it drained them',
+  });
+
+  group('the composed form — a walk renders a document, not a report', () {
+    /// The healthy page a composition is made of: hot, light, ordinary age,
+    /// nothing marked. Its fence must be silent.
+    void writeHot(Directory bank, String topic, String body) {
+      File(p.join(bank.path, '$topic.md')).writeAsStringSync(Page(
+        topic: topic,
+        fields: Fields(type: MemType.semantic, attention: Attention(1.0)),
+        body: body,
+      ).serialize());
+    }
+
+    test('a page is fenced by its address, and a healthy page says nothing more',
         () async {
       await site.runAsync(() async {
         final a = materialize('alfred.mem');
-        File(p.join(a.path, 'a.md')).writeAsStringSync(Page(
-          topic: 'a',
-          fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
-          body: 'crosses to [[mem://other.mem/b]]',
-        ).serialize());
+        writeHot(a, 'you', 'You exist.');
+
+        final out = _Out(), diag = _Out();
+        final code = await mem(out: out, diagnostics: diag)
+            .call(['walk', 'mem://alfred.mem/you']);
+        expect(code, 0);
+        expect(out.text, '┌─ you\nYou exist.\n└─ you\n');
+      });
+    });
+
+    test('no bank banner, no ruler — nothing precedes the first page', () async {
+      await site.runAsync(() async {
+        final a = materialize('alfred.mem');
+        writeHot(a, 'you', 'You exist.');
+
+        final out = _Out(), diag = _Out();
+        await mem(out: out, diagnostics: diag).call(['walk', 'mem://alfred.mem/you']);
+        expect(out.text, startsWith('┌─'));
+        expect(out.text, isNot(contains('bank:')));
+        expect(out.text, isNot(contains('─────')));
+      });
+    });
+
+    test('a page reached in a foreign bank carries its full address', () async {
+      await site.runAsync(() async {
+        final a = materialize('alfred.mem');
+        writeHot(a, 'a', 'crosses to [[mem://other.mem/b]]');
         final other = materialize('other.mem');
-        File(p.join(other.path, 'b.md')).writeAsStringSync(Page(
-          topic: 'b',
-          fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
-          body: 'the far side',
-        ).serialize());
+        writeHot(other, 'b', 'the far side');
 
         final out = _Out(), diag = _Out();
         final code = await mem(out: out, diagnostics: diag)
             .call(['walk', 'mem://alfred.mem/a']);
         expect(code, 0);
-        expect(out.text, startsWith('bank: alfred.mem, other.mem\n\n'));
+        expect(out.text, contains('┌─ a\n'));
+        expect(out.text, contains('┌─ mem://other.mem/b\n'));
+        expect(out.text, contains('└─ mem://other.mem/b\n'));
       });
     });
 
-    test('walk names an unresolved bank as skipped, never silently missing',
+    test('an unresolved bank never enters the composition — the skip is a diagnostic',
         () async {
       await site.runAsync(() async {
         final out = _Out(), diag = _Out();
         final code = await mem(out: out, diagnostics: diag)
             .call(['walk', 'mem://ghost.mem/a']);
         expect(code, 0);
-        expect(out.text, contains('(skipped: ghost.mem)'));
+        expect(out.text, isEmpty);
+        expect(diag.text, contains('skipped mem://ghost.mem/a'));
+      });
+    });
+
+    test('vitals speak only where the page is not the healthy state', () async {
+      await site.runAsync(() async {
+        final a = materialize('alfred.mem');
+        File(p.join(a.path, 'a.md')).writeAsStringSync(Page(
+          topic: 'a',
+          fields: Fields(
+            type: MemType.semantic,
+            attention: Attention(0.4),
+            tags: ['suspect-stale'],
+            modified: DateTime.now(),
+          ),
+          body: List.filled(400, 'word').join(' '),
+        ).serialize());
+
+        final out = _Out(), diag = _Out();
+        final code = await mem(out: out, diagnostics: diag)
+            .call(['walk', 'mem://alfred.mem/a']);
+        expect(code, 0);
+        final close = out.text.split('\n').firstWhere((l) => l.startsWith('└─'));
+        expect(close, contains('cool'));
+        expect(close, contains('400w'));
+        expect(close, contains('old'));
+        expect(close, contains('#suspect-stale'));
       });
     });
   });

@@ -435,14 +435,12 @@ final class WalkCommand extends MemCommand with SelectorArgs {
     );
     final walked = await walk.from(entries);
 
-    cli.out.add(_walkBankHeader(entries, walked, vantage));
-
-    if (walked.pages.isEmpty) {
+    if (walked.reached.isEmpty) {
       cli.diagnostics.add(
         'mem: no pages reached from ${entries.map((e) => e.toString()).join(', ')}.\n',
       );
     } else {
-      cli.out.add(_renderRecall(walked.pages));
+      cli.out.add(_renderComposition(walked.reached, home: entries.first.bank));
     }
 
     cli.diagnostics.add(
@@ -749,80 +747,6 @@ void _reportOutcome(Mem cli, String bankName, Outcome outcome) {
 /// for exactly one, resolved by [MemCommand.resolveBank].
 String _bankHeader(String name) => 'bank: $name\n\n';
 
-/// [WalkCommand]'s own case of R5.7: a walk answers for as many banks as it
-/// crossed, named in the order it drained them (R6.4 — one bank exhausts
-/// before the next begins), plus any bank it never reached at all, named as
-/// skipped rather than silently missing (R6.5).
-///
-/// [Walked] carries no bank tag on a [Page] — only a [Skipped] address does —
-/// so a bank that contributed is attributed after the fact, walking
-/// [walked.pages] in order (bank-contiguous, by R6.4) against the same
-/// entry-bank-then-outbound-edge discovery [Walk] itself does: a page is
-/// matched to a known bank by topic and body, and once matched, its own
-/// outbound edges (read from that bank's [Index], already open for other
-/// callers) name any further bank the walk could have crossed next — so a
-/// bank reached cleanly, with none of its own pages skipped, is still found.
-/// The pathological case — two known banks sharing both a topic and a body —
-/// is not distinguishable from here and is accepted.
-String _walkBankHeader(List<Address> entries, Walked walked, String vantage) {
-  final resolved = <String, Bank>{};
-  final indexes = <String, Index>{};
-  final attempted = <String>{};
-
-  Bank? resolve(String name) {
-    if (resolved.containsKey(name)) return resolved[name];
-    if (attempted.contains(name)) return null;
-    attempted.add(name);
-    final resolution = Bank.resolve(name, vantage: vantage);
-    if (resolution is Found) resolved[name] = resolution.bank;
-    return resolved[name];
-  }
-
-  Index indexOf(Bank bank) => indexes.putIfAbsent(bank.name, () => Index.of(bank));
-
-  for (final entry in entries) {
-    resolve(entry.bank);
-  }
-  for (final skip in walked.skipped) {
-    resolve(skip.address.bank);
-  }
-
-  final touched = <String>[];
-  for (final page in walked.pages) {
-    String? owner;
-    for (final name in resolved.keys) {
-      if (touched.contains(name)) continue;
-      final match = resolved[name]!.page(page.topic);
-      if (match != null && match.body == page.body) {
-        owner = name;
-        break;
-      }
-    }
-    if (owner == null) continue;
-    touched.add(owner);
-    for (final edge in indexOf(resolved[owner]!).outbound(page.topic)) {
-      if (edge.bank != null) resolve(edge.bank!);
-    }
-  }
-
-  final neverResolved = <String>[];
-  for (final skip in walked.skipped) {
-    if (skip.reason == SkipReason.bankNotFound) {
-      final name = skip.address.bank;
-      if (!neverResolved.contains(name)) neverResolved.add(name);
-    }
-  }
-
-  final buf = StringBuffer('bank: ')
-    ..write(touched.isEmpty ? '(none reached)' : touched.join(', '));
-  if (neverResolved.isNotEmpty) {
-    buf.write('  (skipped: ${neverResolved.join(', ')})');
-  }
-  buf
-    ..writeln()
-    ..writeln();
-  return buf.toString();
-}
 
 const _surveyLegend = 'attention  topic — gist   #tags  ·modified  [words]';
 const _surveyFooter = 'read full → mem recall <topic>';
@@ -889,6 +813,72 @@ String _renderRecall(List<Page> pages) {
     }
   }
   return buf.toString();
+}
+
+/// A composed page is heavy from here up, and says its weight.
+const _compositionHeavyWords = 400;
+
+/// Ages a composition reports. Between them a page is neither news nor
+/// suspect, and says nothing.
+const _compositionFresh = Duration(hours: 24);
+const _compositionStale = Duration(days: 90);
+
+/// The composed form: pages fenced, flush left, and nothing else — no bank
+/// banner, no ruler, no index. A walk renders a document to be read as one
+/// mind, not a report about a traversal, so what frames a page is its own
+/// address and only such vitals as are not the healthy state.
+///
+/// The address is bare inside [home] — the bank the walk was entered at — and
+/// full (`mem://<bank>/<topic>`) for a page reached in any other. A single-bank
+/// composition therefore carries no bank anywhere, while a crossed seam stays
+/// visible on the page that crossed it.
+String _renderComposition(List<Reached> reached, {required String home}) {
+  final buf = StringBuffer();
+  for (var i = 0; i < reached.length; i++) {
+    if (i > 0) buf.writeln();
+    final page = reached[i].page;
+    final address = reached[i].address;
+    final label = address.bank == home ? address.topic : address.toString();
+    final vitals = _compositionVitals(page);
+    buf.writeln('┌─ $label');
+    if (page.body.isNotEmpty) buf.writeln(page.body);
+    buf.writeln(vitals.isEmpty ? '└─ $label' : '└─ $label  ·  ${vitals.join('  ·  ')}');
+  }
+  return buf.toString();
+}
+
+/// Silence is the healthy state: a hot page of ordinary weight and ordinary
+/// age, with nothing marked on it, closes on its address alone.
+List<String> _compositionVitals(Page page) {
+  final f = page.fields;
+  final vitals = <String>[];
+
+  // The band, only when it is not hot — a composition is staged hot, so the
+  // word appears exactly where a page runs cooler than its position claims.
+  // `0.0` carries no band and is named for what it is, the vanishing point.
+  final attention = f.attention;
+  if (attention.tenths == Attention.minTenths) {
+    vitals.add('a:${attention.render()}');
+  } else if (attention.band != Band.hot) {
+    vitals.add(attention.band.name);
+  }
+
+  final words = _wordCount(page.body);
+  if (words >= _compositionHeavyWords) vitals.add('${words}w');
+
+  final modified = f.modified;
+  if (modified != null) {
+    final age = DateTime.now().difference(modified);
+    if (age < _compositionFresh || age > _compositionStale) {
+      vitals.add('${_relativeAge(modified)} old');
+    }
+  }
+
+  if (f.tags.isNotEmpty) vitals.add(f.tags.map((t) => '#$t').join(' '));
+  if (f.assumptions.isNotEmpty) {
+    vitals.add('⚠assumed:${f.assumptions.map((a) => a.field).join(',')}');
+  }
+  return vitals;
 }
 
 String _recallTitle(Page page) {

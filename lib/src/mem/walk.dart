@@ -64,7 +64,7 @@ final class Walk {
   final int? depth;
 
   Future<Walked> from(List<Address> entries) async {
-    final pages = <Page>[];
+    final reached = <Reached>[];
     final skipped = <Skipped>[];
     final visited = <String>{};
     var linksFollowed = 0;
@@ -148,7 +148,7 @@ final class Walk {
         }
 
         visited.add(key);
-        pages.add(page);
+        reached.add(Reached(address: address, page: page));
 
         for (final edge in index.outbound(item.topic)) {
           linksFollowed++;
@@ -161,11 +161,11 @@ final class Walk {
       pending.remove(bankName);
     }
 
-    final words = pages.fold(0, (sum, p) => sum + _wordCount(p.body));
+    final words = reached.fold(0, (sum, r) => sum + _wordCount(r.page.body));
     return Walked(
-      pages: pages,
+      reached: reached,
       skipped: skipped,
-      weight: Weight(pages: pages.length, words: words, links: linksFollowed),
+      weight: Weight(pages: reached.length, words: words, links: linksFollowed),
     );
   }
 
@@ -180,11 +180,26 @@ final class _Pending {
   final String? from;
 }
 
-final class Walked {
-  const Walked({required this.pages, required this.skipped, required this.weight});
+/// A page and the address it was reached at. The bank is part of the answer:
+/// a composition renders a foreign page by its full address, and only the walk
+/// knows which bank a page came out of.
+final class Reached {
+  const Reached({required this.address, required this.page});
 
-  /// The pages in the order they were reached. A page is returned once.
-  final List<Page> pages;
+  final Address address;
+  final Page page;
+}
+
+final class Walked {
+  const Walked({required this.reached, required this.skipped, required this.weight});
+
+  /// The pages in the order they were reached, each with its address. A page
+  /// is returned once.
+  final List<Reached> reached;
+
+  /// The same pages, stripped of their banks — the reading a caller wants
+  /// when it does not care where a page lives.
+  List<Page> get pages => [for (final r in reached) r.page];
 
   /// What the walk did not follow, and why. Never silent — R6.7.
   final List<Skipped> skipped;
