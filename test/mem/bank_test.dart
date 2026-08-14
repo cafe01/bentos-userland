@@ -21,8 +21,30 @@ void main() {
           site.run(() => Bank.resolve('nobody.mem', vantage: site.root.path));
       expect(resolution, isA<NotFound>());
       final notFound = resolution as NotFound;
-      expect(notFound.name, 'nobody.mem');
+      expect(notFound.tried, ['nobody.mem']);
       expect(notFound.vantage, site.root.path);
+    });
+
+    test('a bare name resolves the .mem entity beside it', () {
+      site.run(() => Entity('alfred.mem', from: site.root.path).create(actor: testActor));
+      final resolution =
+          site.run(() => Bank.resolve('alfred', vantage: site.root.path));
+      expect(resolution, isA<Found>());
+      expect((resolution as Found).bank.name, 'alfred.mem');
+    });
+
+    test('an entity named exactly as asked wins over the suffixed one', () {
+      site.run(() => Entity('alfred', from: site.root.path).create(actor: testActor));
+      site.run(() => Entity('alfred.mem', from: site.root.path).create(actor: testActor));
+      final resolution =
+          site.run(() => Bank.resolve('alfred', vantage: site.root.path));
+      expect((resolution as Found).bank.name, 'alfred');
+    });
+
+    test('a bare miss reports both names it tried, in order', () {
+      final resolution =
+          site.run(() => Bank.resolve('nobody', vantage: site.root.path));
+      expect((resolution as NotFound).tried, ['nobody', 'nobody.mem']);
     });
 
     test('an installed name is Found, and carries its own vantage', () {

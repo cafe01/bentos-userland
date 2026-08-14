@@ -188,8 +188,10 @@ abstract base class MemCommand extends Command<void> {
     switch (resolution) {
       case Found(:final bank):
         return bank;
-      case NotFound(:final name, :final vantage):
-        cli.diagnostics.add('mem: $name not found, searched up from $vantage\n');
+      case NotFound(:final tried, :final vantage):
+        cli.diagnostics.add(
+          'mem: ${tried.join(' nor ')} not found, searched up from $vantage\n',
+        );
         cli.exitCode = 1;
         return null;
     }

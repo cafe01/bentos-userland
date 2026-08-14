@@ -30,8 +30,22 @@ final class Bank {
   /// one line, and it is this one.
   static const String mainInstanceId = 'main';
 
-  /// Resolves `<name>.mem` through the entity primitive, walking up from
-  /// [vantage]. The only place a bank name becomes a thing on disk.
+  /// The suffix a bank's entity name carries: the ontology's, not the being's.
+  /// `$BENTOS_AGENT` names the being — `alfred` — while the entity installed
+  /// beside it is `alfred.mem`, which is why [resolve] may not take the name
+  /// it is given as the last word.
+  static const String suffix = '.mem';
+
+  /// Resolves a bank through the entity primitive, walking up from [vantage].
+  /// The only place a bank name becomes a thing on disk.
+  ///
+  /// **Exactly as given first, then with [suffix] appended.** A being's
+  /// ambient bank is named by `$BENTOS_AGENT`, which holds the being's name
+  /// and never the entity's, so a lookup that took the name verbatim and
+  /// stopped left every default unreachable and made `-b alfred.mem` the only
+  /// working form. Exact-first keeps an entity literally named `x.mem` — or
+  /// any entity whose name is its own whole truth — winning its own name
+  /// before the fallback is ever tried.
   ///
   /// Forces the walk by reading the entity's genesis — not, as the design
   /// once said, its manifest: a bank authored by [Entity.create] carries no
@@ -40,13 +54,26 @@ final class Bank {
   /// ones. Genesis forces the identical walk and exists on every entity that
   /// [EntityNotInstalled] does not already rule out.
   static Resolution resolve(String name, {required String vantage}) {
+    final tried = <String>[
+      name,
+      if (!name.endsWith(suffix)) '$name$suffix',
+    ];
+    for (final candidate in tried) {
+      final found = _open(candidate, vantage: vantage);
+      if (found != null) return Found(found);
+    }
+    return NotFound(tried, vantage);
+  }
+
+  /// One lookup, or null where no such entity is installed from [vantage].
+  static Bank? _open(String name, {required String vantage}) {
     final entity = Entity(name, from: vantage);
     try {
       entity.genesis;
     } on EntityNotInstalled {
-      return NotFound(name, vantage);
+      return null;
     }
-    return Found(Bank._(entity, vantage));
+    return Bank._(entity, vantage);
   }
 
   String get name => _entity.name;
@@ -159,8 +186,13 @@ final class Found extends Resolution {
 }
 
 final class NotFound extends Resolution {
-  const NotFound(this.name, this.vantage);
-  final String name;
+  const NotFound(this.tried, this.vantage);
+
+  /// Every name the lookup actually asked for, in the order it asked — a
+  /// report naming only the bare form sends the reader hunting for a thing
+  /// the tool never looked for.
+  final List<String> tried;
+
   final String vantage;
 }
 
