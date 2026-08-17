@@ -108,6 +108,13 @@ abstract base class EntityCommand extends Command<void> {
         '$name: ${labels.map((l) => '<$l>').join(' ')} $verb required',
       );
     }
+    if (!_takesTrailingArgs && words.length > labels.length) {
+      usageException(
+        '$name: unexpected argument(s): '
+        '${words.sublist(labels.length).join(' ')} — expected '
+        '${labels.map((l) => '<$l>').join(' ')}',
+      );
+    }
     return words;
   }
 
