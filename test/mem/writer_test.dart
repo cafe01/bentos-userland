@@ -335,6 +335,101 @@ void main() {
     });
   });
 
+  group('tag', () {
+    test('--add appends and leaves body and modified untouched', () async {
+      await site.runAsync(() async {
+        final s = stand();
+        final writer = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'), gist: FixedGist('cue'));
+        await writer.remember('a',
+            type: MemType.semantic, attention: Attention(0.5), body: 'body', tags: ['old']);
+        final before = s.bank.page('a')!.fields.modified;
+
+        final outcome = await writer.tag(const Selector(topic: 'a'), add: ['fresh']);
+
+        expect(outcome, isA<Written>());
+        final after = s.bank.page('a')!;
+        expect(after.fields.tags, ['old', 'fresh']);
+        expect(after.body, 'body');
+        expect(after.fields.modified, before);
+      });
+    });
+
+    test('--remove drops a tag', () async {
+      await site.runAsync(() async {
+        final s = stand();
+        final writer = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'), gist: FixedGist('cue'));
+        await writer.remember('a',
+            type: MemType.semantic, attention: Attention(0.5), body: 'body', tags: ['old', 'keep']);
+
+        await writer.tag(const Selector(topic: 'a'), remove: ['old']);
+
+        expect(s.bank.page('a')!.fields.tags, ['keep']);
+      });
+    });
+
+    test('adding a tag already present is a no-op, not a duplicate', () async {
+      await site.runAsync(() async {
+        final s = stand();
+        final writer = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'), gist: FixedGist('cue'));
+        await writer.remember('a',
+            type: MemType.semantic, attention: Attention(0.5), body: 'body', tags: ['old']);
+
+        await writer.tag(const Selector(topic: 'a'), add: ['old']);
+
+        expect(s.bank.page('a')!.fields.tags, ['old']);
+      });
+    });
+
+    test('removing a tag already absent is a no-op, not an error', () async {
+      await site.runAsync(() async {
+        final s = stand();
+        final writer = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'), gist: FixedGist('cue'));
+        await writer.remember('a',
+            type: MemType.semantic, attention: Attention(0.5), body: 'body', tags: ['old']);
+
+        final outcome = await writer.tag(const Selector(topic: 'a'), remove: ['never-there']);
+
+        expect(outcome, isA<Written>());
+        expect(s.bank.page('a')!.fields.tags, ['old']);
+      });
+    });
+
+    test('a selector matching several pages lands one act over all of them', () async {
+      await site.runAsync(() async {
+        final s = stand();
+        final writer = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'), gist: FixedGist('cue'));
+        await writer.remember('a',
+            type: MemType.semantic, attention: Attention(0.5), body: 'a');
+        await writer.remember('b',
+            type: MemType.semantic, attention: Attention(0.5), body: 'b');
+
+        final outcome = await writer.tag(
+            Selector(minAttention: Attention(0.5)), add: ['batched']);
+
+        expect(outcome, isA<Written>());
+        expect((outcome as Written).topics.toSet(), {'a', 'b'});
+        expect(s.bank.page('a')!.fields.tags, ['batched']);
+        expect(s.bank.page('b')!.fields.tags, ['batched']);
+      });
+    });
+
+    test('refuses a page whose frontmatter was itself guessed', () async {
+      await site.runAsync(() async {
+        final s = stand();
+        final where = p.join(site.root.path, s.entity.name);
+        File(p.join(where, 'broken.md'))
+            .writeAsStringSync('---\nattention: 0.5\n---\nno type here\n');
+
+        final writer = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'));
+        final outcome =
+            await writer.tag(const Selector(topic: 'broken'), add: ['x']);
+
+        expect(outcome, isA<RefusedOnAssumedFields>());
+        expect((outcome as RefusedOnAssumedFields).topic, 'broken');
+      });
+    });
+  });
+
   group('forget', () {
     test('removes a page by topic', () async {
       await site.runAsync(() async {

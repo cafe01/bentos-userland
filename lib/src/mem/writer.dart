@@ -154,6 +154,44 @@ final class Writer {
     );
   }
 
+  /// Flips tags on or off, on one page or a whole selected set. Neither the
+  /// body nor `modified` is touched — a tag is bookkeeping, not a revision to
+  /// the page's claim, exactly as attention is metadata to [refocus]. Each
+  /// op is a set operation: adding a tag already present, or removing one
+  /// already absent, is a no-op rather than an error. Refuses on any
+  /// selected page whose frontmatter was itself guessed (R7.2).
+  Future<Outcome> tag(Selector selector, {List<String> add = const [], List<String> remove = const []}) async {
+    final pages = selector.select(_bank.pages());
+    final assumed = _firstAssumed(pages);
+    if (assumed != null) {
+      return RefusedOnAssumedFields(assumed.topic, assumed.fields.assumptions);
+    }
+
+    final rewritten = [
+      for (final page in pages)
+        Page(
+          topic: page.topic,
+          fields: page.fields.copyWith(
+            tags: [
+              ...page.fields.tags.where((t) => !remove.contains(t)),
+              for (final t in add) if (!page.fields.tags.contains(t)) t,
+            ],
+          ),
+          body: page.body,
+        ),
+    ];
+
+    return _land(
+      topics: [for (final p in rewritten) p.topic],
+      say: 'tag ${rewritten.map((p) => p.topic).join(', ')}',
+      build: (draft) {
+        for (final p in rewritten) {
+          draft.write(p);
+        }
+      },
+    );
+  }
+
   /// By topic name only. A selector must never delete.
   Future<Outcome> forget(String topic) => _land(
         topics: [topic],

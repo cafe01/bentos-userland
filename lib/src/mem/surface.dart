@@ -55,6 +55,7 @@ final class Mem {
       ..addCommand(RememberCommand(this))
       ..addCommand(RefocusCommand(this))
       ..addCommand(GistCommand(this))
+      ..addCommand(TagCommand(this))
       ..addCommand(ForgetCommand(this));
   }
 
@@ -668,6 +669,45 @@ final class RefocusCommand extends MemCommand with SelectorArgs {
     final value = double.tryParse(magnitude);
     if (value == null) usageException('$name: not a delta: $source');
     return sign * (value * 10).round();
+  }
+}
+
+/// `mem tag <topic> | <selectors> --add <t> [--add <t> ...] --remove <t> [...]`
+final class TagCommand extends MemCommand with SelectorArgs {
+  TagCommand(super.cli) {
+    declareSelectorFlags();
+    argParser
+      ..addMultiOption('add', valueHelp: 'tag')
+      ..addMultiOption('remove', valueHelp: 'tag');
+  }
+
+  @override
+  String get name => 'tag';
+
+  @override
+  String get description => 'Add or remove tags — the body and modified are never touched.';
+
+  @override
+  Future<void> run() async {
+    final bank = resolveBank();
+    if (bank == null) return;
+
+    final add = argResults!['add'] as List<String>;
+    final remove = argResults!['remove'] as List<String>;
+    if (add.isEmpty && remove.isEmpty) {
+      usageException('$name: at least one of --add <tag> or --remove <tag> is required');
+    }
+    final overlap = add.toSet().intersection(remove.toSet());
+    if (overlap.isNotEmpty) {
+      usageException('$name: cannot --add and --remove the same tag: ${overlap.join(', ')}');
+    }
+
+    final topic = positionalTopic();
+    final selector = buildSelector(topic: topic);
+
+    final writer = Writer(bank, actor: statedActor());
+    final outcome = await writer.tag(selector, add: add, remove: remove);
+    _reportOutcome(cli, bank.name, outcome);
   }
 }
 

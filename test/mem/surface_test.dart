@@ -285,6 +285,57 @@ void main() {
     });
   });
 
+  group('tag', () {
+    Future<void> writeOne(String bank) async {
+      final out = _Out(), diag = _Out();
+      final code = await mem(
+        bankEnv: bank,
+        out: out,
+        diagnostics: diag,
+        stdinReader: () async => 'body text here',
+        gistSource: const _FixedGist(),
+      ).call([...memSigned, 'remember', 't', '-t', 'semantic', '-A', '0.5']);
+      expect(code, 0);
+    }
+
+    test('--add lands the tag', () async {
+      await site.runAsync(() async {
+        materialize('alfred.mem');
+        await writeOne('alfred.mem');
+
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call([...memSigned, 'tag', 't', '--add', 'suspect-stale']);
+        expect(code, 0);
+        expect(diag.text, contains('written t'));
+      });
+    });
+
+    test('refuses when neither --add nor --remove is given', () async {
+      await site.runAsync(() async {
+        materialize('alfred.mem');
+        await writeOne('alfred.mem');
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call([...memSigned, 'tag', 't']);
+        expect(code, 2);
+        expect(diag.text, contains('--add'));
+      });
+    });
+
+    test('refuses adding and removing the same tag in one call', () async {
+      await site.runAsync(() async {
+        materialize('alfred.mem');
+        await writeOne('alfred.mem');
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call([...memSigned, 'tag', 't', '--add', 'x', '--remove', 'x']);
+        expect(code, 2);
+        expect(diag.text, contains('x'));
+      });
+    });
+  });
+
   group('recall — many topics', () {
     Directory seed(String bank, List<String> topics) {
       final root = materialize(bank);
