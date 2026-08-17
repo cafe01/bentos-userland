@@ -52,6 +52,30 @@ void main() {
     });
   });
 
+  group('a presented subcommand', () {
+    test('is described by the subcommand, and its args follow the fixed ones',
+        () async {
+      final harness = await connectedToFixture(leading: ['sub'], name: 'sub');
+
+      final tools = (await harness.connection.listTools()).tools;
+      expect(tools.single.description, contains('fixture sub —'));
+
+      final result = await harness.connection.callTool(
+        CallToolRequest(
+          name: 'sub',
+          arguments: {
+            'args': ['one', 'two three'],
+          },
+        ),
+      );
+
+      // The caller never says 'sub' and cannot say it differently: the fixed
+      // arguments lead, and a caller's own follow. A tool that let the caller
+      // reach the program's other subcommands would be presenting the program.
+      expect(partsOf(result)[1], 'stdout:\nsub saw: one two three\n');
+    });
+  });
+
   group('a call', () {
     test('with args returns them', () async {
       final harness = await connectedToFixture();

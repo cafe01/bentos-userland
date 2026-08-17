@@ -41,6 +41,23 @@ case "$1" in
     echo "to stdout"
     echo "to stderr" >&2
     ;;
+  sub)
+    # A subcommand with a help of its own — the shape most organs actually
+    # have, and the one `mcp <program> <fixed-arg>...` exists to present.
+    case "$2" in
+      --help)
+        echo "fixture sub — a subcommand with its own help"
+        echo "usage: fixture sub [words ...]"
+        ;;
+      *)
+        shift
+        echo "sub saw: $*"
+        ;;
+    esac
+    ;;
+  mute)
+    # A subcommand that describes nothing: the probe must refuse it.
+    ;;
   "")
     echo "bare"
     ;;

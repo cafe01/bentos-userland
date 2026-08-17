@@ -88,9 +88,28 @@ void main() {
       expect(prepareFromArgs([]), throwsA(isA<StartupFailure>()));
     });
 
-    test('refuses an invocation naming two programs', () {
+    test('a word after the program presents that subcommand, not the program',
+        () async {
+      final program = await prepareFromArgs([fixtureProgram, 'sub']);
+
+      // The description is the subcommand's own. A program's help would
+      // describe a surface no caller of this tool can reach.
+      expect(program.helpText, startsWith('fixture sub —'));
+      expect(program.leading, ['sub']);
+      // And the tool is named for what is presented, not for what carries it.
+      expect(program.name, 'sub');
+    });
+
+    test('an explicit name still wins over the subcommand', () async {
+      final program =
+          await prepareFromArgs([fixtureProgram, 'sub', '--name', 'spawn']);
+
+      expect(program.name, 'spawn');
+    });
+
+    test('refuses a subcommand that describes nothing', () {
       expect(
-        prepareFromArgs([fixtureProgram, fixtureProgram]),
+        prepareFromArgs([fixtureProgram, 'mute']),
         throwsA(isA<StartupFailure>()),
       );
     });

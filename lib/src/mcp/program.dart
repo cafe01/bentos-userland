@@ -28,14 +28,26 @@ const _drainGrace = Duration(milliseconds: 250);
 /// The command-line program this server presents, resolved and described once
 /// at startup, then spawned once per tool call.
 class Program {
-  Program({required this.name, required this.path, required this.helpText});
+  Program({
+    required this.name,
+    required this.path,
+    required this.helpText,
+    this.leading = const [],
+  });
 
-  /// The tool name: the program's own basename, with characters the protocol
-  /// forbids mapped to `-`, unless overridden at the invocation.
+  /// The tool name: the last word of the presented invocation, with characters
+  /// the protocol forbids mapped to `-`, unless overridden at the invocation.
   final String name;
 
   /// The resolved executable.
   final String path;
+
+  /// Arguments fixed at the invocation, which lead every call. This is what
+  /// lets a **subcommand** be the tool — `bentos-agent claude-spawn` — rather
+  /// than the program that happens to carry it. A caller's own arguments
+  /// follow these and cannot displace them, so the presented surface is
+  /// exactly the one the invocation named.
+  final List<String> leading;
 
   /// What the program printed for its help, captured verbatim at startup.
   final String helpText;
@@ -46,6 +58,7 @@ class Program {
   /// returns the prepared program. Throws [StartupFailure] for either failure.
   static Future<Program> prepare(
     String program, {
+    List<String> leading = const [],
     String helpFlag = '--help',
     String? toolName,
   }) async {
@@ -54,28 +67,33 @@ class Program {
       throw StartupFailure('cannot resolve program: $program');
     }
 
+    // The probe runs the invocation that is being presented, not the program
+    // that carries it: a subcommand's help is the description, and a program's
+    // own help would describe a surface no caller of this tool can reach.
+    final probe = [...leading, helpFlag];
+    final spoken = [program, ...probe].join(' ');
     final io.ProcessResult help;
     try {
-      help = await io.Process.run(path, [helpFlag]);
+      help = await io.Process.run(path, probe);
     } on io.ProcessException catch (e) {
-      throw StartupFailure('cannot run $path $helpFlag: ${e.message}');
+      throw StartupFailure('cannot run $spoken: ${e.message}');
     }
     if (help.exitCode != 0) {
       throw StartupFailure(
-        '$path $helpFlag exited with ${help.exitCode}; '
-        'no description to present',
+        '$spoken exited with ${help.exitCode}; no description to present',
       );
     }
     final helpText = (help.stdout as String);
     if (helpText.trim().isEmpty) {
-      throw StartupFailure('$path $helpFlag printed nothing; '
-          'no description to present');
+      throw StartupFailure('$spoken printed nothing; no description to present');
     }
 
     return Program(
-      name: toolName ?? toolNameFor(p.basename(path)),
+      name: toolName ??
+          toolNameFor(leading.isEmpty ? p.basename(path) : leading.last),
       path: path,
       helpText: helpText,
+      leading: leading,
     );
   }
 
@@ -88,8 +106,11 @@ class Program {
         'args': Schema.list(
           description:
               'Argument strings, exactly as they would be typed after the '
-              'program name. No shell: no quoting, no expansion, one string '
-              'per argument.',
+              '${leading.isEmpty ? 'program name' : "'${[
+                  p.basename(path),
+                  ...leading,
+                ].join(' ')}' command"}. No shell: no quoting, no expansion, '
+              'one string per argument.',
           items: Schema.string(),
         ),
         'stdin': Schema.string(
@@ -118,7 +139,7 @@ class Program {
     final timeout = (arguments['timeout'] as num?)?.toInt();
 
     // The environment and the working directory are inherited, not curated.
-    final process = await io.Process.start(path, args);
+    final process = await io.Process.start(path, [...leading, ...args]);
     _live.add(process);
 
     final out = StringBuffer();
