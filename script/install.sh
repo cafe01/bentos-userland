@@ -132,14 +132,26 @@ for entry in "${EXECUTABLES[@]}"; do
   exec_name="${entry%%$'\t'*}"
   src="${entry##*$'\t'}"
   dest="${PREFIX}/${exec_name}"
+  # Compiled beside the destination, never in the system temp: `mv` between
+  # two paths on the same filesystem is a rename, atomic and instant: a
+  # process holding the old inode open keeps it, and the next exec of
+  # `$dest` sees the whole new binary or the whole old one, never a
+  # truncated write in between. Staged in the temp dir first and across the
+  # filesystems would degrade the rename to a copy, and the window this
+  # closes reopens.
+  tmp="${dest}.new.$$"
 
   printf "  compiling %-16s " "${exec_name}..."
-  if dart compile exe "$src" -o "$dest" 2>/dev/null; then
+  if dart compile exe "$src" -o "$tmp" 2>/dev/null; then
+    mv -f "$tmp" "$dest"
     printf "ok → %s\n" "$dest"
     installed+=("$exec_name")
   else
-    # Re-run to capture the error for display.
-    err=$(dart compile exe "$src" -o "$dest" 2>&1 || true)
+    # Re-run to capture the error for display. The destination was never
+    # touched by the failed attempt — only "$tmp" was, and it is cleared
+    # either way below.
+    err=$(dart compile exe "$src" -o "$tmp" 2>&1 || true)
+    rm -f "$tmp"
     if echo "$EXPECTED_FAIL" | grep -qw "$exec_name"; then
       printf "FAILED (expected — %s)\n" "$EXPECTED_FAIL_REASON"
       failed_expected+=("$exec_name")
