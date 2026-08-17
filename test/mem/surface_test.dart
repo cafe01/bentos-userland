@@ -265,6 +265,46 @@ void main() {
       });
     });
 
+    test('refocus on a topic matching nothing names the miss, exit 0, and lands nothing',
+        () async {
+      await site.runAsync(() async {
+        materialize('alfred.mem');
+        await writeOne('alfred.mem');
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call([...memSigned, 'refocus', 'nope', '--to', '0.9']);
+        expect(code, 0);
+        expect(diag.text, contains('no pages under nope'));
+        expect(diag.text, isNot(contains('written')));
+      });
+    });
+
+    test('gist on a selector matching nothing names the miss, exit 0', () async {
+      await site.runAsync(() async {
+        materialize('alfred.mem');
+        await writeOne('alfred.mem');
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call([...memSigned, 'gist', '--tag', 'no-such-tag']);
+        expect(code, 0);
+        expect(diag.text, contains('no pages under --tag no-such-tag'));
+        expect(diag.text, isNot(contains('written')));
+      });
+    });
+
+    test('tag on a topic matching nothing names the miss, exit 0', () async {
+      await site.runAsync(() async {
+        materialize('alfred.mem');
+        await writeOne('alfred.mem');
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call([...memSigned, 'tag', 'nope', '--add', 'x']);
+        expect(code, 0);
+        expect(diag.text, contains('no pages under nope'));
+        expect(diag.text, isNot(contains('written')));
+      });
+    });
+
     test('forget removes the page — recall then finds nothing', () async {
       await site.runAsync(() async {
         materialize('alfred.mem');

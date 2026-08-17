@@ -653,6 +653,12 @@ final class RefocusCommand extends MemCommand with SelectorArgs {
 
     final topic = positionalTopic();
     final selector = buildSelector(topic: topic);
+    if (selector.select(bank.pages()).isEmpty) {
+      cli.diagnostics.add(
+        'mem: ${bank.name} — no pages under ${reachDescription(topic: topic)}.\n',
+      );
+      return;
+    }
 
     final writer = Writer(bank, actor: statedActor());
     final outcome = await writer.refocus(
@@ -704,6 +710,12 @@ final class TagCommand extends MemCommand with SelectorArgs {
 
     final topic = positionalTopic();
     final selector = buildSelector(topic: topic);
+    if (selector.select(bank.pages()).isEmpty) {
+      cli.diagnostics.add(
+        'mem: ${bank.name} — no pages under ${reachDescription(topic: topic)}.\n',
+      );
+      return;
+    }
 
     final writer = Writer(bank, actor: statedActor());
     final outcome = await writer.tag(selector, add: add, remove: remove);
@@ -731,6 +743,12 @@ final class GistCommand extends MemCommand with SelectorArgs {
 
     final topic = positionalTopic();
     final selector = buildSelector(topic: topic);
+    if (selector.select(bank.pages()).isEmpty) {
+      cli.diagnostics.add(
+        'mem: ${bank.name} — no pages under ${reachDescription(topic: topic)}.\n',
+      );
+      return;
+    }
 
     final writer = Writer(bank, actor: statedActor(), gist: cli.gistSource);
     final outcome = await writer.regist(selector, set: argResults!['set'] as String?);
