@@ -165,6 +165,63 @@ void main() {
       });
     });
 
+    test('a write that lands but leaves the tree stale cannot look clean',
+        () async {
+      await site.runAsync(() async {
+        final where = materialize('alfred.mem');
+        // The person typed `git checkout main` in their bank at some point.
+        site.git.heads[where.path] = 'main';
+
+        final out = _Out(), diag = _Out();
+        final code = await mem(
+          bankEnv: 'alfred.mem',
+          out: out,
+          diagnostics: diag,
+          stdinReader: () async => 'World.',
+        ).call([...memSigned, 'remember', 'domain/hello', '-t', 'semantic',
+          '-A', '0.7', '--gist', 'a greeting']);
+
+        // The act landed — saying so is honest, and the line does carry it.
+        expect(diag.text, contains('written domain/hello'));
+        // But what a caller meets must not be the shape of a clean write. The
+        // failure that cost a session was never the stale tree; it was that
+        // nothing outside the process could tell. Both halves are asserted,
+        // because either alone is the silence again: a message nobody reads,
+        // or a code with nothing to explain it.
+        expect(code, isNot(0));
+        expect(diag.text, contains('TREE STALE'));
+        expect(diag.text, contains("follows the branch 'main'"));
+        // And the page really is unreadable where a reader would look, which
+        // is what makes the loud report true rather than merely cautious.
+        expect(File(p.join(where.path, 'domain/hello.md')).existsSync(), isFalse);
+      });
+    });
+
+    test('a write landing into a bank with no tree says so, and exits non-zero',
+        () async {
+      await site.runAsync(() async {
+        // Created and given its line, but never materialized: the write has
+        // nowhere to be read, and this used to report as a clean write.
+        final entity =
+            Entity('alfred.mem', from: site.root.path).create(actor: testActor);
+        entity.instance('main').create();
+
+        final out = _Out(), diag = _Out();
+        final code = await mem(
+          bankEnv: 'alfred.mem',
+          out: out,
+          diagnostics: diag,
+          stdinReader: () async => 'World.',
+        ).call([...memSigned, 'remember', 'domain/hello', '-t', 'semantic',
+          '-A', '0.7', '--gist', 'a greeting']);
+
+        expect(diag.text, contains('written domain/hello'));
+        expect(code, isNot(0));
+        expect(diag.text, contains('NO TREE'));
+        expect(diag.text, contains(p.join(site.root.path, 'alfred.mem')));
+      });
+    });
+
     test('remember with no gist and no model refuses without landing',
         () async {
       await site.runAsync(() async {

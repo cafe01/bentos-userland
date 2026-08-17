@@ -274,9 +274,12 @@ abstract interface class Git {
   /// backwards resolution, and the fact a materialization is otherwise unable
   /// to report about itself in a process that did not create it.
   ///
-  /// A worktree of ours is checked out detached, so this is a fact about the
-  /// files and not about any ref: the ref may have moved a dozen times since,
-  /// and the answer is still where the looker stands.
+  /// **A fact about the files only while the tree stands detached** — which a
+  /// worktree of ours is meant to, and which nothing here enforces. Where
+  /// `HEAD` is a symref this answers through the ref instead, so a caller that
+  /// wants where the *looker* stands must establish detachment first
+  /// ([currentBranch]) rather than assume it. This member reports `HEAD`; it
+  /// does not decide what `HEAD` was pointing at.
   ///
   /// Null when [path] is no worktree, exactly as [worktreeRepository] is.
   Commit? worktreeHead(String path);

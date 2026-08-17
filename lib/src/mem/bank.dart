@@ -126,6 +126,15 @@ final class Bank {
     required Actor actor,
     String? say,
   }) async {
+    // An entity created but never given its line is an ordinary condition of
+    // the world, not a fault of ours: the floor answers it by throwing, which
+    // reaches a person as a stack trace where a sentence belongs.
+    if (_entity.instance(mainInstanceId).tip == null) {
+      return Barred(
+        'the bank has no line yet — instance "$mainInstanceId" of '
+        '${_entity.name} was never born',
+      );
+    }
     final result = await _entity.instance(mainInstanceId).act(
       payload,
       (workspace) => body(Draft._(workspace.directory)),
@@ -143,18 +152,25 @@ final class Bank {
     };
   }
 
-  /// Brings the working tree to the landed line, or leaves it untouched.
+  /// Brings the working tree to the landed line, or says why it could not.
   ///
-  /// A bank whose tree was never materialized has nothing to advance —
-  /// bringing one up for the first time is out of this stage's scope, and
-  /// deferred exactly as the design defers it.
+  /// **Three outcomes, and none of them is silence.** A bank with no tree of
+  /// ours standing at the uniform address is [NoTree] and never [Advanced]:
+  /// "nothing is materialized" and "the tree is current" are opposite facts,
+  /// and returning success for the first is the same lie the attached-HEAD
+  /// defect told — a write that landed where nobody can read it, reported as a
+  /// clean write.
   Advance advance() {
+    final address = _entity.materializationAddress;
     final at = _entity.materializedAt;
-    if (at == null) return Advanced();
+    if (at == null) return NoTree(address);
     final result =
         _entity.instance(mainInstanceId).materialization(at.path).refresh();
     if (result.moved) return Advanced();
-    return Behind(blocking: ambientGit.worktreeDirtyPaths(at.path));
+    return Behind(
+      blocking: ambientGit.worktreeDirtyPaths(at.path),
+      report: result.report,
+    );
   }
 
   static Iterable<File> _markdownFiles(Directory root) sync* {
@@ -249,9 +265,31 @@ final class Advanced extends Advance {
   const Advanced();
 }
 
-/// The tree could not be moved because the person has work in it. Never
-/// discarded, never stashed, never committed.
+/// The tree could not be moved. Never discarded, never stashed, never
+/// committed.
 final class Behind extends Advance {
-  const Behind({required this.blocking});
+  const Behind({required this.blocking, this.report});
+
+  /// What stands in the way, by path — the person's own uncommitted work in
+  /// the ordinary case.
   final List<String> blocking;
+
+  /// The substrate's or the primitive's own account of the decline, where the
+  /// paths alone do not explain it. A tree following a branch is the case
+  /// that needs it: every path in [blocking] then reads as the person's
+  /// staged work, and none of it is.
+  final String? report;
+}
+
+/// No tree of this bank stands at the uniform address, so a landed write is
+/// nowhere anybody can read it.
+///
+/// Distinct from [Behind] on purpose: nothing is in the way, and no cure
+/// touching the tree's contents applies. The bank has to be materialized.
+final class NoTree extends Advance {
+  const NoTree(this.address);
+
+  /// Where a tree would stand if one did — the instance's own name under the
+  /// thing's anchor, never composed by the caller.
+  final Directory address;
 }

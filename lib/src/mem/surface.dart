@@ -850,11 +850,40 @@ void _reportOutcome(Mem cli, String bankName, Outcome outcome) {
   switch (outcome) {
     case Written(:final topics, :final advance):
       cli.diagnostics.add('mem: $bankName — written ${topics.join(', ')}\n');
-      if (advance is Behind) {
-        cli.diagnostics.add(
-          'mem: $bankName — tree behind the line, blocked by '
-          '${advance.blocking.join(', ')}\n',
-        );
+      // The act landed either way — the line carries it, and saying so is
+      // honest. What must never happen is the *shape* of a clean write when
+      // the tree a reader composes from was left behind: the failure that cost
+      // us a session was not the stale tree, it was that nothing outside the
+      // process could tell. So a tree that did not reach the line is named,
+      // and the exit code carries it to whoever is not reading.
+      switch (advance) {
+        case Advanced():
+          break;
+        case Behind(:final blocking, :final report):
+          cli.diagnostics.add(
+            'mem: $bankName — LANDED, TREE STALE: the line carries the write '
+            'and the working tree does not.\n',
+          );
+          // Either the account or the paths, never both. Where the primitive
+          // has its own account, the paths are not a person's work standing in
+          // anybody's way — a tree following a branch reports every page of
+          // the write as staged, and naming those would accuse the reader of
+          // blocking a write they never touched.
+          if (report != null) {
+            cli.diagnostics.add('mem: $bankName — $report\n');
+          } else if (blocking.isNotEmpty) {
+            cli.diagnostics.add(
+              'mem: $bankName — standing in the way: ${blocking.join(', ')}\n',
+            );
+          }
+          cli.exitCode = 1;
+        case NoTree(:final address):
+          cli.diagnostics.add(
+            'mem: $bankName — LANDED, NO TREE: the line carries the write and '
+            'no tree of this bank stands at ${address.path}, so nothing is '
+            'readable there. Materialize it.\n',
+          );
+          cli.exitCode = 1;
       }
     case RefusedByGate(:final reason):
       cli.diagnostics.add('mem: refused — $reason\n');

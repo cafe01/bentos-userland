@@ -510,6 +510,17 @@ final class Entity {
         : null;
   }
 
+  /// **Where a tree of this installation stands when one stands** — answered
+  /// whether or not anything is there, which is the difference from
+  /// [materializedAt] and the whole reason it exists.
+  ///
+  /// A caller that must report the absence has to name the address, and the
+  /// only alternative is composing `<place>/<name>` a second time at the call
+  /// site — the derived path this codebase forbids everywhere else. One
+  /// convention, one place it is spelled.
+  Directory get materializationAddress =>
+      Directory(p.join(_installation.place, name));
+
   /// The directory the class's own tree stands in, beside the repository — the
   /// **stage**, and the one place a caller looks for the executables the
   /// manifest names.

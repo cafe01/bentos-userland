@@ -460,6 +460,19 @@ class FakeGit implements Git {
   Commit? worktreeHead(String path) {
     final gitDir = worktreeRepository(path);
     if (gitDir == null) return null;
+    // **A tree that follows a branch answers through the ref**, exactly as a
+    // symref `HEAD` does — so it reads as the branch's present tip the instant
+    // anything moves that ref, while [worktrees] still records where the files
+    // actually stand. Modelled here because a double that answered with the
+    // checked-out sha regardless made the whole class of defect inexpressible:
+    // the code under test compared HEAD against the tip to decide whether to
+    // check out, and against this fixture that comparison could never be
+    // wrong. The trap has to exist in the double or the double certifies it.
+    final branch = heads[path];
+    if (branch != null) {
+      final tip = repos[gitDir]?.refs['refs/heads/$branch'];
+      return tip == null ? null : Commit(tip);
+    }
     final standing = repos[gitDir]?.worktrees[path];
     return standing == null ? null : Commit(standing);
   }

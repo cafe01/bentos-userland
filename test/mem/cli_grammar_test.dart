@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:bentos_userland/entity.dart';
 import 'package:bentos_userland/src/mem/attention.dart';
+import 'package:bentos_userland/src/mem/bank.dart' show Bank, Found;
 import 'package:bentos_userland/src/mem/page.dart';
 import 'package:bentos_userland/src/mem/surface.dart';
 import 'package:path/path.dart' as p;
@@ -48,6 +49,28 @@ void main() {
     return where;
   }
 
+  /// A page the bank genuinely holds — landed as an act and then brought into
+  /// the tree, rather than dropped into the worktree by hand.
+  ///
+  /// The difference is not fussiness. A hand-planted file is untracked
+  /// forever, so every later write leaves the tree behind it, and a verb under
+  /// test then reports a stale tree instead of answering for its own grammar.
+  /// These fixtures passed only while a stale tree exited zero.
+  Future<void> plant(String bankName, String topic) async {
+    final bank =
+        (Bank.resolve(bankName, vantage: site.root.path) as Found).bank;
+    await bank.land(
+      'page',
+      (draft) => draft.write(Page(
+        topic: topic,
+        fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
+        body: 'body of $topic',
+      )),
+      actor: Actor('tester', email: 'tester@test.local'),
+    );
+    bank.advance();
+  }
+
   Mem mem() => Mem(
         vantage: site.root.path,
         out: _Out(),
@@ -90,13 +113,7 @@ void main() {
   group('the optional tier — health, refocus, tag, gist', () {
     test('tag with no topic falls back to selector-only reach', () async {
       materialize('alfred.mem');
-      File(p.join(site.root.path, 'alfred.mem', 'a.md')).writeAsStringSync(
-        Page(
-          topic: 'a',
-          fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
-          body: 'body of a',
-        ).serialize(),
-      );
+      await plant('alfred.mem', 'a');
       final cli = mem();
       final code =
           await cli.call(['tag', '-b', 'alfred.mem', ...signed, '--add', 'x', '--cool']);
@@ -105,13 +122,7 @@ void main() {
 
     test('tag with a topic reaches exactly that page', () async {
       materialize('alfred.mem');
-      File(p.join(site.root.path, 'alfred.mem', 'a.md')).writeAsStringSync(
-        Page(
-          topic: 'a',
-          fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
-          body: 'body of a',
-        ).serialize(),
-      );
+      await plant('alfred.mem', 'a');
       final cli = mem();
       final code = await cli.call(['tag', 'a', '-b', 'alfred.mem', ...signed, '--add', 'x']);
       expect(code, 0);
