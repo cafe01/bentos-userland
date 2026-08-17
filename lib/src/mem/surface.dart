@@ -1,6 +1,7 @@
 import 'package:args/command_runner.dart';
 import 'package:path/path.dart' as p;
 
+import '../cli/positional_grammar.dart';
 import '../git/model/actor.dart';
 import 'attention.dart';
 import 'bank.dart';
@@ -129,91 +130,17 @@ final class NoActor implements Exception {
 
 /// The base every verb stands on: the two globals, bank resolution, and the
 /// selector grammar shared by every verb that reaches more than one topic.
-abstract base class MemCommand extends Command<void> {
+/// The positional grammar itself — labels, arity, the optional floor and the
+/// repeating tail — is [PositionalGrammar], the contract shared with
+/// `entity`: mem's own middle tier (`health`, `refocus`, `tag`, `gist`)
+/// states [PositionalGrammar.minPositionals] as `0`, and `recall`/`walk`
+/// state [PositionalGrammar.repeating] as `true` — the two facts `entity`
+/// never needed to state because every one of its verbs is fixed-arity, the
+/// contract's default.
+abstract base class MemCommand extends Command<void> with PositionalGrammar {
   MemCommand(this.cli);
 
   final Mem cli;
-
-  /// **The one-line grammar `--help` prints, derived from [positionalLabels],
-  /// [minPositionals] and [repeating] — nothing hand-written.** A label at or
-  /// past [minPositionals] prints bracketed, since it is the caller's to
-  /// omit; the last label repeats with `...` when [repeating] says so.
-  @override
-  String get invocation {
-    final labels = positionalLabels;
-    final min = minPositionals;
-    final words = <String>[
-      for (var i = 0; i < labels.length; i++)
-        _bracket(
-          '<${labels[i]}>${i == labels.length - 1 && repeating ? '...' : ''}',
-          optional: i >= min,
-        ),
-    ];
-    final prefix = '${runner!.executableName} $name';
-    return words.isEmpty ? prefix : '$prefix ${words.join(' ')}';
-  }
-
-  String _bracket(String word, {required bool optional}) =>
-      optional ? '[$word]' : word;
-
-  /// This verb's own positionals, in order, exactly as they read at the
-  /// shell. **The single source [invocation] and the arity refusal are both
-  /// derived from**, so a verb's grammar lives in one declaration and nowhere
-  /// else — not in a dartdoc comment, and not hand-copied into a
-  /// `usageException` that can drift from it. Empty by default: most of
-  /// mem's own verbs (`survey`) take none.
-  List<String> get positionalLabels => const [];
-
-  /// How many of [positionalLabels] must be present. Defaults to every
-  /// label — the ordinary case, an exact arity like [entity]'s. Mem's own
-  /// middle tier (`health`, `refocus`, `tag`, `gist`) overrides this to `0`:
-  /// a verb that falls back to selector flags when the topic is bare has a
-  /// positional that is genuinely optional, not a fact `positionalLabels`
-  /// alone can express.
-  int get minPositionals => positionalLabels.length;
-
-  /// Whether the last label absorbs any number of words rather than exactly
-  /// one — `recall <topic>...` and `walk <entry>...`. **No upper bound
-  /// applies while this is true**; the ceiling [requirePositionals] enforces
-  /// on every other verb is exactly the thing a repeating slot exists to
-  /// remove.
-  bool get repeating => false;
-
-  /// This verb's own positionals, checked against [positionalLabels],
-  /// [minPositionals] and [repeating], and returned — or a usage refusal.
-  ///
-  /// **Calling this is what makes a short call safe further down, and a long
-  /// one refused instead of silently truncated.** Before this, four verbs
-  /// read `rest.first` and dropped every word past it in silence — `mem tag
-  /// --add foo alice bob` tagged `alice` and let `bob` vanish at exit 0.
-  List<String> requirePositionals() {
-    final words = argResults!.rest;
-    final labels = positionalLabels;
-    final min = minPositionals;
-    if (words.length < min) {
-      final missing = labels.sublist(words.length, min);
-      final verb = missing.length == 1 ? 'is' : 'are';
-      usageException(
-        '$name: ${missing.map((l) => '<$l>').join(' ')} $verb required',
-      );
-    }
-    if (!repeating && words.length > labels.length) {
-      usageException(
-        '$name: unexpected argument(s): '
-        '${words.sublist(labels.length).join(' ')} — expected '
-        '${labels.map((l) => '<$l>').join(' ')}',
-      );
-    }
-    return words;
-  }
-
-  /// The single optional positional — `health`, `refocus`, `tag`, `gist` —
-  /// read through [requirePositionals] so a second, uncounted word is refused
-  /// rather than silently dropped, and null when the slot was left bare.
-  String? optionalPositional() {
-    final words = requirePositionals();
-    return words.isEmpty ? null : words.first;
-  }
 
   /// `-p`, composed against [Mem.vantage] the way `entity`'s `-C` composes
   /// against its own working directory.

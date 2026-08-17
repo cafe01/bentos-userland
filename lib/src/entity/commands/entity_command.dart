@@ -1,6 +1,7 @@
 import 'package:args/command_runner.dart';
 
 import '../entity_runner.dart';
+import '../../cli/positional_grammar.dart';
 import '../../git/model/actor.dart';
 import '../../git/model/commit.dart';
 import '../event.dart';
@@ -8,8 +9,14 @@ import 'coordinate.dart';
 
 /// The base every `entity` verb stands on: the runner it writes through, and
 /// the two argument readings the whole surface is built from — a bare name for
-/// the class-level verbs, a coordinate for the instance-level ones.
-abstract base class EntityCommand extends Command<void> {
+/// the class-level verbs, a coordinate for the instance-level ones. The
+/// positional grammar itself — labels, arity, body and trailing-args tails —
+/// is [PositionalGrammar], the contract shared with `mem`: every verb here is
+/// fixed-arity, which that contract states as `minPositionals ==
+/// positionalLabels.length` and `repeating == false`, its defaults, so no
+/// verb below restates either.
+abstract base class EntityCommand extends Command<void>
+    with PositionalGrammar {
   EntityCommand(this.cli);
 
   /// The coreutil this verb writes through. Named `cli` and not `runner`
@@ -19,117 +26,6 @@ abstract base class EntityCommand extends Command<void> {
 
   /// The global `-C` as parsed by the runner's own parser.
   String? get placeOption => globalResults?['place'] as String?;
-
-  /// **The one-line grammar `--help` prints, derived from [positionalLabels]
-  /// and nothing hand-written.** Every verb here is a leaf added directly to
-  /// the root runner, so the args package's own parent walk always resolves
-  /// to `<executable> <name>`; what varies verb to verb is exactly the
-  /// positionals and, where declared, the body or trailing-args marker —
-  /// the same two facts [requirePositionals] already reads.
-  @override
-  String get invocation {
-    final words = [
-      for (final label in positionalLabels) '<$label>',
-      if (_takesBody) '-- <command>',
-      if (_takesTrailingArgs) '[args...]',
-    ];
-    final prefix = '${runner!.executableName} $name';
-    return words.isEmpty ? prefix : '$prefix ${words.join(' ')}';
-  }
-
-  /// **This verb's own positionals — the words before `--`, and never one of
-  /// somebody else's command line.**
-  ///
-  /// The parser folds both sides of the separator into `rest`, so every arity
-  /// question asked of `rest` counts the body's words as if the caller had
-  /// typed them: `act <coord> -- git status` reads three positionals, passes a
-  /// `rest.length < 2` guard, and lands an act named `git`. A guard that admits
-  /// a malformed command line is worse than no guard, because what it admits is
-  /// signed and durable.
-  ///
-  /// The body is taken from the raw argument list by [body], and the raw list
-  /// is where the separator still stands — so the count of words after it is
-  /// exactly what must come off the tail of `rest`.
-  ///
-  /// **Only for the verbs that declare a body**, through [takesBody]. `run`
-  /// hands its whole tail to a foreign program and reads `--` as one of that
-  /// program's own words; subtracting a body there would take the caller's
-  /// arguments away from the thing they were typed for. Which words are this
-  /// verb's is a fact about the verb, and the base may not assume it.
-  List<String> get positionals {
-    final rest = argResults!.rest;
-    if (!_takesBody) return rest;
-    final trailing = body().length;
-    return trailing == 0 ? rest : rest.sublist(0, rest.length - trailing);
-  }
-
-  /// Declares that this verb's command line ends in `-- <command>`: everything
-  /// after the sentinel is somebody else's program, and none of it is a
-  /// positional of this verb.
-  void takesBody() => _takesBody = true;
-  bool _takesBody = false;
-
-  /// Declares that this verb's own positionals stop at [positionalLabels] and
-  /// everything after them belongs to a foreign program — `run`'s function
-  /// arguments, read with no `--` sentinel because the wrapped body's own
-  /// argument grammar owns that word. The same kind of fact as [takesBody]:
-  /// words that are not this verb's to count, arity-check, or judge.
-  void takesTrailingArgs() => _takesTrailingArgs = true;
-  bool _takesTrailingArgs = false;
-
-  /// This verb's own positionals, in order, exactly as they read at the
-  /// shell — `<coord>`, `<coord:path>`, `<event[,event]>`. **The single
-  /// source both the invocation line and the arity refusal are derived
-  /// from**, so a verb's grammar lives in one declaration and nowhere else:
-  /// not in a dartdoc comment nobody reads at the terminal, and not
-  /// hand-copied into a `usageException` that can drift from it.
-  ///
-  /// A label is a grammar fragment, not a bare word where the slot is not
-  /// atomic — `read` declares `coord:path` because that is what the slot
-  /// truly demands, and forcing every verb onto one-word labels would print
-  /// a usage line that reads well and lies.
-  List<String> get positionalLabels;
-
-  /// This verb's own positionals, checked against [positionalLabels] and
-  /// returned — or a usage refusal naming every one of them, in the verb's
-  /// own words, built once here rather than by hand at each call site.
-  ///
-  /// **Calling this is what makes a short call safe further down.** A verb
-  /// that read [coordinate] or indexed its own positionals without calling
-  /// this first could pass on a call with too few words and crash on a raw
-  /// index instead of refusing — which is exactly the shape the arity bug
-  /// that opened this file took, one layer up.
-  List<String> requirePositionals() {
-    final words = positionals;
-    final labels = positionalLabels;
-    if (words.length < labels.length) {
-      final verb = labels.length == 1 ? 'is' : 'are';
-      usageException(
-        '$name: ${labels.map((l) => '<$l>').join(' ')} $verb required',
-      );
-    }
-    if (!_takesTrailingArgs && words.length > labels.length) {
-      usageException(
-        '$name: unexpected argument(s): '
-        '${words.sublist(labels.length).join(' ')} — expected '
-        '${labels.map((l) => '<$l>').join(' ')}',
-      );
-    }
-    return words;
-  }
-
-  /// The words after `--`: a program, and the second half of the two verbs
-  /// that take one.
-  ///
-  /// Taken from the raw argument list rather than from `rest`, because the
-  /// parser folds both sides of the separator into one list while the two
-  /// halves mean different things — before it stand this verb's own
-  /// positionals, after it stands somebody else's command line.
-  List<String> body() {
-    final raw = argResults!.arguments;
-    final at = raw.indexOf('--');
-    return at < 0 ? const [] : raw.sublist(at + 1);
-  }
 
   /// The `--as-of <sha>` the reading verbs take, or null for the present tip.
   ///
