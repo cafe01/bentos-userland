@@ -285,6 +285,90 @@ void main() {
     });
   });
 
+  group('recall — many topics', () {
+    Directory seed(String bank, List<String> topics) {
+      final root = materialize(bank);
+      for (final topic in topics) {
+        File(p.join(root.path, '$topic.md')).writeAsStringSync(Page(
+          topic: topic,
+          fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
+          body: 'body of $topic',
+        ).serialize());
+      }
+      return root;
+    }
+
+    test('many topics, all found — rendered in the order named, not resorted',
+        () async {
+      await site.runAsync(() async {
+        seed('alfred.mem', ['a', 'b', 'c']);
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call(['recall', 'c', 'a', 'b']);
+        expect(code, 0);
+        final ia = out.text.indexOf('body of a');
+        final ib = out.text.indexOf('body of b');
+        final ic = out.text.indexOf('body of c');
+        expect(ic, lessThan(ia));
+        expect(ia, lessThan(ib));
+        expect(diag.text, contains('3 pages'));
+      });
+    });
+
+    test('partial miss renders the found pages and names the missing ones',
+        () async {
+      await site.runAsync(() async {
+        seed('alfred.mem', ['a', 'b']);
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call(['recall', 'a', 'ghost', 'b']);
+        expect(code, 0);
+        expect(out.text, contains('body of a'));
+        expect(out.text, contains('body of b'));
+        expect(diag.text, contains('2 pages'));
+        expect(diag.text, contains('no page found for: ghost'));
+      });
+    });
+
+    test('total miss names every topic asked for, exits as today', () async {
+      await site.runAsync(() async {
+        materialize('alfred.mem');
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call(['recall', 'ghost1', 'ghost2']);
+        expect(code, 0);
+        expect(diag.text, contains('no pages under ghost1, ghost2'));
+        expect(out.text, equals('bank: alfred.mem\n\n'));
+      });
+    });
+
+    test('a repeated topic is deduped silently, not an error', () async {
+      await site.runAsync(() async {
+        seed('alfred.mem', ['a']);
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call(['recall', 'a', 'a']);
+        expect(code, 0);
+        expect('body of a'.allMatches(out.text).length, 1);
+        expect(diag.text, contains('1 pages'));
+      });
+    });
+
+    test('no positionals, flags only — unchanged selector-only reach',
+        () async {
+      await site.runAsync(() async {
+        seed('alfred.mem', ['a', 'b']);
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call(['recall', '--cool']);
+        expect(code, 0);
+        expect(out.text, contains('body of a'));
+        expect(out.text, contains('body of b'));
+        expect(diag.text, contains('2 pages'));
+      });
+    });
+  });
+
   group('walk', () {
     test('an entry point with no links returns just itself, body form',
         () async {

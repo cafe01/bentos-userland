@@ -221,7 +221,9 @@ base mixin SelectorArgs on MemCommand {
     'cold': (0.1, 0.3),
   };
 
-  /// A positional topic, when the caller wrote one instead of selector flags.
+  /// A positional topic, when the caller wrote one instead of selector
+  /// flags. Single-target verbs only (`refocus`, `gist`, `forget`) — `recall`
+  /// reads its own positionals to take many.
   String? positionalTopic() =>
       argResults!.rest.isEmpty ? null : argResults!.rest.first;
 
@@ -377,23 +379,62 @@ final class RecallCommand extends MemCommand with SelectorArgs {
     if (bank == null) return;
     cli.out.add(_bankHeader(bank.name));
 
-    final topic = positionalTopic();
-    final selector = buildSelector(topic: topic);
     final index = Index.of(bank);
-    final matched = index.select(selector);
+    final seenTopics = <String>{};
+    final topics = [
+      for (final t in argResults!.rest)
+        if (seenTopics.add(t)) t,
+    ];
 
-    if (matched.isEmpty) {
+    if (topics.isEmpty) {
+      final selector = buildSelector();
+      final matched = index.select(selector);
+      if (matched.isEmpty) {
+        cli.diagnostics.add(
+          'mem: ${bank.name} — no pages under ${reachDescription()}.\n',
+        );
+        return;
+      }
+      cli.out.add(_renderRecall(matched));
+      final words = matched.fold(0, (sum, p) => sum + _wordCount(p.body));
       cli.diagnostics.add(
-        'mem: ${bank.name} — no pages under ${reachDescription(topic: topic)}.\n',
+        'mem: ${bank.name} — ${matched.length} pages, $words words\n',
       );
       return;
     }
 
-    cli.out.add(_renderRecall(matched));
-    final words = matched.fold(0, (sum, p) => sum + _wordCount(p.body));
+    // Order is the caller's: each topic is looked up on its own, in the
+    // order it was named, and never resorted — recall is a staging verb,
+    // and the order named is the order the mind reads.
+    final found = <Page>[];
+    final missing = <String>[];
+    for (final topic in topics) {
+      final selector = buildSelector(topic: topic);
+      final matched = index.select(selector);
+      if (matched.isEmpty) {
+        missing.add(topic);
+      } else {
+        found.addAll(matched);
+      }
+    }
+
+    if (found.isEmpty) {
+      cli.diagnostics.add(
+        'mem: ${bank.name} — no pages under ${topics.join(', ')}.\n',
+      );
+      return;
+    }
+
+    cli.out.add(_renderRecall(found));
+    final words = found.fold(0, (sum, p) => sum + _wordCount(p.body));
     cli.diagnostics.add(
-      'mem: ${bank.name} — ${matched.length} pages, $words words\n',
+      'mem: ${bank.name} — ${found.length} pages, $words words\n',
     );
+    if (missing.isNotEmpty) {
+      cli.diagnostics.add(
+        'mem: ${bank.name} — no page found for: ${missing.join(', ')}.\n',
+      );
+    }
   }
 }
 
