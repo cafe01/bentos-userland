@@ -134,6 +134,87 @@ abstract base class MemCommand extends Command<void> {
 
   final Mem cli;
 
+  /// **The one-line grammar `--help` prints, derived from [positionalLabels],
+  /// [minPositionals] and [repeating] — nothing hand-written.** A label at or
+  /// past [minPositionals] prints bracketed, since it is the caller's to
+  /// omit; the last label repeats with `...` when [repeating] says so.
+  @override
+  String get invocation {
+    final labels = positionalLabels;
+    final min = minPositionals;
+    final words = <String>[
+      for (var i = 0; i < labels.length; i++)
+        _bracket(
+          '<${labels[i]}>${i == labels.length - 1 && repeating ? '...' : ''}',
+          optional: i >= min,
+        ),
+    ];
+    final prefix = '${runner!.executableName} $name';
+    return words.isEmpty ? prefix : '$prefix ${words.join(' ')}';
+  }
+
+  String _bracket(String word, {required bool optional}) =>
+      optional ? '[$word]' : word;
+
+  /// This verb's own positionals, in order, exactly as they read at the
+  /// shell. **The single source [invocation] and the arity refusal are both
+  /// derived from**, so a verb's grammar lives in one declaration and nowhere
+  /// else — not in a dartdoc comment, and not hand-copied into a
+  /// `usageException` that can drift from it. Empty by default: most of
+  /// mem's own verbs (`survey`) take none.
+  List<String> get positionalLabels => const [];
+
+  /// How many of [positionalLabels] must be present. Defaults to every
+  /// label — the ordinary case, an exact arity like [entity]'s. Mem's own
+  /// middle tier (`health`, `refocus`, `tag`, `gist`) overrides this to `0`:
+  /// a verb that falls back to selector flags when the topic is bare has a
+  /// positional that is genuinely optional, not a fact `positionalLabels`
+  /// alone can express.
+  int get minPositionals => positionalLabels.length;
+
+  /// Whether the last label absorbs any number of words rather than exactly
+  /// one — `recall <topic>...` and `walk <entry>...`. **No upper bound
+  /// applies while this is true**; the ceiling [requirePositionals] enforces
+  /// on every other verb is exactly the thing a repeating slot exists to
+  /// remove.
+  bool get repeating => false;
+
+  /// This verb's own positionals, checked against [positionalLabels],
+  /// [minPositionals] and [repeating], and returned — or a usage refusal.
+  ///
+  /// **Calling this is what makes a short call safe further down, and a long
+  /// one refused instead of silently truncated.** Before this, four verbs
+  /// read `rest.first` and dropped every word past it in silence — `mem tag
+  /// --add foo alice bob` tagged `alice` and let `bob` vanish at exit 0.
+  List<String> requirePositionals() {
+    final words = argResults!.rest;
+    final labels = positionalLabels;
+    final min = minPositionals;
+    if (words.length < min) {
+      final missing = labels.sublist(words.length, min);
+      final verb = missing.length == 1 ? 'is' : 'are';
+      usageException(
+        '$name: ${missing.map((l) => '<$l>').join(' ')} $verb required',
+      );
+    }
+    if (!repeating && words.length > labels.length) {
+      usageException(
+        '$name: unexpected argument(s): '
+        '${words.sublist(labels.length).join(' ')} — expected '
+        '${labels.map((l) => '<$l>').join(' ')}',
+      );
+    }
+    return words;
+  }
+
+  /// The single optional positional — `health`, `refocus`, `tag`, `gist` —
+  /// read through [requirePositionals] so a second, uncounted word is refused
+  /// rather than silently dropped, and null when the slot was left bare.
+  String? optionalPositional() {
+    final words = requirePositionals();
+    return words.isEmpty ? null : words.first;
+  }
+
   /// `-p`, composed against [Mem.vantage] the way `entity`'s `-C` composes
   /// against its own working directory.
   String get effectiveVantage {
@@ -221,12 +302,6 @@ base mixin SelectorArgs on MemCommand {
     'cool': (0.4, 0.6),
     'cold': (0.1, 0.3),
   };
-
-  /// A positional topic, when the caller wrote one instead of selector
-  /// flags. Single-target verbs only (`refocus`, `gist`, `forget`) — `recall`
-  /// reads its own positionals to take many.
-  String? positionalTopic() =>
-      argResults!.rest.isEmpty ? null : argResults!.rest.first;
 
   Selector buildSelector({String? topic}) {
     final chosen = [
@@ -375,6 +450,15 @@ final class RecallCommand extends MemCommand with SelectorArgs {
   String get description => 'Whole pages, into the frame.';
 
   @override
+  List<String> get positionalLabels => const ['topic'];
+
+  @override
+  int get minPositionals => 0;
+
+  @override
+  bool get repeating => true;
+
+  @override
   Future<void> run() async {
     final bank = resolveBank();
     if (bank == null) return;
@@ -383,7 +467,7 @@ final class RecallCommand extends MemCommand with SelectorArgs {
     final index = Index.of(bank);
     final seenTopics = <String>{};
     final topics = [
-      for (final t in argResults!.rest)
+      for (final t in requirePositionals())
         if (seenTopics.add(t)) t,
     ];
 
@@ -453,17 +537,20 @@ final class WalkCommand extends MemCommand with SelectorArgs {
   String get description => 'Traversal from entry points, outward, level by level.';
 
   @override
+  List<String> get positionalLabels => const ['entry'];
+
+  @override
+  bool get repeating => true;
+
+  @override
   Future<void> run() async {
     final entries = <Address>[];
-    for (final raw in argResults!.rest) {
+    for (final raw in requirePositionals()) {
       final address = Address.parse(raw);
       if (address == null) {
         usageException('$name: not an entry point (mem://<bank>/<topic>): $raw');
       }
       entries.add(address);
-    }
-    if (entries.isEmpty) {
-      usageException('$name: at least one entry point is required');
     }
 
     final vantage = effectiveVantage;
@@ -517,13 +604,19 @@ final class HealthCommand extends MemCommand with SelectorArgs {
       'every type but autobiographical, that is the real defect count.';
 
   @override
+  List<String> get positionalLabels => const ['topic'];
+
+  @override
+  int get minPositionals => 0;
+
+  @override
   Future<void> run() async {
     final bank = resolveBank();
     if (bank == null) return;
     cli.out.add(_bankHeader(bank.name));
 
     final index = Index.of(bank);
-    final topic = positionalTopic();
+    final topic = optionalPositional();
 
     cli.diagnostics.add(
       'mem: ${bank.name} — health, this bank alone; external links unjudged.\n',
@@ -583,13 +676,14 @@ final class RememberCommand extends MemCommand {
   String get description => 'Create or replace a page whole.';
 
   @override
+  List<String> get positionalLabels => const ['topic'];
+
+  @override
   Future<void> run() async {
     final bank = resolveBank();
     if (bank == null) return;
 
-    final rest = argResults!.rest;
-    if (rest.isEmpty) usageException('$name: <topic> is required');
-    final topic = rest.first;
+    final topic = requirePositionals().first;
 
     final typeOpt = argResults!['type'] as String?;
     if (typeOpt == null) usageException('$name: -t <type> is required');
@@ -641,6 +735,12 @@ final class RefocusCommand extends MemCommand with SelectorArgs {
   String get description => 'Move attention alone — the body is never touched.';
 
   @override
+  List<String> get positionalLabels => const ['topic'];
+
+  @override
+  int get minPositionals => 0;
+
+  @override
   Future<void> run() async {
     final bank = resolveBank();
     if (bank == null) return;
@@ -651,7 +751,7 @@ final class RefocusCommand extends MemCommand with SelectorArgs {
       usageException('$name: exactly one of --to <A> or --by <±D> is required');
     }
 
-    final topic = positionalTopic();
+    final topic = optionalPositional();
     final selector = buildSelector(topic: topic);
     if (selector.select(bank.pages()).isEmpty) {
       cli.diagnostics.add(
@@ -694,6 +794,12 @@ final class TagCommand extends MemCommand with SelectorArgs {
   String get description => 'Add or remove tags — the body and modified are never touched.';
 
   @override
+  List<String> get positionalLabels => const ['topic'];
+
+  @override
+  int get minPositionals => 0;
+
+  @override
   Future<void> run() async {
     final bank = resolveBank();
     if (bank == null) return;
@@ -708,7 +814,7 @@ final class TagCommand extends MemCommand with SelectorArgs {
       usageException('$name: cannot --add and --remove the same tag: ${overlap.join(', ')}');
     }
 
-    final topic = positionalTopic();
+    final topic = optionalPositional();
     final selector = buildSelector(topic: topic);
     if (selector.select(bank.pages()).isEmpty) {
       cli.diagnostics.add(
@@ -737,11 +843,17 @@ final class GistCommand extends MemCommand with SelectorArgs {
   String get description => 'Re-derive the cue in place — the body is never touched.';
 
   @override
+  List<String> get positionalLabels => const ['topic'];
+
+  @override
+  int get minPositionals => 0;
+
+  @override
   Future<void> run() async {
     final bank = resolveBank();
     if (bank == null) return;
 
-    final topic = positionalTopic();
+    final topic = optionalPositional();
     final selector = buildSelector(topic: topic);
     if (selector.select(bank.pages()).isEmpty) {
       cli.diagnostics.add(
@@ -767,15 +879,17 @@ final class ForgetCommand extends MemCommand {
   String get description => 'Delete a page by topic. Content is deleted.';
 
   @override
+  List<String> get positionalLabels => const ['topic'];
+
+  @override
   Future<void> run() async {
     final bank = resolveBank();
     if (bank == null) return;
 
-    final rest = argResults!.rest;
-    if (rest.isEmpty) usageException('$name: <topic> is required');
+    final topic = requirePositionals().first;
 
     final writer = Writer(bank, actor: statedActor());
-    final outcome = await writer.forget(rest.first);
+    final outcome = await writer.forget(topic);
     _reportOutcome(cli, bank.name, outcome);
   }
 }
