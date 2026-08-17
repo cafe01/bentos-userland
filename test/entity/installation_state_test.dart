@@ -221,5 +221,51 @@ void main() {
       expect(sentence, isNot(contains('refit')),
           reason: 'refit does not restore a repository, and may not be offered');
     });
+
+    test('create meets the same bar — a name already standing is refused',
+        () {
+      site.run(
+          () => Entity('t.authored', from: site.root.path).create(actor: testActor));
+
+      expect(
+        () => site.run(() => Entity('t.authored', from: site.root.path)
+            .create(actor: testActor)),
+        throwsA(isA<EntityAlreadyInstalled>()),
+      );
+    });
+  });
+
+  group('create leaves nothing of its own behind on a throw', () {
+    test('a failure at the pin rolls the init and the registration back', () {
+      site.git.failStageGitlink = true;
+
+      expect(
+        () => site
+            .run(() => Entity('t.half-born', from: site.root.path)
+                .create(actor: testActor)),
+        throwsA(isA<Exception>()),
+      );
+
+      final state = stateOf('t.half-born');
+      expect(state.absent, isTrue, reason: state.toString());
+      expect(Directory(plotOf('t.half-born')).existsSync(), isFalse);
+    });
+
+    test('the rolled-back name creates cleanly on the next attempt', () {
+      site.git.failStageGitlink = true;
+      try {
+        site.run(() =>
+            Entity('t.born-retry', from: site.root.path).create(actor: testActor));
+      } on Object {
+        // Expected — the point of this test is what happens after.
+      }
+
+      site.git.failStageGitlink = false;
+      final created = site.run(() =>
+          Entity('t.born-retry', from: site.root.path).create(actor: testActor));
+
+      expect(created.name, 't.born-retry');
+      expect(stateOf('t.born-retry').complete, isTrue);
+    });
   });
 }

@@ -112,18 +112,38 @@ final class Entity {
   Entity create({required Actor actor}) {
     final place = Place(_anchor ?? Directory.current.path);
     final gitDir = p.join(place.plot(plotNamespace).path, name, repositoryDirName);
-    ambientGit.init(gitDir);
-    final genesisSha = _bearGenesis(gitDir, name, actor);
-    // The tenant asks; the landlord records. The gitlink is the place's own
-    // tree entry and no tenant writes there.
-    place.register(name, url: '', path: name, sha: genesisSha.sha);
-    ArmingTables(gitDir, entity: name).ensureArmed();
-    // An authored entity's genesis is empty, and the stage is stood up all the
-    // same: what it buys is that the tree *exists and follows the ref* from the
-    // first moment, so the author who writes a manifest and lands it has a tree
-    // to bring forward rather than an absence with no verb pointed at it.
-    stageClass();
-    return this;
+    // The same ground [install] refuses on, asked before one byte is written:
+    // a second `create` of a name already standing here is not what
+    // authoring means, whole or half-built.
+    _refuseIfTaken(place, name, gitDir);
+    // What this call creates, recorded as it is created — [install]'s own
+    // ledger, so a throw between `init` and the last write leaves nothing of
+    // this call's own behind rather than a half-built site only `refit` can
+    // see.
+    final ledger = _InstallLedger(place);
+    try {
+      ledger.willWrite(gitDir);
+      ambientGit.init(gitDir);
+      final genesisSha = _bearGenesis(gitDir, name, actor);
+      // Declared before the call and not after it, for the same reason
+      // [install] declares it there: `register` writes twice, and the
+      // failure this ledger exists for lands between them.
+      ledger.registering(name);
+      // The tenant asks; the landlord records. The gitlink is the place's own
+      // tree entry and no tenant writes there.
+      place.register(name, url: '', path: name, sha: genesisSha.sha);
+      ArmingTables(gitDir, entity: name).ensureArmed();
+      // An authored entity's genesis is empty, and the stage is stood up all
+      // the same: what it buys is that the tree *exists and follows the ref*
+      // from the first moment, so the author who writes a manifest and lands
+      // it has a tree to bring forward rather than an absence with no verb
+      // pointed at it.
+      stageClass();
+      return this;
+    } on Object {
+      ledger.rollBack();
+      rethrow;
+    }
   }
 
   /// The ref instances are born from: the class's structure, empty until a
@@ -212,7 +232,7 @@ final class Entity {
         name = as;
         gitDir = p.join(place.plot(plotNamespace).path, name, repositoryDirName);
         _refuseIfTaken(place, name, gitDir);
-        ledger.willClone(gitDir);
+        ledger.willWrite(gitDir);
         await ambientGit.clone(source, gitDir);
         _ensureGenesis(gitDir);
       } else {
@@ -229,7 +249,7 @@ final class Entity {
           // disposable, so a refusal from this line leaves the site exactly as
           // it stood.
           _refuseIfTaken(place, name, gitDir);
-          ledger.willClone(gitDir);
+          ledger.willWrite(gitDir);
           await ambientGit.clone(stagingGitDir, gitDir);
           _ensureGenesis(gitDir);
         } finally {
@@ -829,9 +849,10 @@ final class _InstallLedger {
   bool _plotDirWasOurs = false;
   String? _registered;
 
-  /// Called with the repository path *before* the clone, which is the only
-  /// moment the prior state of the directory can still be observed.
-  void willClone(String gitDir) {
+  /// Called with the repository path *before* the write that creates it — a
+  /// clone or a bare `git init` — which is the only moment the prior state of
+  /// the directory can still be observed.
+  void willWrite(String gitDir) {
     _plotDir = p.dirname(gitDir);
     _plotDirWasOurs = !Directory(_plotDir!).existsSync();
   }
