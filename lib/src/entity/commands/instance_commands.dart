@@ -27,9 +27,11 @@ final class NewCommand extends EntityCommand {
   String get description => 'Birth an instance — genesis by default.';
 
   @override
+  List<String> get positionalLabels => const ['name', 'instance'];
+
+  @override
   Future<void> run() async {
-    final rest = positionals;
-    if (rest.length < 2) usageException('new: <name> <instance> are required');
+    final rest = requirePositionals();
     final from = argResults!['from'] as String?;
     final born = cli
         .entityNamed(rest[0], place: placeOption)
@@ -66,8 +68,11 @@ final class LsCommand extends EntityCommand {
   String get description => 'The instances of a class, or the paths under one.';
 
   @override
+  List<String> get positionalLabels => const ['name|coord[:path]'];
+
+  @override
   Future<void> run() async {
-    final target = positional('name');
+    final target = requirePositionals().first;
     if (!target.contains(':')) {
       for (final one in cli.entityNamed(target, place: placeOption).instances) {
         cli.out.writeln('${one.id}\t${one.tip?.sha ?? ''}');
@@ -105,6 +110,9 @@ final class LogCommand extends EntityCommand {
   String get description => 'The acts taken on an instance.';
 
   @override
+  List<String> get positionalLabels => const ['coord'];
+
+  @override
   Future<void> run() async {
     for (final act in cli.instanceAt(coordinate(), place: placeOption).log()) {
       cli.out.writeln(
@@ -132,9 +140,11 @@ final class ShowCommand extends EntityCommand {
   String get description => 'What one act changed.';
 
   @override
+  List<String> get positionalLabels => const ['coord', 'action'];
+
+  @override
   Future<void> run() async {
-    final rest = positionals;
-    if (rest.length < 2) usageException('show: <coord> <action> are required');
+    final rest = requirePositionals();
     final instance = cli.instanceAt(coordinate(), place: placeOption);
     // The second argument selects by object name, which is what a log line
     // hands back. An action's identity *is* its commit.

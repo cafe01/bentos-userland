@@ -32,9 +32,11 @@ final class ActCommand extends EntityCommand {
   String get description => 'Take an action: write in a private area and land it.';
 
   @override
+  List<String> get positionalLabels => const ['coord', 'action'];
+
+  @override
   Future<void> run() async {
-    final rest = positionals;
-    if (rest.length < 2) usageException('act: <coord> <action> are required');
+    final rest = requirePositionals();
     final written = body();
     if (written.isEmpty) {
       usageException('act: the body is required — `-- <command>`');
@@ -141,6 +143,9 @@ final class ReadCommand extends EntityCommand {
   String get description => 'Read content at a ref, with no worktree.';
 
   @override
+  List<String> get positionalLabels => const ['coord:path'];
+
+  @override
   Future<void> run() async {
     final coord = coordinate();
     final path = coord.path;
@@ -171,6 +176,9 @@ final class MaterializeCommand extends EntityCommand {
 
   @override
   String get description => 'Stand a persistent worktree beside an instance.';
+
+  @override
+  List<String> get positionalLabels => const ['coord'];
 
   @override
   Future<void> run() async {
@@ -216,9 +224,11 @@ final class RefreshCommand extends EntityCommand {
   String get description => 'Bring a standing worktree up to the tip.';
 
   @override
+  List<String> get positionalLabels => const ['coord', 'path'];
+
+  @override
   Future<void> run() async {
-    final rest = positionals;
-    if (rest.length < 2) usageException('refresh: <coord> <path> are required');
+    final rest = requirePositionals();
     final path = cli.locate(rest[1]);
     final standing = cli.instanceAt(coordinate(), place: placeOption);
     final face = standing.materialization(path);

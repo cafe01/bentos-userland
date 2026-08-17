@@ -248,7 +248,7 @@ void main() {
       final r = await cli.run(['listen', 't.chat']);
 
       expect(r.code, EntityRunner.usageCode);
-      expect(r.err, contains('<name> <event>'));
+      expect(r.err, contains('<name> <event[,event]>'));
     });
 
     test('listen on an unreadable pattern is never silently opened', () async {
@@ -262,7 +262,7 @@ void main() {
       final r = await cli.run(['deliveries', 't.chat']);
 
       expect(r.code, EntityRunner.usageCode);
-      expect(r.err, contains('<name> <event>'));
+      expect(r.err, contains('<name> <event[,event]>'));
     });
 
     test('deliveries on an unreadable pattern is never silently answered',

@@ -42,13 +42,18 @@ import 'entity_command.dart';
 /// three streams — **stdin included**, or a body that reads is a body that
 /// hangs. The child's exit code is this process's, unedited.
 final class RunCommand extends EntityCommand {
-  RunCommand(super.cli);
+  RunCommand(super.cli) {
+    takesTrailingArgs();
+  }
 
   @override
   String get name => 'run';
 
   @override
   String get description => 'Run a function the entity declares.';
+
+  @override
+  List<String> get positionalLabels => const ['coord', 'function'];
 
   /// **Option parsing stops at the first positional.** Everything after the
   /// function's name belongs to the function, and a parser that kept reading
@@ -61,8 +66,7 @@ final class RunCommand extends EntityCommand {
 
   @override
   Future<void> run() async {
-    final rest = positionals;
-    if (rest.length < 2) usageException('run: <coord> <function> are required');
+    final rest = requirePositionals();
     final (coord, _) = ambientCoordinate();
     if (coord.path != null) {
       // A path selects content inside an instance, and running is not reading.

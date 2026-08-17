@@ -20,6 +20,23 @@ abstract base class EntityCommand extends Command<void> {
   /// The global `-C` as parsed by the runner's own parser.
   String? get placeOption => globalResults?['place'] as String?;
 
+  /// **The one-line grammar `--help` prints, derived from [positionalLabels]
+  /// and nothing hand-written.** Every verb here is a leaf added directly to
+  /// the root runner, so the args package's own parent walk always resolves
+  /// to `<executable> <name>`; what varies verb to verb is exactly the
+  /// positionals and, where declared, the body or trailing-args marker —
+  /// the same two facts [requirePositionals] already reads.
+  @override
+  String get invocation {
+    final words = [
+      for (final label in positionalLabels) '<$label>',
+      if (_takesBody) '-- <command>',
+      if (_takesTrailingArgs) '[args...]',
+    ];
+    final prefix = '${runner!.executableName} $name';
+    return words.isEmpty ? prefix : '$prefix ${words.join(' ')}';
+  }
+
   /// **This verb's own positionals — the words before `--`, and never one of
   /// somebody else's command line.**
   ///
@@ -52,11 +69,46 @@ abstract base class EntityCommand extends Command<void> {
   void takesBody() => _takesBody = true;
   bool _takesBody = false;
 
-  /// The first positional, or a usage failure naming what was wanted.
-  String positional(String label) {
+  /// Declares that this verb's own positionals stop at [positionalLabels] and
+  /// everything after them belongs to a foreign program — `run`'s function
+  /// arguments, read with no `--` sentinel because the wrapped body's own
+  /// argument grammar owns that word. The same kind of fact as [takesBody]:
+  /// words that are not this verb's to count, arity-check, or judge.
+  void takesTrailingArgs() => _takesTrailingArgs = true;
+  bool _takesTrailingArgs = false;
+
+  /// This verb's own positionals, in order, exactly as they read at the
+  /// shell — `<coord>`, `<coord:path>`, `<event[,event]>`. **The single
+  /// source both the invocation line and the arity refusal are derived
+  /// from**, so a verb's grammar lives in one declaration and nowhere else:
+  /// not in a dartdoc comment nobody reads at the terminal, and not
+  /// hand-copied into a `usageException` that can drift from it.
+  ///
+  /// A label is a grammar fragment, not a bare word where the slot is not
+  /// atomic — `read` declares `coord:path` because that is what the slot
+  /// truly demands, and forcing every verb onto one-word labels would print
+  /// a usage line that reads well and lies.
+  List<String> get positionalLabels;
+
+  /// This verb's own positionals, checked against [positionalLabels] and
+  /// returned — or a usage refusal naming every one of them, in the verb's
+  /// own words, built once here rather than by hand at each call site.
+  ///
+  /// **Calling this is what makes a short call safe further down.** A verb
+  /// that read [coordinate] or indexed its own positionals without calling
+  /// this first could pass on a call with too few words and crash on a raw
+  /// index instead of refusing — which is exactly the shape the arity bug
+  /// that opened this file took, one layer up.
+  List<String> requirePositionals() {
     final words = positionals;
-    if (words.isEmpty) usageException('$name: <$label> is required');
-    return words.first;
+    final labels = positionalLabels;
+    if (words.length < labels.length) {
+      final verb = labels.length == 1 ? 'is' : 'are';
+      usageException(
+        '$name: ${labels.map((l) => '<$l>').join(' ')} $verb required',
+      );
+    }
+    return words;
   }
 
   /// The words after `--`: a program, and the second half of the two verbs
@@ -141,10 +193,13 @@ abstract base class EntityCommand extends Command<void> {
         valueHelp: 'sha',
       );
 
-  /// The first positional read as a coordinate.
+  /// The first positional read as a coordinate. Reads through
+  /// [requirePositionals], so a verb that only declared one label and was
+  /// then indexed for a second gets a usage refusal here rather than a raw
+  /// index failure further down.
   Coordinate coordinate() {
     try {
-      return Coordinate.parse(positional('coord'));
+      return Coordinate.parse(requirePositionals().first);
     } on FormatException catch (e) {
       usageException('$name: ${e.message}');
     }
@@ -167,7 +222,7 @@ abstract base class EntityCommand extends Command<void> {
   /// `b.thing`, and an instance borrowed across that boundary would send a verb
   /// at an object nobody named.
   (Coordinate, CoordinateSource) ambientCoordinate() {
-    final typed = positional('coord');
+    final typed = requirePositionals().first;
     if (typed.contains(':')) return (coordinate(), CoordinateSource.argument);
 
     final occurrenceEntity = cli.env[OccurrenceEnvironment.entity];

@@ -21,8 +21,11 @@ final class CreateCommand extends EntityCommand {
   String get description => 'Author an entity here — no origin.';
 
   @override
+  List<String> get positionalLabels => const ['name'];
+
+  @override
   Future<void> run() async {
-    final named = positional('name');
+    final named = requirePositionals().first;
     // Authoring is an act with an author, and the genesis commit carries it.
     final actor = statedActor();
     final entity =
@@ -53,8 +56,11 @@ final class InstallCommand extends EntityCommand {
   String get description => 'Clone an entity into this place, register it, arm it.';
 
   @override
+  List<String> get positionalLabels => const ['source'];
+
+  @override
   Future<void> run() async {
-    final source = positional('source');
+    final source = requirePositionals().first;
     final entity = await Entity.install(
       cli.locate(source),
       at: cli.vantage(placeOption),
@@ -92,8 +98,11 @@ final class RefitCommand extends EntityCommand {
       'Rewrite the shim and re-stage the class — local, no network.';
 
   @override
+  List<String> get positionalLabels => const ['name'];
+
+  @override
   Future<void> run() async {
-    final named = positional('name');
+    final named = requirePositionals().first;
     final report = cli.entityNamed(named, place: placeOption).refit();
     cli.out.writeln('shim\t${report.shim}');
     if (report.stagedAt != null) {
@@ -128,8 +137,11 @@ final class UpgradeCommand extends EntityCommand {
       'Fetch the entity\'s line and advance it — then refit.';
 
   @override
+  List<String> get positionalLabels => const ['name'];
+
+  @override
   Future<void> run() async {
-    final named = positional('name');
+    final named = requirePositionals().first;
     final dryRun = argResults!['dry-run'] as bool;
     final report =
         await cli.entityNamed(named, place: placeOption).upgrade(dryRun: dryRun);
@@ -163,8 +175,11 @@ final class WhichCommand extends EntityCommand {
   String get description => 'Which installation this name resolves to.';
 
   @override
+  List<String> get positionalLabels => const ['name'];
+
+  @override
   Future<void> run() async {
-    final named = positional('name');
+    final named = requirePositionals().first;
     cli.out.writeln(cli.installedAt(named, place: placeOption).path);
   }
 }
@@ -189,8 +204,11 @@ final class InfoCommand extends EntityCommand {
   String get description => 'The manifest: type, parts, actions, events.';
 
   @override
+  List<String> get positionalLabels => const ['name'];
+
+  @override
   Future<void> run() async {
-    final named = positional('name');
+    final named = requirePositionals().first;
     final entity = cli.entityNamed(named, place: placeOption);
     cli.out.writeln('name\t${entity.name}');
 
@@ -235,9 +253,11 @@ final class PublishCommand extends EntityCommand {
   String get description => 'Give an entity an origin and push to it.';
 
   @override
+  List<String> get positionalLabels => const ['name', 'remote'];
+
+  @override
   Future<void> run() async {
-    final rest = positionals;
-    if (rest.length < 2) usageException('publish: <name> <remote> are required');
+    final rest = requirePositionals();
     await cli.entityNamed(rest[0], place: placeOption).publish(cli.locate(rest[1]));
   }
 }
@@ -268,9 +288,11 @@ final class FetchCommand extends EntityCommand {
   String get description => 'Bring an instance\'s line down from a remote.';
 
   @override
+  List<String> get positionalLabels => const ['coord', 'remote'];
+
+  @override
   Future<void> run() async {
-    final rest = positionals;
-    if (rest.length < 2) usageException('fetch: <coord> <remote> are required');
+    final rest = requirePositionals();
     final coord = coordinate();
     final entity = cli.entityNamed(coord.entity, place: placeOption);
     final named = rest[1];
@@ -296,8 +318,11 @@ final class RemotesCommand extends EntityCommand {
   String get description => 'The declared remotes.';
 
   @override
+  List<String> get positionalLabels => const ['name'];
+
+  @override
   Future<void> run() async {
-    final named = positional('name');
+    final named = requirePositionals().first;
     for (final remote in cli.entityNamed(named, place: placeOption).remotes) {
       cli.out.writeln('${remote.name}\t${remote.url}');
     }

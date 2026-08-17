@@ -34,6 +34,9 @@ final class ResolveCommand extends EntityCommand {
   String get description => 'Resolve a coordinate to a path.';
 
   @override
+  List<String> get positionalLabels => const ['coord'];
+
+  @override
   Future<void> run() async {
     final coord = coordinate();
     final place = cli.installedAt(coord.entity, place: placeOption);
@@ -51,6 +54,9 @@ final class TipCommand extends EntityCommand {
 
   @override
   String get description => 'The commit an instance stands at.';
+
+  @override
+  List<String> get positionalLabels => const ['coord'];
 
   @override
   Future<void> run() async {
@@ -83,8 +89,11 @@ final class PathCommand extends EntityCommand {
   String get description => 'The entity\'s own repository — the escape hatch.';
 
   @override
+  List<String> get positionalLabels => const ['name'];
+
+  @override
   Future<void> run() async {
-    final named = positional('name');
+    final named = requirePositionals().first;
     cli.out.writeln(gitDirOf(cli.entityNamed(named, place: placeOption)));
   }
 }
@@ -104,6 +113,9 @@ final class WorkCommand extends EntityCommand {
 
   @override
   String get description => 'Open a private write area at the tip.';
+
+  @override
+  List<String> get positionalLabels => const ['coord'];
 
   @override
   Future<void> run() async {
@@ -148,9 +160,11 @@ final class CommitCommand extends EntityCommand {
   String get description => 'Land an act from a private area, by compare-and-swap.';
 
   @override
+  List<String> get positionalLabels => const ['coord', 'action'];
+
+  @override
   Future<void> run() async {
-    final rest = positionals;
-    if (rest.length < 2) usageException('commit: <coord> <action> are required');
+    final rest = requirePositionals();
     final area = argResults!['worktree'] as String?;
     if (area == null) usageException('commit: -w <path> is required');
     final parent = argResults!['parent'] as String?;
@@ -200,9 +214,11 @@ final class EmitCommand extends EntityCommand {
       "Publish a ref transaction into the primitive — the hook's own verb.";
 
   @override
+  List<String> get positionalLabels => const ['name', 'phase'];
+
+  @override
   Future<void> run() async {
-    final rest = positionals;
-    if (rest.length < 2) usageException('emit: <name> <phase> are required');
+    final rest = requirePositionals();
     final entity = cli.entityNamed(rest[0], place: placeOption);
     final phase = _phaseOf(rest[1]);
 
@@ -245,8 +261,11 @@ final class ReleaseCommand extends EntityCommand {
   String get description => 'Discard a workspace or a materialization.';
 
   @override
+  List<String> get positionalLabels => const ['path'];
+
+  @override
   Future<void> run() async {
-    final path = cli.locate(positional('path'));
+    final path = cli.locate(requirePositionals().first);
     // The one resolution that runs the other way round: a directory is all the
     // caller has, so the repository is asked of the worktree itself. Nothing
     // standing there is the ordinary answer for a second release, and

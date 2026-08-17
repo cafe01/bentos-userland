@@ -65,6 +65,9 @@ abstract base class ArmingCommand extends EntityCommand {
   /// Whether the line removes itself when it fires.
   bool get spent;
 
+  @override
+  List<String> get positionalLabels => const ['coord', 'event[,event]'];
+
   /// Refuses a relative command that will not resolve when the line fires.
   ///
   /// **The anchor of an armed command is the place the entity is installed in,
@@ -95,8 +98,7 @@ abstract base class ArmingCommand extends EntityCommand {
 
   @override
   Future<void> run() async {
-    final rest = positionals;
-    if (rest.length < 2) usageException('$name: <coord> <event> are required');
+    final rest = requirePositionals();
     final woken = body();
     if (woken.isEmpty) {
       usageException('$name: the command is required — `-- <command>`');
@@ -140,9 +142,11 @@ final class OffCommand extends EntityCommand {
   String get description => 'Disarm a registration.';
 
   @override
+  List<String> get positionalLabels => const ['coord', 'id'];
+
+  @override
   Future<void> run() async {
-    final rest = positionals;
-    if (rest.length < 2) usageException('off: <coord> <id> are required');
+    final rest = requirePositionals();
     cli.entityNamed(coordinate().entity, place: placeOption).off(rest[1]);
   }
 }
@@ -200,11 +204,11 @@ final class ListenCommand extends EntityCommand {
   String get description => 'A live view of what an entity publishes.';
 
   @override
+  List<String> get positionalLabels => const ['name', 'event[,event]'];
+
+  @override
   Future<void> run() async {
-    final rest = positionals;
-    if (rest.length < 2) {
-      usageException('listen: <name> <event> are required');
-    }
+    final rest = requirePositionals();
     final entity = cli.entityNamed(rest[0], place: placeOption);
     final events = _eventPatterns(
         rest[1], (m) => usageException('listen: $m'));
@@ -266,11 +270,11 @@ final class DeliveriesCommand extends EntityCommand {
   String get description => 'What dispatch woke, and what it answered.';
 
   @override
+  List<String> get positionalLabels => const ['name', 'event[,event]'];
+
+  @override
   Future<void> run() async {
-    final rest = positionals;
-    if (rest.length < 2) {
-      usageException('deliveries: <name> <event> are required');
-    }
+    final rest = requirePositionals();
     final entity = cli.entityNamed(rest[0], place: placeOption);
     final events = _eventPatterns(
         rest[1], (m) => usageException('deliveries: $m'));
@@ -314,6 +318,9 @@ final class ListenersCommand extends EntityCommand {
 
   @override
   String get description => 'What is armed at this installation.';
+
+  @override
+  List<String> get positionalLabels => const ['coord'];
 
   @override
   Future<void> run() async {
