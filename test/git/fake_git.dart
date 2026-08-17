@@ -381,9 +381,29 @@ class FakeGit implements Git {
         );
       }
     }
-    final dir = Directory(path);
-    if (dir.existsSync()) dir.deleteSync(recursive: true);
-    dir.createSync(recursive: true);
+    // An untracked file — present on disk, named by neither tree — blocks the
+    // move only where the incoming tree would overwrite it, exactly as real
+    // Git refuses. A path the incoming tree never touches is not this move's
+    // business, whatever is sitting there.
+    for (final entry in target.entries) {
+      if (onStanding.containsKey(entry.key)) continue;
+      final file = File(p.join(path, entry.key));
+      if (file.existsSync()) {
+        return WorktreeCheckout(
+          moved: false,
+          report: 'untracked ${entry.key} would be overwritten',
+        );
+      }
+    }
+    // The move touches only what the two trees name: paths the standing tree
+    // held and the incoming one drops are removed, paths the incoming tree
+    // holds are written. Everything else on disk — an untracked file this
+    // move never names — is left exactly where it was, as real Git leaves it.
+    for (final key in onStanding.keys) {
+      if (target.containsKey(key)) continue;
+      final file = File(p.join(path, key));
+      if (file.existsSync()) file.deleteSync();
+    }
     for (final entry in target.entries) {
       final file = File(p.join(path, entry.key))..parent.createSync(recursive: true);
       file.writeAsBytesSync(_objects[entry.value]!);

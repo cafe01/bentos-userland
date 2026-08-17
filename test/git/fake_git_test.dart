@@ -122,4 +122,73 @@ void main() {
       [two.sha, one.sha],
     );
   });
+
+  group('worktreeCheckout', () {
+    test('an unforced move brings the tree to the new commit', () {
+      final first = Commit(commitWith({'a.txt': 'one'}));
+      final second = Commit(commitWith({'a.txt': 'two'}, parent: first));
+      final where = p.join(tmp.path, 'standing');
+      git.worktreeAdd('/e.git', path: where, at: first);
+
+      final result = git.worktreeCheckout(where, to: second);
+
+      expect(result.moved, isTrue);
+      expect(git.worktreeHead(where), second);
+      expect(File(p.join(where, 'a.txt')).readAsStringSync(), 'two');
+    });
+
+    test('an untracked file the incoming tree never names survives the move',
+        () {
+      // The real port leaves a non-conflicting untracked file alone; a fake
+      // that deletes-and-repopulates the whole directory destroys it instead
+      // — silently, since nothing before this asserted the file was ever
+      // there to begin with.
+      final first = Commit(commitWith({'a.txt': 'one'}));
+      final second = Commit(commitWith({'a.txt': 'two'}, parent: first));
+      final where = p.join(tmp.path, 'standing');
+      git.worktreeAdd('/e.git', path: where, at: first);
+      final untracked = File(p.join(where, 'mine.txt'))
+        ..writeAsStringSync('nobody landed this');
+
+      final result = git.worktreeCheckout(where, to: second);
+
+      expect(result.moved, isTrue);
+      expect(untracked.readAsStringSync(), 'nobody landed this');
+      expect(File(p.join(where, 'a.txt')).readAsStringSync(), 'two');
+    });
+
+    test('an untracked file the incoming tree would write refuses the move',
+        () {
+      final first = Commit(commitWith({'a.txt': 'one'}));
+      final second =
+          Commit(commitWith({'a.txt': 'one', 'new.txt': 'incoming'}, parent: first));
+      final where = p.join(tmp.path, 'standing');
+      git.worktreeAdd('/e.git', path: where, at: first);
+      final collision = File(p.join(where, 'new.txt'))
+        ..writeAsStringSync('a person\'s own file, never landed');
+
+      final result = git.worktreeCheckout(where, to: second);
+
+      expect(result.moved, isFalse);
+      expect(result.report, isNotEmpty);
+      expect(collision.readAsStringSync(), 'a person\'s own file, never landed');
+      expect(git.worktreeHead(where), first);
+    });
+
+    test('a dirty tracked file declines, and its bytes survive the refusal',
+        () {
+      final first = Commit(commitWith({'a.txt': 'base'}));
+      final second = Commit(commitWith({'a.txt': 'advanced'}, parent: first));
+      final where = p.join(tmp.path, 'standing');
+      git.worktreeAdd('/e.git', path: where, at: first);
+      final witness = File(p.join(where, 'a.txt'))
+        ..writeAsStringSync('a person\'s uncommitted edit');
+
+      final result = git.worktreeCheckout(where, to: second);
+
+      expect(result.moved, isFalse);
+      expect(witness.readAsStringSync(), 'a person\'s uncommitted edit');
+      expect(git.worktreeHead(where), first);
+    });
+  });
 }
