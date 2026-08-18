@@ -689,6 +689,25 @@ final class ProcessGit implements Git {
       source,
       gitDir,
     ]);
+    // **A bare clone has no fetch refspec, and without one standing is
+    // unanswerable.** `git clone --bare` deliberately omits
+    // `remote.origin.fetch`, so a later `git fetch origin` writes nothing but
+    // `FETCH_HEAD`: no `refs/remotes/origin/*` ever appears, no branch can
+    // carry an upstream, and every "is this published?" costs a round trip to
+    // the remote that a human has to remember to make. Restoring the standard
+    // refspec is purely additive — it creates remote-tracking refs and never
+    // touches `refs/heads/*`, which in an entity *are the instances*, several
+    // of which legitimately exist only here.
+    //
+    // Written here rather than beside [setRemoteUrl] because it holds of every
+    // clone we make regardless of who calls it, and it is url-independent: the
+    // staged install path clones from a temp directory and corrects the url
+    // afterwards, and this refspec is already correct for both.
+    _git(gitDir, [
+      'config',
+      'remote.origin.fetch',
+      '+refs/heads/*:refs/remotes/origin/*',
+    ]);
   }
 
   @override

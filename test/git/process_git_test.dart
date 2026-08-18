@@ -268,4 +268,73 @@ void main() {
       expect(git.worktreeDirtyPaths(where), ['new.txt']);
     });
   });
+
+  /// The fake cannot answer this: a refspec is a claim about what the real
+  /// substrate does on the next fetch, and only the real one fetches.
+  group('a bare clone can answer where it stands', () {
+    test('a fetch writes remote-tracking refs, so standing needs no network',
+        () async {
+      final upstream = enclosing('upstream');
+      final gitDir = p.join(scratch.path, 'copy.git');
+
+      await git.clone(upstream, gitDir);
+      // The claim is not that a config key holds a string. It is that a fetch
+      // now populates `refs/remotes/*` — which is what makes an upstream, and
+      // therefore ahead/behind, expressible at all.
+      Process.runSync('git', ['--git-dir=$gitDir', 'fetch', 'origin']);
+
+      final tracking = Process.runSync('git', [
+        '--git-dir=$gitDir',
+        'for-each-ref',
+        '--format=%(refname)',
+        'refs/remotes',
+      ]).stdout as String;
+      expect(tracking, contains('refs/remotes/origin/'));
+    });
+
+    test('the copy reads its own distance from the source, offline', () async {
+      final upstream = enclosing('source');
+      final gitDir = p.join(scratch.path, 'behind.git');
+      await git.clone(upstream, gitDir);
+
+      final branch = Process.runSync('git', [
+        '--git-dir=$gitDir',
+        'symbolic-ref',
+        '--short',
+        'HEAD',
+      ]).stdout.toString().trim();
+      Process.runSync('git', ['--git-dir=$gitDir', 'fetch', 'origin']);
+      Process.runSync('git', [
+        '--git-dir=$gitDir',
+        'config',
+        'branch.$branch.remote',
+        'origin',
+      ]);
+      Process.runSync('git', [
+        '--git-dir=$gitDir',
+        'config',
+        'branch.$branch.merge',
+        'refs/heads/$branch',
+      ]);
+
+      // Two commits land at the source and are fetched; nothing merges them.
+      for (final m in ['two', 'three']) {
+        Process.runSync('git', [
+          '-C', upstream,
+          '-c', 'user.email=gate@bentos',
+          '-c', 'user.name=gate',
+          'commit', '--quiet', '--allow-empty', '-m', m,
+        ]);
+      }
+      Process.runSync('git', ['--git-dir=$gitDir', 'fetch', 'origin']);
+
+      final track = Process.runSync('git', [
+        '--git-dir=$gitDir',
+        'for-each-ref',
+        '--format=%(upstream:track)',
+        'refs/heads/$branch',
+      ]).stdout.toString().trim();
+      expect(track, '[behind 2]');
+    });
+  });
 }

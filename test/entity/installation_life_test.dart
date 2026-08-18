@@ -837,7 +837,7 @@ void main() {
     });
   });
 
-  group('the refspec premise, against the substrate itself', () {
+  group('the refspec, against the substrate itself', () {
     // FakeGit models no configuration, so it cannot witness a claim about
     // `remote.origin.fetch`. This claim is about Git, and only Git answers it.
     const git = ProcessGit();
@@ -866,7 +866,8 @@ void main() {
       return result.exitCode == 0 ? (result.stdout as String).trim() : null;
     }
 
-    test('install leaves no fetch refspec, and addRemote writes one', () async {
+    test('an installation can say where it stands without the network',
+        () async {
       final source = foreignRepository(
         git,
         scratch.path,
@@ -876,21 +877,72 @@ void main() {
       final installed = await Entity.install(source, at: there.path);
       final gitDir = repositoryOf(there.path, installed.name);
 
-      expect(
-        refspecOf(gitDir),
-        isNull,
-        reason: 'install clones bare, and a bare clone sets no '
-            'remote.origin.fetch — which is why a named fetch fills FETCH_HEAD '
-            'and writes no ref at all',
-      );
+      // A bare clone sets no `remote.origin.fetch`; the port restores it,
+      // because without one a plain fetch writes nothing but FETCH_HEAD, no
+      // `refs/remotes/origin/*` ever exists, and standing against the source
+      // is unanswerable except by asking the source every single time.
+      expect(refspecOf(gitDir), '+refs/heads/*:refs/remotes/origin/*');
 
-      // The other shape, so the premise is a distinction and not a coincidence.
-      final other = p.join(scratch.path, 'other.git');
-      git.init(other, bare: true);
-      git.addRemote(other, name: 'origin', url: source);
-      expect(refspecOf(other), isNotNull,
-          reason: 'a remote added by the port carries git\'s default refspec, '
-              'and the same fetch then updates refs/remotes/origin/*');
+      // The material claim: the refspec is worth having only if a fetch uses
+      // it. Asserting the config alone would be asserting the mechanism's
+      // account of itself.
+      Process.runSync('git', ['--git-dir', gitDir, 'fetch', 'origin']);
+      final tracking = Process.runSync('git', [
+        '--git-dir', gitDir,
+        'for-each-ref', '--format=%(refname)', 'refs/remotes',
+      ]).stdout as String;
+      expect(
+        tracking,
+        contains('refs/remotes/origin/'),
+        reason: 'a plain fetch now writes remote-tracking refs, which is what '
+            'lets a branch carry an upstream and report ahead/behind offline',
+      );
+    });
+
+    test('an explicit fetch still fills FETCH_HEAD, and touches no instance',
+        () async {
+      // The refspec must not disturb the seven-step upgrade, whose fetch names
+      // its ref on the command line.
+      //
+      // It does change one thing, and not the thing I first assumed: Git also
+      // applies the configured refmap to a named fetch, so `refs/remotes/
+      // origin/main` is now written alongside FETCH_HEAD. That is harmless and
+      // this gate says why — upgrade reads FETCH_HEAD, which is still there,
+      // and `refs/remotes/*` is a namespace no instance lives in and dispatch
+      // never mints an occurrence for.
+      final source = foreignRepository(
+        git,
+        scratch.path,
+        dirName: 'source.git',
+        declaredName: 't.explicit',
+      );
+      final installed = await Entity.install(source, at: there.path);
+      final gitDir = repositoryOf(there.path, installed.name);
+
+      final before = Process.runSync('git', [
+        '--git-dir', gitDir,
+        'for-each-ref', '--format=%(refname)', 'refs/heads',
+      ]).stdout as String;
+
+      Process.runSync('git', [
+        '--git-dir', gitDir, 'fetch', 'origin', 'refs/heads/main',
+      ]);
+
+      expect(
+        File(p.join(gitDir, 'FETCH_HEAD')).readAsStringSync().trim(),
+        isNotEmpty,
+        reason: 'upgrade reads the line out of FETCH_HEAD, and still can',
+      );
+      final after = Process.runSync('git', [
+        '--git-dir', gitDir,
+        'for-each-ref', '--format=%(refname)', 'refs/heads',
+      ]).stdout as String;
+      expect(
+        after,
+        before,
+        reason: 'no instance moved: the fetch wrote only FETCH_HEAD and the '
+            'remote-tracking namespace, never refs/heads/*',
+      );
     });
 
     test('a fresh installation can actually fetch from its own origin',
@@ -937,13 +989,12 @@ void main() {
         reason: 'origin names the source and not the staging directory',
       );
 
-      expect(
-        refspecOf(gitDir),
-        isNull,
-        reason: 'the cure is `remote set-url`, which writes the URL and '
-            'nothing else — `remote add` would have left a refspec here and '
-            'taken step 2\'s premise with it',
-      );
+      // The cure is `remote set-url`, which writes the URL and nothing else.
+      // The refspec no longer discriminates it from `remote add` — the port
+      // writes one either way — so what carries that distinction now is the
+      // url assert above: `add` on an origin that already exists fails, and
+      // the staged path always has one by the time this line is reached.
+      expect(refspecOf(gitDir), '+refs/heads/*:refs/remotes/origin/*');
     });
   });
 
