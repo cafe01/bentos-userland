@@ -91,8 +91,17 @@ final class Mem {
 
   /// **0** — did what was asked, including an empty reach and a degraded
   /// read. **1** — a decided refusal, or a bank not found from the vantage.
-  /// **2** — the call itself was invalid. **64** — nobody said who is writing.
+  /// **2** — the call itself was invalid. **3** — the act landed and the
+  /// line carries it, but the local working tree did not follow (TREE STALE,
+  /// NO TREE): distinct from **1** on purpose, because a caller that greps
+  /// for one exit code to mean *nothing happened* must not be lied to twice
+  /// — first by a clean-looking `written` line, then by a refusal code on a
+  /// write that in fact landed. **64** — nobody said who is writing.
   int exitCode = 0;
+
+  /// The act landed; only the local tree's own materialization lagged. See
+  /// [exitCode]'s **3**.
+  static const int materializationLagCode = 3;
 
   Future<int> call(List<String> arguments) async {
     exitCode = 0;
@@ -876,14 +885,14 @@ void _reportOutcome(Mem cli, String bankName, Outcome outcome) {
               'mem: $bankName — standing in the way: ${blocking.join(', ')}\n',
             );
           }
-          cli.exitCode = 1;
+          cli.exitCode = Mem.materializationLagCode;
         case NoTree(:final address):
           cli.diagnostics.add(
             'mem: $bankName — LANDED, NO TREE: the line carries the write and '
             'no tree of this bank stands at ${address.path}, so nothing is '
             'readable there. Materialize it.\n',
           );
-          cli.exitCode = 1;
+          cli.exitCode = Mem.materializationLagCode;
       }
     case RefusedByGate(:final reason):
       cli.diagnostics.add('mem: refused — $reason\n');

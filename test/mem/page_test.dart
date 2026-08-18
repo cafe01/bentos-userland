@@ -198,6 +198,27 @@ void main() {
       expect(page.links, hasLength(1));
       expect(page.links.single.topic, 'domain/bentos/brain');
     });
+
+    // The corpus defect: an alias written as inline code — `place`, so it
+    // renders as code in the desk — strips to nothing, and the pipe that
+    // introduced it survives. The link must still be read, alias or not,
+    // because a dropped edge here is a page unreachable from a walk while
+    // reading perfectly correct on the page itself.
+    test('a wikilink whose alias is inline code is still a link', () {
+      final page = Page.parse('x', '---\ntype: semantic\nattention: 0.5\n---\n'
+          'See [[self/body/place|`place`]] for bearings.\n');
+      expect(page.links, hasLength(1));
+      expect(page.links.single.topic, 'self/body/place');
+      expect(page.links.single.text, 'place');
+    });
+
+    test('a wikilink whose alias is partly inline code keeps the plain text', () {
+      final page = Page.parse('x', '---\ntype: semantic\nattention: 0.5\n---\n'
+          'See [[self/body/mem|the `mem` organ]] for memory.\n');
+      expect(page.links, hasLength(1));
+      expect(page.links.single.topic, 'self/body/mem');
+      expect(page.links.single.text, 'the mem organ');
+    });
   });
 
   group('Selector — the shared reach', () {

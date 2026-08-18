@@ -188,7 +188,14 @@ void main() {
         // nothing outside the process could tell. Both halves are asserted,
         // because either alone is the silence again: a message nobody reads,
         // or a code with nothing to explain it.
-        expect(code, isNot(0));
+        //
+        // And it must not be the *same* nonzero code a decided refusal
+        // carries — a script that greps one exit code for "nothing landed"
+        // would be lied to here exactly as badly as by a bare 0, since the
+        // write in fact landed. Mem.exitCode's own contract names 1 for a
+        // decided refusal; this is not one.
+        expect(code, Mem.materializationLagCode);
+        expect(code, isNot(1));
         expect(diag.text, contains('TREE STALE'));
         expect(diag.text, contains("follows the branch 'main'"));
         // And the page really is unreadable where a reader would look, which
@@ -216,9 +223,29 @@ void main() {
           '-A', '0.7', '--gist', 'a greeting']);
 
         expect(diag.text, contains('written domain/hello'));
-        expect(code, isNot(0));
+        expect(code, Mem.materializationLagCode);
+        expect(code, isNot(1));
         expect(diag.text, contains('NO TREE'));
         expect(diag.text, contains(p.join(site.root.path, 'alfred.mem')));
+      });
+    });
+
+    test(
+        'a materialization-lag exit is distinct from a decided refusal\'s exit',
+        () async {
+      await site.runAsync(() async {
+        // A decided refusal that never lands anything — the ordinary
+        // shape of Mem.exitCode's documented 1.
+        materialize('alfred.mem');
+        final out = _Out(), diag = _Out();
+        final refusedCode = await mem(
+          bankEnv: 'alfred.mem',
+          out: out,
+          diagnostics: diag,
+        ).call(['-b', 'nobody.mem', 'survey']);
+
+        expect(refusedCode, 1);
+        expect(refusedCode, isNot(Mem.materializationLagCode));
       });
     });
 

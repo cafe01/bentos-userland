@@ -298,14 +298,24 @@ final class Page {
   /// of our own documentation and out of any cue a model derived, both
   /// observed in the corpus this tool reads. Frontmatter is never body, so it
   /// is out of reach by construction: [body] never contains it.
+  ///
+  /// **A link is masked by where it opens, not by what it contains.** An
+  /// alias is free to carry its own inline code — `` [[self/body/place|`place`]] ``
+  /// reads as a real link whose alias happens to render as code — so masking
+  /// runs against the raw body and only excludes a match whose opening `[[`
+  /// itself sits inside a fence or a code span. Blanking code spans before
+  /// matching, as this used to do, deleted the alias text and, with it, the
+  /// whole link: a pipe with nothing after it never matches `_linkPattern`
+  /// at all, and the edge silently disappears from the graph.
   List<Link> get links {
-    final prose = _stripNonProse(body);
+    final masked = _maskedRanges(body);
     final links = <Link>[];
-    for (final m in _linkPattern.allMatches(prose)) {
+    for (final m in _linkPattern.allMatches(body)) {
+      if (_isMasked(m.start, masked)) continue;
       links.add(Link(
         bank: m.group(1),
-        topic: m.group(2)!.trim(),
-        text: m.group(3)?.trim(),
+        topic: _stripInlineCode(m.group(2)!).trim(),
+        text: m.group(3) == null ? null : _stripInlineCode(m.group(3)!).trim(),
         order: links.length,
       ));
     }
@@ -315,26 +325,51 @@ final class Page {
   static final _linkPattern =
       RegExp(r'\[\[(?:mem://([^/\]]+)/)?([^\]|]+?)(?:\|([^\]]+))?\]\]');
 
-  /// Blank out fenced code blocks and inline code spans, line by line, so a
-  /// link-shaped run of characters inside either never reaches the link
-  /// pattern. Line order is preserved, which is all link ordering needs —
-  /// exact column position is never asked for.
-  static String _stripNonProse(String body) {
-    final out = StringBuffer();
+  /// The character ranges of every fenced code block and inline code span in
+  /// [body], as offsets into [body] itself — never into a stripped copy, so a
+  /// caller can test a match's own position against them.
+  static List<_Range> _maskedRanges(String body) {
+    final ranges = <_Range>[];
+    final lines = body.split('\n');
+    var offset = 0;
     var inFence = false;
-    for (final line in body.split('\n')) {
+    var fenceStart = 0;
+    for (final line in lines) {
       final trimmed = line.trimLeft();
       if (trimmed.startsWith('```') || trimmed.startsWith('~~~')) {
+        if (inFence) {
+          ranges.add(_Range(fenceStart, offset + line.length));
+        } else {
+          fenceStart = offset;
+        }
         inFence = !inFence;
-        out.writeln();
-        continue;
+      } else if (!inFence) {
+        for (final m in _inlineCode.allMatches(line)) {
+          ranges.add(_Range(offset + m.start, offset + m.end));
+        }
       }
-      out.writeln(inFence ? '' : line.replaceAll(_inlineCode, ''));
+      offset += line.length + 1;
     }
-    return out.toString();
+    // An unterminated fence degrades by masking to the end of the body —
+    // never inventing a link out of an open block, mirroring how frontmatter
+    // parsing degrades elsewhere on this page rather than guessing.
+    if (inFence) ranges.add(_Range(fenceStart, body.length));
+    return ranges;
   }
 
+  static bool _isMasked(int position, List<_Range> ranges) =>
+      ranges.any((r) => position >= r.start && position < r.end);
+
+  static String _stripInlineCode(String s) => s.replaceAll('`', '');
+
   static final _inlineCode = RegExp(r'`[^`\n]*`');
+}
+
+/// A half-open `[start, end)` character range into a page's raw body.
+final class _Range {
+  const _Range(this.start, this.end);
+  final int start;
+  final int end;
 }
 
 /// The reach axis, shared by every read: band selectors, memory type, tag and
