@@ -49,6 +49,27 @@ final class RefUpdate {
   final String report;
 }
 
+/// The outcome of committing **inside** a worktree: the commit that landed, or
+/// nothing and the substrate's own account of why.
+///
+/// **Mirrors [RefUpdate], and replaces it on the acting path.** A commit made
+/// in a worktree attached to a branch moves that branch by happening — there is
+/// no swap to report, so what a caller needs back is the object name and, when
+/// nothing landed, the words a gate wrote. Refusal by a `reference-transaction`
+/// listener is an ordinary outcome and travels as a value; anything else is a
+/// fault and throws. Classification stays above the port: what travels here is
+/// the substrate's report, unread.
+final class WorktreeCommit {
+  const WorktreeCommit({this.commit, this.report = ''});
+
+  /// The commit that landed, or null when nothing did.
+  final Commit? commit;
+
+  /// What the substrate wrote while refusing, verbatim and undecoded of
+  /// meaning. Empty when the commit landed.
+  final String report;
+}
+
 /// The outcome of an unforced worktree checkout: whether the tree now stands
 /// at the requested commit, and what the substrate said when it declined.
 ///
@@ -266,6 +287,51 @@ abstract interface class Git {
   /// worktree at all, [to] no object this repository holds — still throws:
   /// only the dirty-tree refusal is a decided outcome.
   WorktreeCheckout worktreeCheckout(String path, {required Commit to});
+
+  /// Stages the whole of the worktree at [path] and commits it **there** —
+  /// the act, and the reason the acting path is no longer plumbing.
+  ///
+  /// The tree is attached to its branch, so the branch moves because the
+  /// commit happened in it: no tree object written aside, no `commit-tree`,
+  /// no compare-and-swap. What Git does under a `git commit` is one
+  /// transaction — index, `HEAD` and the ref advance together — which is what
+  /// makes the files, the index and the ref incapable of disagreeing
+  /// afterwards.
+  ///
+  /// Empty is allowed. An act whose body deposited nothing is still an act
+  /// somebody took, and refusing it here would put a judgment about payloads
+  /// into the substrate.
+  ///
+  /// [actor] is written as **both** author and committer, forced from the
+  /// value rather than left to Git's identity cascade: the cascade answers
+  /// with whoever owns the checkout, which is a different person from whoever
+  /// acted on every machine an agent runs on.
+  ///
+  /// Returns a [WorktreeCommit]: landed, or refused by a listener at
+  /// `reference-transaction` with its words carried whole.
+  ///
+  /// **A detached tree throws, and the refusal is this port's own** — Git
+  /// commits there quite happily, advancing that tree's private HEAD while no
+  /// ref holds the object at all. That is an act orphaned at birth, reported
+  /// as a success, so the attachment is checked before anything is staged. A
+  /// path that is no worktree of ours throws for the ordinary reason.
+  WorktreeCommit commitInWorktree(
+    String path, {
+    required String message,
+    required Actor actor,
+  });
+
+  /// Puts the worktree at [path] back to exactly [to]: tracked files restored
+  /// and untracked ones removed, index included.
+  ///
+  /// **It destroys uncommitted work, and that is what it is for.** The one
+  /// caller is an act that did not land, undoing what its own body wrote so
+  /// the tree it shares with a person is not left poisoned for the next act.
+  /// It is safe there and nowhere else, because that path proved the tree
+  /// clean before the body ran: everything this discards was deposited by the
+  /// act itself. A caller that has not proved that is destroying somebody's
+  /// afternoon.
+  void worktreeDiscard(String path, {required Commit to});
 
   /// The paths that carry a person's uncommitted work in the worktree at
   /// [path] — tracked and modified, staged, or untracked alike. `git status

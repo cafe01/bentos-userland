@@ -382,6 +382,169 @@ void main() {
     });
   });
 
+  /// The act, at the port. The fake cannot answer any of it: a commit made
+  /// inside a worktree moves the branch through Git's own transaction, and a
+  /// `reference-transaction` hook is the substrate's, not a model's.
+  group('commitInWorktree', () {
+    const actor = Actor.new;
+
+    /// What Git recorded as author and committer of one commit.
+    (String, String) signersOf(String repo, String sha) {
+      final out = Process.runSync(
+        'git',
+        ['-C', repo, 'log', '-1', '--format=%an <%ae>%n%cn <%ce>', sha],
+      ).stdout.toString().trim().split('\n');
+      return (out[0], out[1]);
+    }
+
+    /// A worktree attached to a branch of [repo], standing at its tip.
+    String attached(String repo, String branch) {
+      final gitDir = p.join(repo, '.git');
+      final head = git.revParse(gitDir, 'HEAD')!;
+      git.branch(gitDir, name: branch, startPoint: head);
+      final where = p.join(scratch.path, 'standing-$branch');
+      git.worktreeAdd(gitDir, path: where, at: head, branch: branch);
+      return where;
+    }
+
+    test('the branch moves because the commit happened in the tree', () {
+      final repo = enclosing('acting');
+      final gitDir = p.join(repo, '.git');
+      final where = attached(repo, 'demo');
+      final before = git.revParse(gitDir, 'refs/heads/demo')!;
+      File(p.join(where, 'deposited.txt')).writeAsStringSync('the payload');
+
+      final landed = git.commitInWorktree(
+        where,
+        message: 'one act',
+        actor: actor('alfred', email: 'alfred@bentos'),
+      );
+
+      expect(landed.commit, isNotNull);
+      expect(landed.report, isEmpty);
+      // The ref moved, and to exactly what landed — no swap asked for it.
+      expect(git.revParse(gitDir, 'refs/heads/demo'), landed.commit);
+      expect(git.revParse(gitDir, 'refs/heads/demo'), isNot(before));
+      // And the three agree: files, index and ref, with nothing left over.
+      expect(git.worktreeDirtyPaths(where), isEmpty);
+    });
+
+    test('an empty act lands — the payload is nobody\'s judgment down here',
+        () {
+      final repo = enclosing('empty-act');
+      final gitDir = p.join(repo, '.git');
+      final where = attached(repo, 'demo');
+
+      final landed = git.commitInWorktree(
+        where,
+        message: 'deposited nothing',
+        actor: actor('alfred', email: 'alfred@bentos'),
+      );
+
+      expect(landed.commit, isNotNull);
+      expect(git.revParse(gitDir, 'refs/heads/demo'), landed.commit);
+    });
+
+    test('the actor signs both halves, with the cascade configured against it',
+        () {
+      final repo = enclosing('signed');
+      // The cascade, reachable and answering — which is exactly the machine
+      // owner a being's commits used to be signed as.
+      Process.runSync('git', ['-C', repo, 'config', 'user.name', 'the machine']);
+      Process.runSync(
+          'git', ['-C', repo, 'config', 'user.email', 'owner@workstation']);
+      final where = attached(repo, 'demo');
+      File(p.join(where, 'f.txt')).writeAsStringSync('x');
+
+      final landed = git.commitInWorktree(
+        where,
+        message: 'signed act',
+        actor: actor('alfred', email: 'alfred@bentos'),
+      );
+
+      expect(
+        signersOf(repo, landed.commit!.sha),
+        ('alfred <alfred@bentos>', 'alfred <alfred@bentos>'),
+      );
+    });
+
+    test('a gate at reference-transaction refuses, and the branch stands still',
+        () {
+      final repo = enclosing('gated');
+      final gitDir = p.join(repo, '.git');
+      final where = attached(repo, 'demo');
+      final before = git.revParse(gitDir, 'refs/heads/demo')!;
+      final hooks = Directory(p.join(gitDir, 'hooks'))..createSync(recursive: true);
+      File(p.join(hooks.path, 'reference-transaction'))
+        ..writeAsStringSync('#!/bin/sh\n'
+            '[ "\$1" = prepared ] || exit 0\n'
+            'echo "entity: refused by r4" >&2\n'
+            'exit 1\n')
+        ..setLastModifiedSync(DateTime.now());
+      Process.runSync(
+          'chmod', ['+x', p.join(hooks.path, 'reference-transaction')]);
+      File(p.join(where, 'f.txt')).writeAsStringSync('x');
+
+      final refused = git.commitInWorktree(
+        where,
+        message: 'barred act',
+        actor: actor('alfred', email: 'alfred@bentos'),
+      );
+
+      expect(refused.commit, isNull);
+      expect(refused.report, contains('refused by r4'));
+      expect(git.revParse(gitDir, 'refs/heads/demo'), before);
+    });
+
+    test('a detached tree is refused here, because Git itself would not', () {
+      final repo = enclosing('detached');
+      final gitDir = p.join(repo, '.git');
+      final head = git.revParse(gitDir, 'HEAD')!;
+      final where = p.join(scratch.path, 'loose');
+      git.worktreeAdd(gitDir, path: where, at: head);
+      File(p.join(where, 'f.txt')).writeAsStringSync('x');
+
+      expect(
+        () => git.commitInWorktree(
+          where,
+          message: 'nowhere',
+          actor: actor('alfred', email: 'alfred@bentos'),
+        ),
+        throwsA(isA<StateError>()),
+      );
+      // The point of the refusal: nothing was staged, nothing was written,
+      // and no object was left behind for nobody to hold.
+      expect(git.worktreeDirtyPaths(where), ['f.txt']);
+    });
+  });
+
+  group('worktreeDiscard', () {
+    test('tracked work is restored and untracked work is removed', () {
+      final repo = enclosing('discarding');
+      final gitDir = p.join(repo, '.git');
+      File(p.join(repo, 'kept.txt')).writeAsStringSync('as committed');
+      Process.runSync('git', ['-C', repo, 'add', '.']);
+      Process.runSync('git', [
+        '-C', repo,
+        '-c', 'user.email=gate@bentos',
+        '-c', 'user.name=gate',
+        'commit', '--quiet', '-m', 'base',
+      ]);
+      final head = git.revParse(gitDir, 'HEAD')!;
+      final where = p.join(scratch.path, 'standing');
+      git.worktreeAdd(gitDir, path: where, at: head);
+      File(p.join(where, 'kept.txt')).writeAsStringSync('written by the act');
+      File(p.join(where, 'deposited.txt')).writeAsStringSync('written by the act');
+      Process.runSync('git', ['-C', where, 'add', '.']);
+
+      git.worktreeDiscard(where, to: head);
+
+      expect(File(p.join(where, 'kept.txt')).readAsStringSync(), 'as committed');
+      expect(File(p.join(where, 'deposited.txt')).existsSync(), isFalse);
+      expect(git.worktreeDirtyPaths(where), isEmpty);
+    });
+  });
+
   /// The fake cannot answer this: a refspec is a claim about what the real
   /// substrate does on the next fetch, and only the real one fetches.
   group('a bare clone can answer where it stands', () {

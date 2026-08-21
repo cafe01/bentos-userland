@@ -440,6 +440,76 @@ class FakeGit implements Git {
   }
 
   @override
+  WorktreeCommit commitInWorktree(
+    String path, {
+    required String message,
+    required Actor actor,
+  }) {
+    final gitDir = worktreeRepository(path);
+    if (gitDir == null) throw StateError('no worktree at $path');
+    final branch = heads[path];
+    // A detached tree has no branch to move, and the real substrate says so
+    // rather than committing into nowhere. Modelled, because the acting path
+    // depends on the attachment being real: a double that committed anyway
+    // would certify an act that lands nothing.
+    if (branch == null) {
+      throw StateError('the worktree at $path follows no branch');
+    }
+    // The same gate the swap models, on the path that replaced the swap: the
+    // double has no hooks, so a refusal is asked for. It fires here because
+    // a commit in an attached tree is a ref transaction like any other.
+    final declining = declineNextSwap;
+    if (declining != null) {
+      declineNextSwap = null;
+      return WorktreeCommit(
+        report: '$declining\nfatal: ref updates aborted by hook',
+      );
+    }
+    final repo = _repo(gitDir);
+    final ref = 'refs/heads/$branch';
+    final parent = repo.refs[ref];
+    // Everything on disk, exactly as `add --all` then `commit` does — the
+    // fake has no index, so the tree of the worktree *is* the payload.
+    final tree = writeTree(gitDir, workTree: path);
+    final sha = commitTree(
+      gitDir,
+      tree: tree,
+      parents: [?parent],
+      message: message,
+      actor: actor,
+    );
+    // One transaction in the real substrate: the ref advances and the files
+    // stand at what was just committed, with no window between them.
+    repo.refs[ref] = sha;
+    repo.worktrees[path] = sha;
+    return WorktreeCommit(commit: Commit(sha));
+  }
+
+  @override
+  void worktreeDiscard(String path, {required Commit to}) {
+    final gitDir = worktreeRepository(path);
+    if (gitDir == null) throw StateError('no worktree at $path');
+    final repo = _repo(gitDir);
+    final onTarget = repo.trees[repo.commits[to.sha]?.tree] ?? const {};
+    final dir = Directory(path);
+    // Untracked first: what the target does not name is removed, which is the
+    // half `reset --hard` alone leaves behind.
+    if (dir.existsSync()) {
+      for (final f in dir.listSync(recursive: true).whereType<File>()) {
+        final rel = p.relative(f.path, from: path);
+        if (p.split(rel).first == '.git') continue;
+        if (!onTarget.containsKey(rel)) f.deleteSync();
+      }
+    }
+    for (final entry in onTarget.entries) {
+      final file = File(p.join(path, entry.key))
+        ..parent.createSync(recursive: true);
+      file.writeAsBytesSync(_objects[entry.value]!);
+    }
+    repo.worktrees[path] = to.sha;
+  }
+
+  @override
   List<String> worktreeDirtyPaths(String path) {
     final gitDir = worktreeRepository(path);
     if (gitDir == null) throw StateError('no worktree at $path');

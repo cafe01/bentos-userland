@@ -290,4 +290,87 @@ void main() {
       expect(git.worktreeHead(where), first);
     });
   });
+
+  /// The acting path, in the double — the same claims the real port answers,
+  /// so that everything written above this line is written for one substrate
+  /// and not two.
+  group('commitInWorktree', () {
+    /// A worktree attached to `feature`, standing at its tip.
+    String attached(Commit head) {
+      git.updateRef('/e.git',
+          ref: 'refs/heads/feature', newCommit: head, expected: null);
+      final where = p.join(tmp.path, 'standing');
+      git.worktreeAdd('/e.git', path: where, at: head, branch: 'feature');
+      return where;
+    }
+
+    test('the branch moves because the commit happened in the tree', () {
+      final head = Commit(commitWith({'a.txt': 'one'}));
+      final where = attached(head);
+      File(p.join(where, 'deposited.txt')).writeAsStringSync('the payload');
+
+      final landed = git.commitInWorktree(
+        where,
+        message: Action.messageFor('prompt'),
+        actor: Actor('alfred', email: 'alfred@test.local'),
+      );
+
+      expect(landed.commit, isNotNull);
+      expect(git.revParse('/e.git', 'refs/heads/feature'), landed.commit);
+      expect(git.revParse('/e.git', 'refs/heads/feature'), isNot(head));
+      // Files, ref and record advance together, so nothing is left dirty —
+      // the whole reason the act stopped being a swap from outside.
+      expect(git.worktreeDirtyPaths(where), isEmpty);
+      expect(git.showCommit('/e.git', landed.commit!).parents, [head.sha]);
+    });
+
+    test('a gate refuses, and the branch stands still', () {
+      final head = Commit(commitWith({'a.txt': 'one'}));
+      final where = attached(head);
+      File(p.join(where, 'deposited.txt')).writeAsStringSync('the payload');
+      git.declineNextSwap = 'entity: refused by r4';
+
+      final refused = git.commitInWorktree(
+        where,
+        message: Action.messageFor('prompt'),
+        actor: Actor('alfred', email: 'alfred@test.local'),
+      );
+
+      expect(refused.commit, isNull);
+      expect(refused.report, contains('refused by r4'));
+      expect(git.revParse('/e.git', 'refs/heads/feature'), head);
+    });
+
+    test('a detached tree is refused: an act with no ref to move is orphaned',
+        () {
+      final head = Commit(commitWith({'a.txt': 'one'}));
+      final where = p.join(tmp.path, 'loose');
+      git.worktreeAdd('/e.git', path: where, at: head);
+
+      expect(
+        () => git.commitInWorktree(
+          where,
+          message: Action.messageFor('prompt'),
+          actor: Actor('alfred', email: 'alfred@test.local'),
+        ),
+        throwsA(isA<StateError>()),
+      );
+    });
+  });
+
+  group('worktreeDiscard', () {
+    test('tracked work is restored and untracked work is removed', () {
+      final head = Commit(commitWith({'kept.txt': 'as committed'}));
+      final where = p.join(tmp.path, 'standing');
+      git.worktreeAdd('/e.git', path: where, at: head);
+      File(p.join(where, 'kept.txt')).writeAsStringSync('written by the act');
+      File(p.join(where, 'deposited.txt')).writeAsStringSync('written by the act');
+
+      git.worktreeDiscard(where, to: head);
+
+      expect(File(p.join(where, 'kept.txt')).readAsStringSync(), 'as committed');
+      expect(File(p.join(where, 'deposited.txt')).existsSync(), isFalse);
+      expect(git.worktreeDirtyPaths(where), isEmpty);
+    });
+  });
 }

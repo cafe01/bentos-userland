@@ -171,6 +171,18 @@ final class WatchedGit implements Git {
       _inner.worktreeCheckout(path, to: to);
 
   @override
+  WorktreeCommit commitInWorktree(
+    String path, {
+    required String message,
+    required Actor actor,
+  }) =>
+      _inner.commitInWorktree(path, message: message, actor: actor);
+
+  @override
+  void worktreeDiscard(String path, {required Commit to}) =>
+      _inner.worktreeDiscard(path, to: to);
+
+  @override
   List<String> worktreeDirtyPaths(String path) => _inner.worktreeDirtyPaths(path);
 
   @override

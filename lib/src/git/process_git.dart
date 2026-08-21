@@ -486,6 +486,76 @@ final class ProcessGit implements Git {
   }
 
   @override
+  WorktreeCommit commitInWorktree(
+    String path, {
+    required String message,
+    required Actor actor,
+  }) {
+    // **Attachment is checked before anything is staged, because Git will
+    // not refuse.** A commit in a detached worktree succeeds: the tree's own
+    // HEAD advances, no ref holds the object, and the act is orphaned the
+    // instant anyone looks away — a landing that landed nowhere, reported as
+    // success. Measured, not assumed. So the only refusal there is, is ours.
+    final following = currentBranch(path);
+    if (following == null) {
+      throw StateError('the worktree at $path follows no branch');
+    }
+    // Asked from inside the worktree, like every other member that acts on
+    // one: a linked worktree carries its own index and its own HEAD, and only
+    // Git's discovery from the tree itself finds them.
+    final staged = _run(
+      ['add', '--all', '--force', '--', '.'],
+      workingDirectory: path,
+    );
+    if (staged.exitCode != 0) {
+      throw _failure(const ['add', '--all'], staged);
+    }
+    final result = _run(
+      // `--allow-empty`: an act that deposited nothing is still an act, and
+      // the judgment about payloads is nobody's down here. `--no-verify`
+      // stays off — a gate is the point.
+      ['commit', '--allow-empty', '--message', message],
+      workingDirectory: path,
+      environment: _identity(actor),
+    );
+    if (result.exitCode == 0) {
+      final landed = _run(['rev-parse', 'HEAD'], workingDirectory: path);
+      if (landed.exitCode != 0) {
+        throw _failure(const ['rev-parse', 'HEAD'], landed);
+      }
+      return WorktreeCommit(commit: Commit(_text(landed.stdout).trim()));
+    }
+    // A listener at `reference-transaction` refusing is an ordinary outcome
+    // and travels as a value; Git writes its own line on stderr and the
+    // gate's words beneath it. Everything else — no worktree here, a tree
+    // Git declined to touch — is a fault of ours and must travel as one,
+    // which is why the report is read for the substrate's own marker rather
+    // than assumed.
+    final report = _text(result.stderr).trim();
+    final said = report.isEmpty ? _text(result.stdout).trim() : report;
+    if (!said.contains('aborted by hook')) {
+      throw _failure(const ['commit'], result);
+    }
+    return WorktreeCommit(report: said);
+  }
+
+  @override
+  void worktreeDiscard(String path, {required Commit to}) {
+    // Two halves, because tracked and untracked are two different disks to
+    // Git: `reset --hard` restores what the commit names, and `clean -fd`
+    // removes what it does not. Either alone leaves the tree dirty, and a
+    // tree left dirty is the next act refused.
+    final reset = _run(['reset', '--hard', to.sha], workingDirectory: path);
+    if (reset.exitCode != 0) {
+      throw _failure(['reset', '--hard', to.sha], reset);
+    }
+    final cleaned = _run(['clean', '--force', '-d'], workingDirectory: path);
+    if (cleaned.exitCode != 0) {
+      throw _failure(const ['clean', '--force', '-d'], cleaned);
+    }
+  }
+
+  @override
   List<String> worktreeDirtyPaths(String path) {
     final result = _run(['status', '--porcelain'], workingDirectory: path);
     if (result.exitCode != 0) {
