@@ -212,7 +212,34 @@ abstract interface class Git {
   /// Checks [ref] out at [path] as a worktree of this repository. The object
   /// store is shared, so the history is stored once however many worktrees
   /// stand at once; only the files are copied.
-  void worktreeAdd(String gitDir, {required String path, required Commit at});
+  ///
+  /// **Detached by default** — [at] alone, no ref anyone can move underfoot —
+  /// which is what a private area and a class stage both need: nothing but
+  /// this call may ever advance what they stand on. Pass [branch] and the
+  /// worktree stands **attached** to it instead: `HEAD` a symref, so an
+  /// ordinary commit taken inside moves the branch and the tree together, in
+  /// the one motion Git already means by "checked out". [at] is still the
+  /// commit the caller believes the branch presently holds; the argument
+  /// travelling to Git is the branch's name, and Git resolves its own tip.
+  ///
+  /// Zero, one, or several worktrees may stand attached to the same branch at
+  /// once — Git's own default refuses a second, and every call here overrides
+  /// that safeguard on purpose, because several standing at once is a legal
+  /// shape here, not an accident to be caught. What follows from allowing it
+  /// is on the caller: a branch two attached trees both watch can leave either
+  /// one behind the other, and nothing at this port catches that up for free.
+  void worktreeAdd(
+    String gitDir, {
+    required String path,
+    required Commit at,
+    String? branch,
+  });
+
+  /// The linked worktrees of [gitDir] presently attached to [branch] — the
+  /// substrate's own record of where an instance stands, since nothing above
+  /// this port keeps a register of its own. Zero, one, or several, all
+  /// equally legal; sorted, so a caller reading one deterministically may.
+  List<String> worktreesOn(String gitDir, String branch);
 
   /// Discards the worktree at [path] and deregisters it. Leaving it registered
   /// is the leak the API exists to prevent.

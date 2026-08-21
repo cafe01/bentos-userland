@@ -407,9 +407,43 @@ final class ProcessGit implements Git {
   // ---------------------------------------------------------------- worktrees
 
   @override
-  void worktreeAdd(String gitDir, {required String path, required Commit at}) {
+  void worktreeAdd(
+    String gitDir, {
+    required String path,
+    required Commit at,
+    String? branch,
+  }) {
     Directory(path).parent.createSync(recursive: true);
-    _git(gitDir, ['worktree', 'add', '--detach', '--force', path, at.sha]);
+    // Detached names the commit directly; attached names the branch and lets
+    // Git resolve its own tip, which is what makes the checkout a real
+    // attachment rather than a detached tree that merely happens to sit at
+    // the same sha.
+    final target = branch ?? at.sha;
+    final args = branch == null
+        ? ['worktree', 'add', '--detach', '--force', path, target]
+        : ['worktree', 'add', '--force', path, target];
+    _git(gitDir, args);
+  }
+
+  @override
+  List<String> worktreesOn(String gitDir, String branch) {
+    final result = _run(['--git-dir=$gitDir', 'worktree', 'list', '--porcelain']);
+    if (result.exitCode != 0) return const [];
+    final target = 'refs/heads/$branch';
+    final paths = <String>[];
+    String? current;
+    for (final line in _text(result.stdout).split('\n')) {
+      if (line.startsWith('worktree ')) {
+        current = line.substring('worktree '.length).trim();
+      } else if (line.startsWith('branch ')) {
+        if (current != null && line.substring('branch '.length).trim() == target) {
+          paths.add(current);
+        }
+      } else if (line.isEmpty) {
+        current = null;
+      }
+    }
+    return paths..sort();
   }
 
   @override

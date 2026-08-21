@@ -172,6 +172,33 @@ void main() {
     });
   });
 
+  group('standingAt', () {
+    test('an instance nobody materialized stands nowhere', () {
+      site.run(() {
+        final e = Entity('bentos.mem', from: site.root.path).create(actor: testActor);
+        final instance = e.instance('main')..create();
+        expect(instance.standingAt, isEmpty);
+      });
+    });
+
+    test('reads straight from the substrate, not from a register of its own', () {
+      site.run(() {
+        final e = Entity('bentos.mem', from: site.root.path).create(actor: testActor);
+        final instance = e.instance('main')..create();
+        final gitDir = repositoryOf(site.root.path, e.name);
+        final at = instance.tip!;
+        final where = p.join(site.root.path, 'looker');
+
+        // Standing up the worktree directly at the port, exactly as
+        // [Instance.materialize] does — the point is that [standingAt] answers
+        // from what the substrate itself now shows, never from having been told.
+        site.git.worktreeAdd(gitDir, path: where, at: at, branch: 'main');
+
+        expect(instance.standingAt, [where]);
+      });
+    });
+  });
+
   group('materializedAt', () {
     test('unmaterialized answers absence, never a throw', () {
       site.run(() {

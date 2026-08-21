@@ -123,6 +123,105 @@ void main() {
     );
   });
 
+  group('worktreeAdd', () {
+    test('detached by default: no branch is recorded', () {
+      final head = Commit(commitWith({'a.txt': 'one'}));
+      git.updateRef('/e.git', ref: 'refs/heads/feature', newCommit: head, expected: null);
+      final where = p.join(tmp.path, 'standing');
+
+      git.worktreeAdd('/e.git', path: where, at: head);
+
+      expect(git.currentBranch(where), isNull);
+      expect(git.worktreeHead(where), head);
+    });
+
+    test('given a branch, the worktree stands attached to it', () {
+      final head = Commit(commitWith({'a.txt': 'one'}));
+      git.updateRef('/e.git', ref: 'refs/heads/feature', newCommit: head, expected: null);
+      final where = p.join(tmp.path, 'standing');
+
+      git.worktreeAdd('/e.git', path: where, at: head, branch: 'feature');
+
+      expect(git.currentBranch(where), 'feature');
+      expect(git.worktreeHead(where), head);
+    });
+
+    test('attached, worktreeHead follows the branch past this call — the '
+        'symref reading, not the sha this call happened to pass', () {
+      final head = Commit(commitWith({'a.txt': 'one'}));
+      git.updateRef('/e.git', ref: 'refs/heads/feature', newCommit: head, expected: null);
+      final where = p.join(tmp.path, 'standing');
+      git.worktreeAdd('/e.git', path: where, at: head, branch: 'feature');
+
+      final advanced = Commit(commitWith({'a.txt': 'two'}, parent: head));
+      git.updateRef('/e.git', ref: 'refs/heads/feature', newCommit: advanced, expected: head);
+
+      expect(git.worktreeHead(where), advanced);
+    });
+
+    test('several worktrees may stand attached to the same branch at once',
+        () {
+      final head = Commit(commitWith({'a.txt': 'one'}));
+      git.updateRef('/e.git', ref: 'refs/heads/feature', newCommit: head, expected: null);
+      final first = p.join(tmp.path, 'first');
+      final second = p.join(tmp.path, 'second');
+
+      git.worktreeAdd('/e.git', path: first, at: head, branch: 'feature');
+      git.worktreeAdd('/e.git', path: second, at: head, branch: 'feature');
+
+      expect(git.currentBranch(first), 'feature');
+      expect(git.currentBranch(second), 'feature');
+    });
+  });
+
+  group('worktreesOn', () {
+    test('nothing stands on a branch nobody attached to', () {
+      expect(git.worktreesOn('/e.git', 'feature'), isEmpty);
+    });
+
+    test('a detached worktree at the same commit does not count', () {
+      final head = Commit(commitWith({'a.txt': 'one'}));
+      git.updateRef('/e.git', ref: 'refs/heads/feature', newCommit: head, expected: null);
+      final where = p.join(tmp.path, 'standing');
+      git.worktreeAdd('/e.git', path: where, at: head);
+
+      expect(git.worktreesOn('/e.git', 'feature'), isEmpty);
+    });
+
+    test('names every attached worktree, sorted', () {
+      final head = Commit(commitWith({'a.txt': 'one'}));
+      git.updateRef('/e.git', ref: 'refs/heads/feature', newCommit: head, expected: null);
+      final second = p.join(tmp.path, 'zzz-second');
+      final first = p.join(tmp.path, 'aaa-first');
+
+      git.worktreeAdd('/e.git', path: second, at: head, branch: 'feature');
+      git.worktreeAdd('/e.git', path: first, at: head, branch: 'feature');
+
+      expect(git.worktreesOn('/e.git', 'feature'), [first, second]);
+    });
+
+    test('an unrelated branch is not named', () {
+      final head = Commit(commitWith({'a.txt': 'one'}));
+      git.updateRef('/e.git', ref: 'refs/heads/feature', newCommit: head, expected: null);
+      git.updateRef('/e.git', ref: 'refs/heads/other', newCommit: head, expected: null);
+      final where = p.join(tmp.path, 'standing');
+      git.worktreeAdd('/e.git', path: where, at: head, branch: 'feature');
+
+      expect(git.worktreesOn('/e.git', 'other'), isEmpty);
+    });
+
+    test('removing an attached worktree drops it from the record', () {
+      final head = Commit(commitWith({'a.txt': 'one'}));
+      git.updateRef('/e.git', ref: 'refs/heads/feature', newCommit: head, expected: null);
+      final where = p.join(tmp.path, 'standing');
+      git.worktreeAdd('/e.git', path: where, at: head, branch: 'feature');
+
+      git.worktreeRemove('/e.git', path: where);
+
+      expect(git.worktreesOn('/e.git', 'feature'), isEmpty);
+    });
+  });
+
   group('worktreeCheckout', () {
     test('an unforced move brings the tree to the new commit', () {
       final first = Commit(commitWith({'a.txt': 'one'}));

@@ -1179,9 +1179,17 @@ final class _WatchedGit implements Git {
       _inner.diffTree(gitDir, from: from, to: to);
 
   @override
-  void worktreeAdd(String gitDir,
-          {required String path, required Commit at}) =>
-      _inner.worktreeAdd(gitDir, path: path, at: at);
+  void worktreeAdd(
+    String gitDir, {
+    required String path,
+    required Commit at,
+    String? branch,
+  }) =>
+      _inner.worktreeAdd(gitDir, path: path, at: at, branch: branch);
+
+  @override
+  List<String> worktreesOn(String gitDir, String branch) =>
+      _inner.worktreesOn(gitDir, branch);
 
   @override
   WorktreeCheckout worktreeCheckout(String path, {required Commit to}) =>

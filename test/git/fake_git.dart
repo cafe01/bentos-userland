@@ -324,7 +324,12 @@ class FakeGit implements Git {
   }
 
   @override
-  void worktreeAdd(String gitDir, {required String path, required Commit at}) {
+  void worktreeAdd(
+    String gitDir, {
+    required String path,
+    required Commit at,
+    String? branch,
+  }) {
     final repo = _repo(gitDir);
     final tree = repo.trees[repo.commits[at.sha]?.tree] ?? const {};
     Directory(path).createSync(recursive: true);
@@ -342,6 +347,26 @@ class FakeGit implements Git {
     // about the machine. [writeTree] already skips `.git`, exactly as Git does.
     File(p.join(path, '.git')).writeAsStringSync('gitdir: $gitDir\n');
     repo.worktrees[path] = at.sha;
+    // `heads` already drives [worktreeHead] and [currentBranch] through a
+    // branch name, exactly as the real port's symref does — so recording the
+    // attachment here is what makes a call through this fake self-consistent
+    // rather than needing a test to inject the same fact by hand. Cleared on a
+    // detached add: a path re-added without a branch stands detached again,
+    // and a stale entry from an earlier attach would lie about that.
+    if (branch != null) {
+      heads[path] = branch;
+    } else {
+      heads.remove(path);
+    }
+  }
+
+  @override
+  List<String> worktreesOn(String gitDir, String branch) {
+    final repo = _repo(gitDir);
+    return [
+      for (final path in repo.worktrees.keys)
+        if (heads[path] == branch) path,
+    ]..sort();
   }
 
   @override
@@ -353,6 +378,7 @@ class FakeGit implements Git {
     if (_repo(gitDir).worktrees.remove(path) == null) {
       throw WorktreeNotOurs(path, repository: gitDir);
     }
+    heads.remove(path);
     final dir = Directory(path);
     if (dir.existsSync()) dir.deleteSync(recursive: true);
   }

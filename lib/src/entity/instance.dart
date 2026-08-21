@@ -273,6 +273,13 @@ final class Instance {
     return ProcessResult(child.pid, code, '', '');
   }
 
+  /// Where this instance presently stands as a materialization — zero, one, or
+  /// several paths, all equally legal. Read straight from the substrate's own
+  /// record of worktrees attached to this instance's branch: nothing here
+  /// keeps a register of its own, so this is exactly as current as `git
+  /// worktree list` is.
+  List<String> get standingAt => ambientGit.worktreesOn(_gitDir, id);
+
   /// Puts the instance into the materialized condition: a persistent worktree
   /// someone looks at. Not how an act writes — an act takes its own private
   /// area — and not something an instance needs in order to exist.

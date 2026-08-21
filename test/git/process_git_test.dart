@@ -98,6 +98,119 @@ void main() {
     });
   });
 
+  group('worktreeAdd', () {
+    test('detached by default: no branch, and HEAD is a plain commit',
+        () async {
+      final repo = enclosing('bare-attach');
+      final gitDir = p.join(repo, '.git');
+      final head = git.revParse(gitDir, 'HEAD')!;
+      final where = p.join(scratch.path, 'standing');
+
+      git.worktreeAdd(gitDir, path: where, at: head);
+
+      expect(git.currentBranch(where), isNull);
+      expect(git.worktreeHead(where), head);
+    });
+
+    test('given a branch, the worktree stands attached to it', () async {
+      final repo = enclosing('attach');
+      final gitDir = p.join(repo, '.git');
+      final head = git.revParse(gitDir, 'HEAD')!;
+      Process.runSync('git', ['-C', repo, 'branch', 'feature', head.sha]);
+      final where = p.join(scratch.path, 'standing');
+
+      git.worktreeAdd(gitDir, path: where, at: head, branch: 'feature');
+
+      expect(git.currentBranch(where), 'feature');
+      expect(git.worktreeHead(where), head);
+    });
+
+    test('an ordinary commit inside an attached worktree moves the branch',
+        () async {
+      final repo = enclosing('attach-commit');
+      final gitDir = p.join(repo, '.git');
+      final head = git.revParse(gitDir, 'HEAD')!;
+      Process.runSync('git', ['-C', repo, 'branch', 'feature', head.sha]);
+      final where = p.join(scratch.path, 'standing');
+      git.worktreeAdd(gitDir, path: where, at: head, branch: 'feature');
+
+      File(p.join(where, 'f.txt')).writeAsStringSync('one');
+      Process.runSync('git', ['-C', where, 'add', '.']);
+      Process.runSync('git', [
+        '-C', where,
+        '-c', 'user.email=gate@bentos',
+        '-c', 'user.name=gate',
+        'commit', '--quiet', '-m', 'two',
+      ]);
+
+      final advanced = git.revParse(gitDir, 'refs/heads/feature');
+      expect(advanced, isNot(head));
+      expect(git.worktreeHead(where), advanced);
+    });
+
+    test('several worktrees may stand attached to the same branch at once',
+        () async {
+      final repo = enclosing('two-lookers');
+      final gitDir = p.join(repo, '.git');
+      final head = git.revParse(gitDir, 'HEAD')!;
+      Process.runSync('git', ['-C', repo, 'branch', 'feature', head.sha]);
+      final first = p.join(scratch.path, 'first');
+      final second = p.join(scratch.path, 'second');
+
+      git.worktreeAdd(gitDir, path: first, at: head, branch: 'feature');
+      git.worktreeAdd(gitDir, path: second, at: head, branch: 'feature');
+
+      expect(git.currentBranch(first), 'feature');
+      expect(git.currentBranch(second), 'feature');
+    });
+  });
+
+  group('worktreesOn', () {
+    test('nothing stands on a branch nobody attached to', () async {
+      final repo = enclosing('none-standing');
+      final gitDir = p.join(repo, '.git');
+
+      expect(git.worktreesOn(gitDir, 'feature'), isEmpty);
+    });
+
+    test('a detached worktree at the same commit does not count', () async {
+      final repo = enclosing('detached-only');
+      final gitDir = p.join(repo, '.git');
+      final head = git.revParse(gitDir, 'HEAD')!;
+      Process.runSync('git', ['-C', repo, 'branch', 'feature', head.sha]);
+      final where = p.join(scratch.path, 'standing');
+      git.worktreeAdd(gitDir, path: where, at: head);
+
+      expect(git.worktreesOn(gitDir, 'feature'), isEmpty);
+    });
+
+    test('names every attached worktree, sorted', () async {
+      final repo = enclosing('several-standing');
+      final gitDir = p.join(repo, '.git');
+      final head = git.revParse(gitDir, 'HEAD')!;
+      Process.runSync('git', ['-C', repo, 'branch', 'feature', head.sha]);
+      final second = p.join(scratch.path, 'zzz-second');
+      final first = p.join(scratch.path, 'aaa-first');
+
+      git.worktreeAdd(gitDir, path: second, at: head, branch: 'feature');
+      git.worktreeAdd(gitDir, path: first, at: head, branch: 'feature');
+
+      expect(git.worktreesOn(gitDir, 'feature'), [first, second]);
+    });
+
+    test('an unrelated branch is not named', () async {
+      final repo = enclosing('unrelated-branch');
+      final gitDir = p.join(repo, '.git');
+      final head = git.revParse(gitDir, 'HEAD')!;
+      Process.runSync('git', ['-C', repo, 'branch', 'feature', head.sha]);
+      Process.runSync('git', ['-C', repo, 'branch', 'other', head.sha]);
+      final where = p.join(scratch.path, 'standing');
+      git.worktreeAdd(gitDir, path: where, at: head, branch: 'feature');
+
+      expect(git.worktreesOn(gitDir, 'other'), isEmpty);
+    });
+  });
+
   group('worktreeHead', () {
     test('a plain directory inside a repository holds no tree of anyone’s',
         () async {
