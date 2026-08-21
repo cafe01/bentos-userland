@@ -1,19 +1,22 @@
 import 'dart:io';
 
+import '../action.dart';
 import '../entity_runner.dart';
+import '../instance.dart';
 import 'entity_command.dart';
 
 /// `entity act <coord> <action> [--actor <a>] [--say <phrase>] -- <command>` —
-/// the porcelain of the whole write: the bracket with the command as its body,
-/// so an actor script is its own body and nothing else.
+/// the porcelain of the whole write: the command is the body, so an actor
+/// script is its own body and nothing else.
 ///
-/// It opens a private area at the tip, runs the command in it, commits under
-/// the declared noun with compare-and-swap, and releases. **It does not invoke
-/// the entity** — nothing executes an object whose state changes by being
-/// written to. The command is the caller's own write.
+/// It runs the command **in the instance's own worktree** — stood up at the
+/// convention address if none stands — and commits there, which is how the
+/// branch moves. **It does not invoke the entity**: nothing executes an object
+/// whose state changes by being written to. The command is the caller's own
+/// write.
 ///
-/// Exits 3 when the act was refused: the ref moved, or a listener at
-/// `.attempted` said no. Both are ordinary, and a caller retries by re-reading.
+/// It refuses a tree carrying uncommitted work, and restores the tree when the
+/// act does not land. Exits 3 when a listener at `.attempted` said no.
 final class ActCommand extends EntityCommand {
   ActCommand(super.cli) {
     takesActor();
@@ -42,21 +45,21 @@ final class ActCommand extends EntityCommand {
       usageException('act: the body is required — `-- <command>`');
     }
 
-    // Before the area is opened: an act nobody signed is not sayable, and
+    // Before anything stands up: an act nobody signed is not sayable, and
     // refusing after a worktree exists would make the refusal cost something.
     final actor = statedActor();
-    final result = await cli.instanceAt(coordinate(), place: placeOption).act(
+    final result = await _reporting(() => cli.instanceAt(coordinate(), place: placeOption).act(
       rest[1],
-      (workspace) async {
-        // The body writes in the private area and nowhere else: it is handed
-        // the directory as its own, which is what keeps two acting bodies from
-        // corrupting each other one floor below the swap.
+      (area) async {
+        // The body writes in the instance's own tree, and its whole content is
+        // the payload: the act refused to start against a tree carrying
+        // anything else, so what stands here afterwards is this act's alone.
         final Process ran;
         try {
           ran = await Process.start(
             written.first,
             written.skip(1).toList(),
-            workingDirectory: workspace.directory.path,
+            workingDirectory: area.directory.path,
           );
         } on ProcessException catch (e) {
           // The body could not be started at all — almost always a relative
@@ -66,7 +69,7 @@ final class ActCommand extends EntityCommand {
           // was never told where their command was looked for. Told plainly it
           // is one edit; left as a raw ProcessException it is a stack trace
           // about a Dart library the reader did not open.
-          throw BodyNotStartable(written.first, workspace.directory.path, e);
+          throw BodyNotStartable(written.first, area.directory.path, e);
         }
         // Both of the body's streams are the operator's to read, and neither
         // is ours to publish: stdout here belongs to the landed sha, so that
@@ -81,8 +84,40 @@ final class ActCommand extends EntityCommand {
       },
       actor: actor,
       say: argResults!['say'] as String?,
-    );
+    ));
+    if (result case Barred(:final discarded) when discarded.isNotEmpty) {
+      // Nothing landed, so the tree went back to where it stood — and what
+      // that cost is said out loud. A silent deletion of somebody's output is
+      // how a tool earns distrust it never recovers from.
+      cli.err.writeln('entity: the act did not land, so its tree was restored '
+          'and these were discarded:');
+      for (final path in discarded) {
+        cli.err.writeln('  $path');
+      }
+    }
     cli.report(result);
+  }
+
+  /// Runs the act, and turns an [ActUnwound] back into the body's own failure
+  /// after saying what the restore destroyed.
+  ///
+  /// The cause is what the caller must see — their command's exit code, or the
+  /// unstartable path — and the discarded list is the part only the act can
+  /// report. Rethrowing the cause keeps every number this coreutil answers
+  /// with exactly as it was.
+  Future<ActionResult> _reporting(Future<ActionResult> Function() acting) async {
+    try {
+      return await acting();
+    } on ActUnwound catch (unwound) {
+      if (unwound.discarded.isNotEmpty) {
+        cli.err.writeln('entity: the act did not land, so its tree was '
+            'restored and these were discarded:');
+        for (final path in unwound.discarded) {
+          cli.err.writeln('  $path');
+        }
+      }
+      throw unwound.cause;
+    }
   }
 }
 
@@ -163,9 +198,10 @@ final class ReadCommand extends EntityCommand {
 /// `entity materialize <coord> [--at <path>]` — the persistent worktree, for a
 /// face.
 ///
-/// It belongs to whoever looks, necessarily lags, and must be refreshed before
-/// anything writes through it. An acting body never uses one: it takes a
-/// private area of its own, which is what keeps a race honest.
+/// **The same tree an act commits in**, attached to the instance's branch and
+/// standing at the convention address unless `--at` names another. Idempotent:
+/// a tree already standing there is left alone, because someone may be looking
+/// at it.
 final class MaterializeCommand extends EntityCommand {
   MaterializeCommand(super.cli) {
     argParser.addOption('at', help: 'Where the worktree stands.', valueHelp: 'path');
@@ -233,6 +269,13 @@ final class RefreshCommand extends EntityCommand {
     final standing = cli.instanceAt(coordinate(), place: placeOption);
     final face = standing.materialization(path);
     final outcome = face.refresh();
+    if (outcome.moved && outcome.report.isNotEmpty) {
+      // Moved nothing and said so. A verb that passes in silence tells the
+      // caller their reason for typing it was handled, and the one reason a
+      // person refreshes an attached tree — a fetch left it behind — is the
+      // one this cannot handle.
+      cli.err.writeln('entity: ${outcome.report}');
+    }
     if (!outcome.moved) {
       // A decided refusal, not a stumble: the tree carries changes the move
       // would overwrite, and it is left exactly as it stands. Barred, like

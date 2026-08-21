@@ -59,17 +59,19 @@ final class Materialization {
   /// name is what makes *is this tree the one this repository stood up* a
   /// question about possession rather than about neighbourhood.
   ///
-  /// **And null when the tree follows a branch**, which is not a fussy case but
-  /// the one that made this member lie. `HEAD` is then a symref: it resolves
-  /// through the ref, so the instant an act moves that ref it answers with the
-  /// *new tip* while the index and the files still stand at the commit they
-  /// were checked out at. The answer would be a fact about the ref wearing the
-  /// shape of a fact about the files — plausible, and equal to whatever it is
-  /// compared against, which is the worst kind of wrong. Unknown is the honest
-  /// answer, and unknown is not current.
+  /// **A tree that follows a branch answers with that branch's tip**, which is
+  /// the ordinary case now that an act commits in the instance's own tree: the
+  /// commit moves index, `HEAD` and ref in one transaction, so the three
+  /// cannot disagree and `HEAD` is a fact about the files again.
+  ///
+  /// The one gap left is a ref moved from **outside** the tree — a fetch
+  /// bringing a remote's commits — after which `HEAD` reads the new tip while
+  /// the files still stand where they were. That lag is byte-identical to a
+  /// person's own reversed edits, and only the pre-fetch tip tells them apart:
+  /// [Instance.fetch] holds it and nothing here does. So it is repaired there,
+  /// and this does not pretend to answer for it.
   Commit? get at {
     if (!_ours) return null;
-    if (follows != null) return null;
     return ambientGit.worktreeHead(directory.path);
   }
 
@@ -110,16 +112,10 @@ final class Materialization {
   ///   deleting a stranger's work, and the caller who put those files there is
   ///   the only one who knows what they are.
   ///
-  /// And a fourth, which declines rather than moves: **a tree of ours that
-  /// [follows] a branch**. It cannot be caught up honestly, and the reason is
-  /// not squeamishness. An act moves the very ref that tree's `HEAD` points at,
-  /// so by the time anyone asks, the index and the files sit one commit back
-  /// while `HEAD` already reads as the tip. A checkout at that point does not
-  /// repair it: Git reads the gap between the stale index and the moved `HEAD`
-  /// as *the person's own staged work* and carries it forward faithfully —
-  /// measured, not assumed. Our corruption and a person's real staged edit are
-  /// the same bytes, and nothing downstream can tell them apart. So this
-  /// refuses, every time, and names the cure instead of guessing at one.
+  /// A tree of ours that **follows a branch** is the ordinary instance now,
+  /// and it declines only when it carries uncommitted work — same ledger
+  /// reason an act refuses one. Clean, it already stands at its tip and this
+  /// says so rather than passing in silence.
   ///
   /// Returns the [WorktreeCheckout] the unforced move produced when the tree
   /// stood ours and behind — `moved: true` for every other path, since
@@ -136,14 +132,32 @@ final class Materialization {
     if (_ours) {
       final branch = follows;
       if (branch != null) {
+        // The guard that used to stand here refused every attached tree,
+        // because attached meant *somebody detached this by hand*. It is now
+        // the ordinary condition of an instance, and a guard shaped by a
+        // rarity that became the norm refuses the whole population.
+        final carried = ambientGit.worktreeDirtyPaths(directory.path);
+        if (carried.isNotEmpty) {
+          return WorktreeCheckout(
+            moved: false,
+            report: 'the tree at ${directory.path} carries uncommitted work, '
+                'and catching it up would overwrite it:\n  '
+                '${carried.join('\n  ')}\n  '
+                'commit it or set it aside first: git -C ${directory.path} status',
+          );
+        }
+        // **Loud, because there is genuinely nothing to do.** A commit in this
+        // tree moved the ref by happening, so a clean attached tree already
+        // stands at its tip — and someone who typed `refresh` because a fetch
+        // left them behind must not walk away believing that was handled.
         return WorktreeCheckout(
-          moved: false,
-          report: 'the tree at ${directory.path} follows the branch '
-              "'$branch'. A materialization of ours stands detached, because "
-              'an act moves the ref HEAD would point at — leaving the index '
-              'and the files behind with nothing to show for it. Detach it at '
-              'the line, and check that nothing in it was lost: git -C '
-              '${directory.path} status',
+          moved: true,
+          report: 'nothing to do: the tree at ${directory.path} follows '
+              "'$branch' and stands at ${tip.short}, because an act commits "
+              'here and moves the ref by doing so. A tree left behind by a '
+              'fetch is not repaired here — only the pre-fetch tip tells that '
+              "lag from a person's own edits, and `entity fetch` is what holds "
+              'it.',
         );
       }
       final standing = ambientGit.worktreeHead(directory.path);

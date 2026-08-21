@@ -217,11 +217,59 @@ final class Diverged extends ActionResult {
 
 /// A gate at `.attempted` said no. The same act will be barred again.
 final class Barred extends ActionResult {
-  const Barred(this.reason);
+  const Barred(this.reason, {this.discarded = const []});
 
   /// What the gate said. The substrate aborts a transaction whole and names no
   /// culprit, so this is the only account of why, and it comes from whoever
   /// refused. It carries no tips at all — a bar is not about the ref, and the
   /// guess that thought it was printed `expected b71043a, found b71043a`.
   final String reason;
+
+  /// The paths the act deposited and the restore then destroyed — its own
+  /// work and nobody else's, which is exactly what the clean-tree refusal
+  /// upstream guarantees.
+  ///
+  /// **Carried because the destruction must be sayable.** An act that does not
+  /// land puts the tree back, or the deposit stands there refusing every
+  /// later act; the alternative to restoring is not *keeping the work*, it is
+  /// poisoning the instance. What a caller is owed is the list, printed —
+  /// reproducible output is cheap and a silent deletion is not.
+  final List<String> discarded;
 }
+
+/// The reason a gate gave, or null when the refusal was not a gate's at all.
+///
+/// Git's own line is the discriminator and the gate's words are what a person
+/// needs: the shim names the registration that refused, and beneath it stands
+/// whatever the refusing body wrote. Git's `fatal:` is dropped — it says *a
+/// hook*, which the sentence already says better.
+///
+/// **It reads a report and never the mechanism that produced one**, which is
+/// why the acting path could change underneath it without touching a line: a
+/// refused swap and a refused commit-in-worktree are the same words from the
+/// same hook.
+String? gateRefusalIn(String report) {
+  if (!report.contains(_abortedByHook)) return null;
+  final words = report
+      .split('\n')
+      .map((line) => line.trim())
+      .where((line) => line.isNotEmpty && !line.contains(_abortedByHook))
+      // Our own marker, and only ours: the shim writes `entity:` because it is
+      // speaking into Git's stream where nothing else would name the program.
+      // Here the program is already named by whoever prints this, and carrying
+      // it through reads `entity: refused — entity: refused by r4`.
+      .map((line) => line.startsWith(_ourMarker)
+          ? line.substring(_ourMarker.length).trim()
+          : line)
+      .toList();
+  if (words.isEmpty) return 'refused by a gate';
+  return words.join('\n  ');
+}
+
+/// What Git writes when a `reference-transaction` hook exits non-zero at
+/// `prepared`. A string, because it is the substrate's own report and there is
+/// nothing else to read it by.
+const String _abortedByHook = 'aborted by hook';
+
+/// How the shim names itself when it writes into Git's stream.
+const String _ourMarker = 'entity:';

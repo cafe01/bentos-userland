@@ -151,46 +151,91 @@ final class Instance {
     return ambientGit.lsTree(_gitDir, at: standing, path: path);
   }
 
-  /// Takes one action: opens a private area at the current tip, runs [body] to
-  /// write into it, commits under the noun [name] with compare-and-swap, and
-  /// releases the area in a `finally`. [say] rides along as the act's legible
-  /// sentence, stored and never interpreted.
+  /// Takes one action: **writes in the instance's own worktree and commits
+  /// there**. The branch moves because the commit happened in it — no private
+  /// area, no tree written aside, no compare-and-swap.
   ///
-  /// **The only safe path.** Dart has no destructor, so an exposed lifetime is
-  /// a leak by construction — an orphaned directory and a worktree entry left
-  /// registered. The bracket owns the lifetime; [beginAct] exists for the one
-  /// shape a callback cannot serve.
+  /// The worktree is stood up at the convention address if none stands, and
+  /// it is attached to this instance's branch: a commit in a detached tree
+  /// advances nothing anyone holds, which is why [Git.commitInWorktree]
+  /// refuses one.
+  ///
+  /// **It refuses a tree that carries uncommitted work**, with
+  /// [TreeCarriesWork]. The commit *is* the action, so its diff must be
+  /// exactly what this act deposited; a tree carrying somebody's unrelated
+  /// edits would put their work into the ledger under this act's name, which
+  /// is silent corruption of the one thing the product is. A person who edited
+  /// by hand and then acted is doing two things at once, and the refusal says
+  /// so. It is thrown and never returned: nothing was attempted, and an
+  /// absence is not an outcome of an act.
+  ///
+  /// That refusal is load-bearing twice. Because the tree was proved clean
+  /// before [body] ran, **everything standing afterwards was deposited by this
+  /// act** — so an act that does not land can restore the tree without
+  /// destroying anyone's afternoon, and it does. Leaving the deposit standing
+  /// would refuse the *next* act, for everyone, forever.
   ///
   /// **It does not invoke the entity.** Nothing executes an object whose state
-  /// changes by being written to: the bracket frames *the caller's own write*,
-  /// and the declared [name] is what makes it an event anyone can arm on.
+  /// changes by being written to: this frames *the caller's own write*, and the
+  /// declared [name] is what makes it an event anyone can arm on.
   ///
-  /// Asynchronous by both clauses of the law — it runs a body that is not ours,
-  /// and it spawns processes. Returns [Landed] or [Refused]; a lost race is a
-  /// value, never a throw.
+  /// Returns [Landed] or [Barred]. **[Contested] is no longer reachable from
+  /// an act** — there is no swap to lose — and stays in the type because
+  /// [fetch] still produces it. A [body] that throws unwinds as [ActUnwound],
+  /// carrying the cause and what the restore discarded.
   ///
   /// **[actor] is required**, so an act with no stated actor is not
-  /// expressible. The concept was always here — what was wrong is that it could
-  /// be left out, and what filled it then was the machine's own git cascade.
+  /// expressible. What filled it when it could be left out was the machine's
+  /// own git cascade — whoever owns the checkout, which is a different person
+  /// from whoever acted.
   Future<ActionResult> act(
     String name,
-    FutureOr<void> Function(Workspace) body, {
+    FutureOr<void> Function(Materialization) body, {
     required Actor actor,
     String? say,
   }) async {
-    final workspace = beginAct();
+    final gitDir = _gitDir;
+    final area = materialize();
+    final path = area.directory.path;
+    final standing = ambientGit.revParse(gitDir, ref)!;
+    final carried = ambientGit.worktreeDirtyPaths(path);
+    if (carried.isNotEmpty) throw TreeCarriesWork(path, carried);
     try {
-      await body(workspace);
-      return workspace.commit(name, actor: actor, say: say);
-    } finally {
-      workspace.release();
+      await body(area);
+    } catch (cause) {
+      // The body failed, so nothing lands — and what it wrote must not stay
+      // behind to refuse the next act. Read before discarding: the paths are
+      // the only account anyone gets of what this cost.
+      final discarded = ambientGit.worktreeDirtyPaths(path);
+      ambientGit.worktreeDiscard(path, to: standing);
+      throw ActUnwound(cause, directory: path, discarded: discarded);
     }
+    final outcome = ambientGit.commitInWorktree(
+      path,
+      message: Action.messageFor(name, say: say),
+      actor: actor,
+    );
+    final landed = outcome.commit;
+    if (landed != null) {
+      return Landed(Action(gitDir: gitDir, ref: ref, commit: landed));
+    }
+    final discarded = ambientGit.worktreeDirtyPaths(path);
+    ambientGit.worktreeDiscard(path, to: standing);
+    return Barred(
+      gateRefusalIn(outcome.report) ?? 'refused by a gate',
+      discarded: discarded,
+    );
   }
 
-  /// Opens the private area with the obligation attached — the piece of [act],
-  /// for callers that cannot be a callback: the coreutil's plumbing family is
-  /// three separate processes and no closure spans them. Whoever calls this
-  /// owes `commit` and `release`.
+  /// Opens the private area with the obligation attached — the piece of the
+  /// **old** acting path, for callers that cannot be a callback.
+  ///
+  /// **Retired in place, and not by this slice.** [act] no longer comes
+  /// through here: it commits in the instance's own attached worktree. What is
+  /// left standing is the plumbing family and the chat seam, and both come out
+  /// with [Workspace] itself. Until they do, a caller that opens one of these
+  /// while a materialization stands attached lands a ref move from *outside* a
+  /// tree that follows it — the corruption the new path exists to remove.
   Workspace beginAct() {
     final gitDir = _gitDir;
     final at = ambientGit.revParse(gitDir, ref);
@@ -280,15 +325,46 @@ final class Instance {
   /// worktree list` is.
   List<String> get standingAt => ambientGit.worktreesOn(_gitDir, id);
 
-  /// Puts the instance into the materialized condition: a persistent worktree
-  /// someone looks at. Not how an act writes — an act takes its own private
-  /// area — and not something an instance needs in order to exist.
+  /// Where this instance's worktree stands when nobody names a path — the
+  /// **convention address**, `instances/<id>` inside the installation, sibling
+  /// of the class's own `genesis/`.
+  ///
+  /// A convention and not a temporary: an act commits in this tree, so the
+  /// address is somewhere a person opens, greps and edits. What used to stand
+  /// here was a freshly-named directory under `faces/` — the right shape for a
+  /// tree nobody addresses, and the wrong one for the tree an instance *is*.
+  String get conventionAddress =>
+      p.join(p.dirname(_gitDir), instancesDirName, id);
+
+  /// The directory instances stand in, beside the class's own stage.
+  static const String instancesDirName = 'instances';
+
+  /// Puts the instance into the materialized condition: a worktree **attached
+  /// to this instance's branch**, at [at] or at the convention address.
+  ///
+  /// **Attached, and that is the whole of how an act lands.** A commit made in
+  /// this tree moves the branch by happening; a detached tree would advance its
+  /// own private `HEAD` and leave the object held by nobody. So the tree a
+  /// person edits in and the tree an act commits in are one tree — which is
+  /// what makes [act]'s refusal of uncommitted work necessary rather than
+  /// fussy.
+  ///
+  /// Idempotent where the tree is already ours and already follows this
+  /// instance: it is left exactly as it stands, because someone may be looking
+  /// at it. A tree of ours standing **detached** there is refused rather than
+  /// re-attached — it is residue of the old acting path, and re-attaching it
+  /// silently would carry whatever it holds into the ledger.
   Materialization materialize({String? at}) {
     final gitDir = _gitDir;
     final standing = ambientGit.revParse(gitDir, ref);
     if (standing == null) throw StateError('not born: $this');
-    final path = at ?? (_privateArea(gitDir, 'faces', 'face-')..deleteSync()).path;
-    ambientGit.worktreeAdd(gitDir, path: path, at: standing);
+    final path = at ?? conventionAddress;
+    if (ambientGit.worktreeRepository(path) == gitDir) {
+      final follows = ambientGit.currentBranch(path);
+      if (follows != id) throw WorktreeUnattached(path, '$this', follows: follows);
+      return materialization(path);
+    }
+    ambientGit.worktreeAdd(gitDir, path: path, at: standing, branch: id);
     return materialization(path);
   }
 
@@ -367,6 +443,87 @@ final class Instance {
 
   @override
   String toString() => '${entity.name}:$id';
+}
+
+/// [Instance.act] was asked to act in a worktree that already carries
+/// uncommitted work.
+///
+/// **Not an [ActionResult]**: nothing was attempted, no gate was asked and no
+/// ref moved, so this is an absence rather than an outcome — and an absence
+/// never travels as a value in that type.
+///
+/// The commit *is* the action, so its diff must be exactly what the act
+/// deposited. A tree carrying somebody's unrelated edits would land their work
+/// in the ledger under this act's name. Whoever hit this is doing two things
+/// at once, and the cure is theirs to choose: commit what they wrote, or put
+/// it aside.
+final class TreeCarriesWork implements Exception {
+  const TreeCarriesWork(this.directory, this.paths);
+
+  /// The worktree the act would have committed in.
+  final String directory;
+
+  /// What stands there: modified, staged and untracked alike.
+  final List<String> paths;
+
+  @override
+  String toString() => [
+        'the tree at $directory carries uncommitted work, '
+            'and an act commits the whole of it',
+        ...paths.map((path) => '  $path'),
+        '  commit it or set it aside first: git -C $directory status',
+      ].join('\n');
+}
+
+/// A worktree stands at the address an act would use, and it does **not**
+/// follow the instance — the residue of the old acting path, or a tree
+/// somebody detached by hand.
+///
+/// Refused rather than re-attached: whatever it holds would be carried into
+/// the ledger by the first act that came through, and the tree belongs to
+/// whoever stood it up.
+final class WorktreeUnattached implements Exception {
+  const WorktreeUnattached(this.directory, this.instance, {this.follows});
+
+  final String directory;
+
+  /// The instance the tree was expected to follow.
+  final String instance;
+
+  /// What it follows instead, or null when it stands detached.
+  final String? follows;
+
+  @override
+  String toString() => [
+        'the tree at $directory does not follow $instance '
+            '(${follows == null ? 'detached' : "follows '$follows'"})',
+        '  an act commits in the instance\'s own tree, and a tree that follows '
+            'something else would land its content under this act',
+        '  release it or attach it at the line: git -C $directory status',
+      ].join('\n');
+}
+
+/// An act's [body] threw, so nothing landed — and what the body had already
+/// written was discarded to put the tree back where it stood.
+///
+/// **The cause travels whole**, because it is the caller's own error and the
+/// only thing that explains the failure; what this adds is the account of the
+/// destruction, which nobody else can give.
+final class ActUnwound implements Exception {
+  const ActUnwound(this.cause, {required this.directory, required this.discarded});
+
+  /// What the body threw.
+  final Object cause;
+
+  /// The tree that was restored.
+  final String directory;
+
+  /// The paths the restore destroyed — the act's own deposit, guaranteed by
+  /// the clean-tree refusal that ran before the body did.
+  final List<String> discarded;
+
+  @override
+  String toString() => 'the act unwound and its tree was restored: $cause';
 }
 
 /// A remote carries no such instance. **Not an [ActionResult]**: no gate was
