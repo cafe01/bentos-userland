@@ -43,6 +43,14 @@ final class Mem {
         valueHelp: 'place',
       )
       ..argParser.addOption(
+        'age',
+        help: 'How a page states its age: stamp (a date, the default and the '
+            'only stable one), relative (against the clock now), none.',
+        valueHelp: 'mode',
+        allowed: ['stamp', 'relative', 'none'],
+        defaultsTo: 'stamp',
+      )
+      ..argParser.addOption(
         'actor',
         help: 'Who is writing: "Name <addr>". Required by every verb that '
             'writes — a page landed under whoever owns this machine is a '
@@ -123,6 +131,18 @@ final class Mem {
   }
 }
 
+/// How a page states its age — **a rendering register of the whole tool, not
+/// an argument of one verb**, so `survey`, `recall` and `walk` all obey one
+/// switch.
+///
+/// [stamp] is the default because this tool's largest reader is a mind being
+/// staged: a walk's output is a prompt prefix, billed on every turn of the
+/// life it opens, and a clock-derived byte anywhere in it invalidates the
+/// cache of everything after it for no change in the bank. A date changes
+/// only when the page does. [relative] is the reader's mode at a terminal,
+/// and it is the only one that consults the clock at all.
+enum AgeRender { stamp, relative, none }
+
 /// Nobody stated who is writing, or what they stated is not `Name <addr>`.
 ///
 /// **A refusal with a name, never a fallback**: a fallback here produces a
@@ -196,6 +216,13 @@ abstract base class MemCommand extends Command<void> with PositionalGrammar {
     }
     return Actor(who, email: address);
   }
+
+  /// `--age`, the tool's rendering register for [Page.modified].
+  AgeRender ageRender() => switch (globalResults?['age'] as String?) {
+        'relative' => AgeRender.relative,
+        'none' => AgeRender.none,
+        _ => AgeRender.stamp,
+      };
 
   /// Resolves the named bank from [effectiveVantage]. A miss prints the
   /// refusal on the diagnostic channel (R2.1.1), marks the run refused, and
@@ -359,6 +386,7 @@ final class SurveyCommand extends MemCommand with SelectorArgs {
 
     cli.out.add(_renderSurvey(
       sliced,
+      age: ageRender(),
       truncated: offset > 0 || (limit != null && offset + limit < total),
       from: offset + 1,
       to: offset + sliced.length,
@@ -416,7 +444,7 @@ final class RecallCommand extends MemCommand with SelectorArgs {
         );
         return;
       }
-      cli.out.add(_renderRecall(matched));
+      cli.out.add(_renderRecall(matched, age: ageRender()));
       final words = matched.fold(0, (sum, p) => sum + _wordCount(p.body));
       cli.diagnostics.add(
         'mem: ${bank.name} — ${matched.length} pages, $words words\n',
@@ -446,7 +474,7 @@ final class RecallCommand extends MemCommand with SelectorArgs {
       return;
     }
 
-    cli.out.add(_renderRecall(found));
+    cli.out.add(_renderRecall(found, age: ageRender()));
     final words = found.fold(0, (sum, p) => sum + _wordCount(p.body));
     cli.diagnostics.add(
       'mem: ${bank.name} — ${found.length} pages, $words words\n',
@@ -507,7 +535,11 @@ final class WalkCommand extends MemCommand with SelectorArgs {
         'mem: no pages reached from ${entries.map((e) => e.toString()).join(', ')}.\n',
       );
     } else {
-      cli.out.add(_renderComposition(walked.reached, home: entries.first.bank));
+      cli.out.add(_renderComposition(
+        walked.reached,
+        home: entries.first.bank,
+        age: ageRender(),
+      ));
     }
 
     cli.diagnostics.add(
@@ -934,6 +966,7 @@ const _rule = '─────────────────────�
 
 String _renderSurvey(
   List<Page> pages, {
+  required AgeRender age,
   required bool truncated,
   required int from,
   required int to,
@@ -954,7 +987,7 @@ String _renderSurvey(
       buf.writeln(type.name);
       lastType = type;
     }
-    buf.writeln('  ${_cueLine(page, threshold)}');
+    buf.writeln('  ${_cueLine(page, threshold, age)}');
   }
   buf
     ..writeln()
@@ -962,14 +995,15 @@ String _renderSurvey(
   return buf.toString();
 }
 
-String _cueLine(Page page, int threshold) {
+String _cueLine(Page page, int threshold, AgeRender age) {
   final f = page.fields;
   final core = StringBuffer('${f.attention.render()}  ${page.topic}');
   if (f.gist != null && f.gist!.isNotEmpty) core.write(' — ${f.gist}');
 
   final cluster = <String>[];
   if (f.tags.isNotEmpty) cluster.add(f.tags.map((t) => '#$t').join(' '));
-  if (f.modified != null) cluster.add('·${_relativeAge(f.modified!)}');
+  final stated = _statedAge(f.modified, age);
+  if (stated != null) cluster.add('·$stated');
   final words = _wordCount(page.body);
   if (words >= threshold) cluster.add('[${words}w]');
   if (f.assumptions.isNotEmpty) {
@@ -978,14 +1012,14 @@ String _cueLine(Page page, int threshold) {
   return cluster.isEmpty ? core.toString() : '$core  ${cluster.join('  ')}';
 }
 
-String _renderRecall(List<Page> pages) {
+String _renderRecall(List<Page> pages, {required AgeRender age}) {
   final buf = StringBuffer();
   for (var i = 0; i < pages.length; i++) {
     if (i > 0) buf.writeln();
     final page = pages[i];
     buf
       ..writeln(_rule)
-      ..writeln(_recallTitle(page));
+      ..writeln(_recallTitle(page, age));
     if (page.body.isNotEmpty) {
       buf
         ..writeln()
@@ -1012,14 +1046,18 @@ const _compositionStale = Duration(days: 90);
 /// full (`mem://<bank>/<topic>`) for a page reached in any other. A single-bank
 /// composition therefore carries no bank anywhere, while a crossed seam stays
 /// visible on the page that crossed it.
-String _renderComposition(List<Reached> reached, {required String home}) {
+String _renderComposition(
+  List<Reached> reached, {
+  required String home,
+  required AgeRender age,
+}) {
   final buf = StringBuffer();
   for (var i = 0; i < reached.length; i++) {
     if (i > 0) buf.writeln();
     final page = reached[i].page;
     final address = reached[i].address;
     final label = address.bank == home ? address.topic : address.toString();
-    final vitals = _compositionVitals(page);
+    final vitals = _compositionVitals(page, age);
     buf.writeln('┌─ $label');
     if (page.body.isNotEmpty) buf.writeln(page.body);
     buf.writeln(vitals.isEmpty ? '└─ $label' : '└─ $label  ·  ${vitals.join('  ·  ')}');
@@ -1029,7 +1067,7 @@ String _renderComposition(List<Reached> reached, {required String home}) {
 
 /// Silence is the healthy state: a hot page of ordinary weight and ordinary
 /// age, with nothing marked on it, closes on its address alone.
-List<String> _compositionVitals(Page page) {
+List<String> _compositionVitals(Page page, AgeRender age) {
   final f = page.fields;
   final vitals = <String>[];
 
@@ -1046,11 +1084,20 @@ List<String> _compositionVitals(Page page) {
   final words = _wordCount(page.body);
   if (words >= _compositionHeavyWords) vitals.add('${words}w');
 
-  final modified = f.modified;
-  if (modified != null) {
-    final age = DateTime.now().difference(modified);
-    if (age < _compositionFresh || age > _compositionStale) {
-      vitals.add('${_relativeAge(modified)} old');
+  // A stamp is stated unconditionally: the freshness gate below is itself
+  // clock-derived — it drops a page's vital between two wakes with nothing in
+  // the bank changed — so it lives only where the clock is already being read.
+  // The cue it carried is not lost, it moves to the reader, who holds the
+  // turn's own stamp and can do the arithmetic for free.
+  final stated = _statedAge(f.modified, age);
+  if (stated != null) {
+    if (age != AgeRender.relative) {
+      vitals.add(stated);
+    } else {
+      final since = DateTime.now().difference(f.modified!);
+      if (since < _compositionFresh || since > _compositionStale) {
+        vitals.add('$stated old');
+      }
     }
   }
 
@@ -1061,14 +1108,16 @@ List<String> _compositionVitals(Page page) {
   return vitals;
 }
 
-String _recallTitle(Page page) {
+String _recallTitle(Page page, AgeRender age) {
   final f = page.fields;
+  final stated = _statedAge(f.modified, age);
   final parts = <String>[
     page.topic,
     f.type.name,
     'a:${f.attention.render()}',
     '${_wordCount(page.body)} words',
-    if (f.modified != null) 'modified ${_relativeAge(f.modified!)} ago',
+    if (stated != null)
+      age == AgeRender.relative ? 'modified $stated ago' : 'modified $stated',
     if (f.assumptions.isNotEmpty)
       '⚠assumed:${f.assumptions.map((a) => a.field).join(',')}',
   ];
@@ -1079,6 +1128,24 @@ int _wordCount(String body) {
   final trimmed = body.trim();
   if (trimmed.isEmpty) return 0;
   return trimmed.split(RegExp(r'\s+')).length;
+}
+
+/// What a page says about its age, or null when it says nothing — the one
+/// place [AgeRender] is spent, and the only door to the clock in this file.
+String? _statedAge(DateTime? modified, AgeRender age) => switch (age) {
+      AgeRender.none => null,
+      _ when modified == null => null,
+      AgeRender.stamp => _stamp(modified),
+      AgeRender.relative => _relativeAge(modified),
+    };
+
+/// The date, in UTC — stable across machines and across the clock, and it
+/// moves only when the page does.
+String _stamp(DateTime timestamp) {
+  final t = timestamp.toUtc();
+  final month = t.month.toString().padLeft(2, '0');
+  final day = t.day.toString().padLeft(2, '0');
+  return '${t.year}-$month-$day';
 }
 
 String _relativeAge(DateTime timestamp) {

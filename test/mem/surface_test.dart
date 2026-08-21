@@ -629,6 +629,27 @@ void main() {
       ).serialize());
     }
 
+    /// The same page, at a chosen age — the one field these tests vary.
+    void _writeAged(Directory bank, String topic, DateTime modified) {
+      File(p.join(bank.path, '$topic.md')).writeAsStringSync(Page(
+        topic: topic,
+        fields: Fields(
+          type: MemType.semantic,
+          attention: Attention(1.0),
+          modified: modified,
+        ),
+        body: 'a body',
+      ).serialize());
+    }
+
+    /// Today's date in UTC, the form a stamp takes.
+    String _today() {
+      final t = DateTime.now().toUtc();
+      final month = t.month.toString().padLeft(2, '0');
+      final day = t.day.toString().padLeft(2, '0');
+      return '${t.year}-$month-$day';
+    }
+
     test('a page is fenced by its address, and a healthy page says nothing more',
         () async {
       await site.runAsync(() async {
@@ -706,8 +727,99 @@ void main() {
         final close = out.text.split('\n').firstWhere((l) => l.startsWith('└─'));
         expect(close, contains('cool'));
         expect(close, contains('400w'));
-        expect(close, contains('old'));
+        expect(close, contains(_today()));
         expect(close, contains('#suspect-stale'));
+      });
+    });
+
+    test('the default states a date and never the clock — a walk is a prompt '
+        'prefix, and a byte that moves with the clock invalidates it',
+        () async {
+      await site.runAsync(() async {
+        final a = materialize('alfred.mem');
+        _writeAged(a, 'a', DateTime.utc(2020, 3, 7, 11, 30));
+
+        final out = _Out(), diag = _Out();
+        final code = await mem(out: out, diagnostics: diag)
+            .call(['walk', 'mem://alfred.mem/a']);
+        expect(code, 0);
+        final close = out.text.split('\n').firstWhere((l) => l.startsWith('└─'));
+        expect(close, contains('2020-03-07'));
+        expect(close, isNot(contains('old')));
+        expect(close, isNot(contains('d')));
+      });
+    });
+
+    test('--age relative keeps the clock, and with it the freshness gate — a '
+        'page of ordinary age says nothing', () async {
+      await site.runAsync(() async {
+        final a = materialize('alfred.mem');
+        _writeAged(a, 'a', DateTime.now().subtract(const Duration(days: 40)));
+
+        final out = _Out(), diag = _Out();
+        final code = await mem(out: out, diagnostics: diag)
+            .call(['--age', 'relative', 'walk', 'mem://alfred.mem/a']);
+        expect(code, 0);
+        final close = out.text.split('\n').firstWhere((l) => l.startsWith('└─'));
+        expect(close, isNot(contains('old')));
+
+        // The same page under the default: the stamp is unconditional, so
+        // what the gate silenced is stated.
+        final out2 = _Out();
+        await mem(out: out2, diagnostics: _Out())
+            .call(['walk', 'mem://alfred.mem/a']);
+        final close2 =
+            out2.text.split('\n').firstWhere((l) => l.startsWith('└─'));
+        expect(close2, contains('-'));
+      });
+    });
+
+    test('--age none states no age at all', () async {
+      await site.runAsync(() async {
+        final a = materialize('alfred.mem');
+        _writeAged(a, 'a', DateTime.utc(2020, 3, 7));
+
+        final out = _Out(), diag = _Out();
+        final code = await mem(out: out, diagnostics: diag)
+            .call(['--age', 'none', 'walk', 'mem://alfred.mem/a']);
+        expect(code, 0);
+        // A healthy page with no age stated closes on its address alone —
+        // stronger than "no date", which a relative rendering would also pass.
+        final close = out.text.split('\n').firstWhere((l) => l.startsWith('└─'));
+        expect(close, '└─ a');
+      });
+    });
+
+    test('the register reaches survey and recall too, not walk alone',
+        () async {
+      await site.runAsync(() async {
+        final a = materialize('alfred.mem');
+        _writeAged(a, 'a', DateTime.utc(2020, 3, 7));
+
+        final survey = _Out();
+        await mem(bankEnv: 'alfred.mem', out: survey, diagnostics: _Out())
+            .call(['survey']);
+        expect(survey.text, contains('·2020-03-07'));
+
+        final recall = _Out();
+        await mem(bankEnv: 'alfred.mem', out: recall, diagnostics: _Out())
+            .call(['recall', 'a']);
+        expect(recall.text, contains('modified 2020-03-07'));
+        expect(recall.text, isNot(contains('ago')));
+
+        final relative = _Out();
+        await mem(bankEnv: 'alfred.mem', out: relative, diagnostics: _Out())
+            .call(['--age', 'relative', 'recall', 'a']);
+        expect(relative.text, contains('ago'));
+      });
+    });
+
+    test('a mode nobody offers is a usage fault', () async {
+      await site.runAsync(() async {
+        final out = _Out(), diag = _Out();
+        final code = await mem(out: out, diagnostics: diag)
+            .call(['--age', 'yesterday', 'walk', 'mem://alfred.mem/a']);
+        expect(code, 2);
       });
     });
   });
