@@ -75,7 +75,9 @@ final class LsCommand extends EntityCommand {
     final target = requirePositionals().first;
     if (!target.contains(':')) {
       for (final one in cli.entityNamed(target, place: placeOption).instances) {
-        cli.out.writeln('${one.id}\t${one.tip?.sha ?? ''}');
+        cli.out.writeln(
+          '${one.id}\t${one.tip?.sha ?? ''}\t${one.standingAt.join(',')}',
+        );
       }
       return;
     }

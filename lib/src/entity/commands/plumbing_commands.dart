@@ -20,10 +20,17 @@ import 'entity_command.dart';
 
 /// `entity resolve <coord>` → path.
 ///
-/// The selection turned into somewhere to stand: the entity's own directory in
-/// the place that answers for it. A coordinate is a selection and never a
-/// runtime address — coordinate resolves, path operates — and this is the verb
-/// that crosses between the two.
+/// The selection turned into somewhere to stand: where the instance actually
+/// **is**, read from [Instance.standingAt] — the substrate's own record of
+/// which materializations follow this branch, never a guess built from the
+/// entity's name alone. A coordinate is a selection and never a runtime
+/// address — coordinate resolves, path operates — and this is the verb that
+/// crosses between the two.
+///
+/// Zero, one, or several equally legal answers. Zero is not found: a
+/// coordinate that stands nowhere has nothing to resolve to, bogus or real.
+/// Several is answered by the first, sorted — deterministic, and the same
+/// tie-break [standingAt] already sorts for.
 final class ResolveCommand extends EntityCommand {
   ResolveCommand(super.cli);
 
@@ -39,8 +46,13 @@ final class ResolveCommand extends EntityCommand {
   @override
   Future<void> run() async {
     final coord = coordinate();
-    final place = cli.installedAt(coord.entity, place: placeOption);
-    cli.out.writeln('${place.path}/${coord.entity}');
+    final standingAt = cli.instanceAt(coord, place: placeOption).standingAt;
+    if (standingAt.isEmpty) {
+      cli.err.writeln('entity resolve: stands nowhere: $coord');
+      cli.exitCode = EntityRunner.notFoundCode;
+      return;
+    }
+    cli.out.writeln(standingAt.first);
   }
 }
 

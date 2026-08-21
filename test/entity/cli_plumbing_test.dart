@@ -47,11 +47,26 @@ void main() {
       expect(r.out, isEmpty);
     });
 
-    test('resolve turns the selection into somewhere to stand', () async {
+    test('resolve turns the selection into where it actually stands', () async {
+      // Standing it up straight at the port, exactly as [Instance.materialize]
+      // will once it attaches too — resolve's own contract is *read
+      // standingAt*, and that holds regardless of what materialize does today.
+      final gitDir = repositoryOf(site.root.path, 't.chat');
+      final tip = (await cli.run(['tip', 't.chat:c1'])).out.trim();
+      final where = p.join(site.root.path, 'looker');
+      site.git.worktreeAdd(gitDir, path: where, at: Commit(tip), branch: 'c1');
+
       final r = await cli.run(['resolve', 't.chat:c1']);
 
       expect(r.code, 0);
-      expect(r.out.trim(), '${site.root.path}/t.chat');
+      expect(r.out.trim(), where);
+    });
+
+    test('an instance nobody materialized stands nowhere to resolve', () async {
+      final r = await cli.run(['resolve', 't.chat:c1']);
+
+      expect(r.code, EntityRunner.notFoundCode);
+      expect(r.out, isEmpty);
     });
   });
 
