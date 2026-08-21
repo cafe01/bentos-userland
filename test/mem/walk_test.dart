@@ -42,6 +42,42 @@ void main() {
     file.writeAsStringSync(page.serialize());
   }
 
+  group('how a page was reached', () {
+    test('the ring and the namer ride with every reached page', () async {
+      await site.runAsync(() async {
+        final root = materialize('alfred.mem');
+        writePage(root, 'a', body: 'names [[b]]');
+        writePage(root, 'b', body: 'names [[c]]');
+        writePage(root, 'c');
+
+        final walk = Walk(vantage: site.root.path);
+        final walked =
+            await walk.from([const Address(bank: 'alfred.mem', topic: 'a')]);
+
+        expect(walked.reached.map((r) => r.depth), [0, 1, 2]);
+        expect(walked.reached.map((r) => r.from), [null, 'a', 'b']);
+      });
+    });
+
+    test('a page reached twice keeps the first ring that reached it — the '
+        'shortest path is the one the band is decided by', () async {
+      await site.runAsync(() async {
+        final root = materialize('alfred.mem');
+        writePage(root, 'a', body: 'names [[b]] and [[c]]');
+        writePage(root, 'b', body: 'also names [[c]]');
+        writePage(root, 'c');
+
+        final walk = Walk(vantage: site.root.path);
+        final walked =
+            await walk.from([const Address(bank: 'alfred.mem', topic: 'a')]);
+
+        final c = walked.reached.singleWhere((r) => r.address.topic == 'c');
+        expect(c.depth, 1);
+        expect(c.from, 'a');
+      });
+    });
+  });
+
   group('single bank, level by level', () {
     test('an entry with no links returns just itself', () async {
       await site.runAsync(() async {

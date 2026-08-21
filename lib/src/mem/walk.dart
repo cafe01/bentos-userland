@@ -148,7 +148,12 @@ final class Walk {
         }
 
         visited.add(key);
-        reached.add(Reached(address: address, page: page));
+        reached.add(Reached(
+          address: address,
+          page: page,
+          depth: item.depth,
+          from: item.from,
+        ));
 
         for (final edge in index.outbound(item.topic)) {
           linksFollowed++;
@@ -182,12 +187,27 @@ final class _Pending {
 
 /// A page and the address it was reached at. The bank is part of the answer:
 /// a composition renders a foreign page by its full address, and only the walk
-/// knows which bank a page came out of.
+/// knows which bank a page came out of. So is the ring — **the ring is the
+/// unit of the decision a dry walk serves**, and an answer that cannot say at
+/// what depth a page entered has not answered.
 final class Reached {
-  const Reached({required this.address, required this.page});
+  const Reached({
+    required this.address,
+    required this.page,
+    required this.depth,
+    required this.from,
+  });
 
   final Address address;
   final Page page;
+
+  /// The ring: links followed from an entry point to reach this page. `0` is
+  /// an entry point itself.
+  final int depth;
+
+  /// The topic whose link brought the walk here. `null` for an entry point —
+  /// no page named it, the caller did.
+  final String? from;
 }
 
 final class Walked {

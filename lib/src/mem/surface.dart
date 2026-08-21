@@ -491,7 +491,14 @@ final class RecallCommand extends MemCommand with SelectorArgs {
 final class WalkCommand extends MemCommand with SelectorArgs {
   WalkCommand(super.cli) {
     declareSelectorFlags();
-    argParser.addOption('depth', valueHelp: 'n');
+    argParser
+      ..addOption('depth', valueHelp: 'n')
+      ..addFlag(
+        'dry-run',
+        negatable: false,
+        help: 'The set, not the composition: which pages enter, at what ring, '
+            'at what weight — and which do not, and why.',
+      );
   }
 
   @override
@@ -530,10 +537,14 @@ final class WalkCommand extends MemCommand with SelectorArgs {
     );
     final walked = await walk.from(entries);
 
+    final dry = argResults!['dry-run'] as bool;
+
     if (walked.reached.isEmpty) {
       cli.diagnostics.add(
         'mem: no pages reached from ${entries.map((e) => e.toString()).join(', ')}.\n',
       );
+    } else if (dry) {
+      cli.out.add(_renderDryWalk(walked, home: entries.first.bank));
     } else {
       cli.out.add(_renderComposition(
         walked.reached,
@@ -546,6 +557,11 @@ final class WalkCommand extends MemCommand with SelectorArgs {
       'mem: ${walked.weight.pages} pages, ${walked.weight.words} words, '
       '${walked.weight.links} links followed\n',
     );
+
+    // A skip is a diagnostic in an ordinary walk and **the answer** in a dry
+    // one: what did not enter the band is exactly what the caller opened this
+    // for. It is stated once, on the channel it belongs to.
+    if (dry) return;
     for (final skip in walked.skipped) {
       final origin = skip.from == null ? 'entry point' : 'from ${skip.from}';
       cli.diagnostics.add(
@@ -1024,6 +1040,39 @@ String _renderRecall(List<Page> pages, {required AgeRender age}) {
       buf
         ..writeln()
         ..writeln(page.body);
+    }
+  }
+  return buf.toString();
+}
+
+/// The dry form: the set a walk reaches, and the set it does not — one line
+/// each, no bodies. What a composition spends thousands of tokens saying,
+/// said in a page's worth, so the band can be judged without being paid for.
+///
+/// The ring leads every line because the ring is the decision: a page enters
+/// a waking mind by being linked from one already in the band, so *how far
+/// out* it sits is the thing an author moves.
+String _renderDryWalk(Walked walked, {required String home}) {
+  String label(Address address) =>
+      address.bank == home ? address.topic : address.toString();
+
+  final buf = StringBuffer()..writeln('ring   words  page  ← via');
+  for (final reached in walked.reached) {
+    final words = _wordCount(reached.page.body).toString().padLeft(6);
+    final ring = reached.depth.toString().padLeft(4);
+    final via = reached.from == null ? 'entry' : reached.from!;
+    buf.writeln('$ring $words  ${label(reached.address)}  ← $via');
+  }
+  buf
+    ..writeln()
+    ..writeln('${walked.weight.pages} pages, ${walked.weight.words} words, '
+        '${walked.weight.links} links followed');
+
+  if (walked.skipped.isNotEmpty) {
+    buf..writeln()..writeln('not entered');
+    for (final skip in walked.skipped) {
+      final via = skip.from == null ? 'entry' : skip.from!;
+      buf.writeln('       ${skip.address}  ← $via  — ${skip.reason.name}');
     }
   }
   return buf.toString();

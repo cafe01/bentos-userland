@@ -630,7 +630,7 @@ void main() {
     }
 
     /// The same page, at a chosen age — the one field these tests vary.
-    void _writeAged(Directory bank, String topic, DateTime modified) {
+    void writeAged(Directory bank, String topic, DateTime modified) {
       File(p.join(bank.path, '$topic.md')).writeAsStringSync(Page(
         topic: topic,
         fields: Fields(
@@ -643,7 +643,7 @@ void main() {
     }
 
     /// Today's date in UTC, the form a stamp takes.
-    String _today() {
+    String today() {
       final t = DateTime.now().toUtc();
       final month = t.month.toString().padLeft(2, '0');
       final day = t.day.toString().padLeft(2, '0');
@@ -727,7 +727,7 @@ void main() {
         final close = out.text.split('\n').firstWhere((l) => l.startsWith('└─'));
         expect(close, contains('cool'));
         expect(close, contains('400w'));
-        expect(close, contains(_today()));
+        expect(close, contains(today()));
         expect(close, contains('#suspect-stale'));
       });
     });
@@ -737,7 +737,7 @@ void main() {
         () async {
       await site.runAsync(() async {
         final a = materialize('alfred.mem');
-        _writeAged(a, 'a', DateTime.utc(2020, 3, 7, 11, 30));
+        writeAged(a, 'a', DateTime.utc(2020, 3, 7, 11, 30));
 
         final out = _Out(), diag = _Out();
         final code = await mem(out: out, diagnostics: diag)
@@ -754,7 +754,7 @@ void main() {
         'page of ordinary age says nothing', () async {
       await site.runAsync(() async {
         final a = materialize('alfred.mem');
-        _writeAged(a, 'a', DateTime.now().subtract(const Duration(days: 40)));
+        writeAged(a, 'a', DateTime.now().subtract(const Duration(days: 40)));
 
         final out = _Out(), diag = _Out();
         final code = await mem(out: out, diagnostics: diag)
@@ -777,7 +777,7 @@ void main() {
     test('--age none states no age at all', () async {
       await site.runAsync(() async {
         final a = materialize('alfred.mem');
-        _writeAged(a, 'a', DateTime.utc(2020, 3, 7));
+        writeAged(a, 'a', DateTime.utc(2020, 3, 7));
 
         final out = _Out(), diag = _Out();
         final code = await mem(out: out, diagnostics: diag)
@@ -794,7 +794,7 @@ void main() {
         () async {
       await site.runAsync(() async {
         final a = materialize('alfred.mem');
-        _writeAged(a, 'a', DateTime.utc(2020, 3, 7));
+        writeAged(a, 'a', DateTime.utc(2020, 3, 7));
 
         final survey = _Out();
         await mem(bankEnv: 'alfred.mem', out: survey, diagnostics: _Out())
@@ -820,6 +820,92 @@ void main() {
         final code = await mem(out: out, diagnostics: diag)
             .call(['--age', 'yesterday', 'walk', 'mem://alfred.mem/a']);
         expect(code, 2);
+      });
+    });
+  });
+
+  group('the dry walk — the set, not the composition', () {
+    void write(Directory bank, String topic, String body) {
+      File(p.join(bank.path, '$topic.md')).writeAsStringSync(Page(
+        topic: topic,
+        fields: Fields(type: MemType.semantic, attention: Attention(1.0)),
+        body: body,
+      ).serialize());
+    }
+
+    test('states every page at its ring, by what named it, with no bodies',
+        () async {
+      await site.runAsync(() async {
+        final a = materialize('alfred.mem');
+        write(a, 'root', 'names [[near]]');
+        write(a, 'near', 'names [[far]]');
+        write(a, 'far', 'the leaf body');
+
+        final out = _Out(), diag = _Out();
+        final code = await mem(out: out, diagnostics: diag)
+            .call(['walk', 'mem://alfred.mem/root', '--dry-run']);
+        expect(code, 0);
+        expect(out.text, contains('   0      2  root  ← entry'));
+        expect(out.text, contains('   1      2  near  ← root'));
+        expect(out.text, contains('   2      3  far  ← near'));
+        // No body reaches the answer — that is the whole point of dry.
+        expect(out.text, isNot(contains('the leaf body')));
+        expect(out.text, isNot(contains('┌─')));
+        expect(out.text, contains('3 pages, 7 words, 2 links followed'));
+      });
+    });
+
+    test('what did not enter is the answer here, and stands on stdout',
+        () async {
+      await site.runAsync(() async {
+        final a = materialize('alfred.mem');
+        write(a, 'root', 'names [[ghost]] and [[mem://nowhere.mem/x]]');
+
+        final out = _Out(), diag = _Out();
+        final code = await mem(out: out, diagnostics: diag)
+            .call(['walk', 'mem://alfred.mem/root', '--dry-run']);
+        expect(code, 0);
+        expect(out.text, contains('not entered'));
+        expect(out.text, contains('mem://alfred.mem/ghost  ← root  — dead'));
+        expect(out.text,
+            contains('mem://nowhere.mem/x  ← root  — bankNotFound'));
+        // Said once, on the channel it belongs to.
+        expect(diag.text, isNot(contains('skipped')));
+      });
+    });
+
+    test('a selector excludes a page, and the dry walk says so rather than '
+        'passing over it in silence', () async {
+      await site.runAsync(() async {
+        final a = materialize('alfred.mem');
+        write(a, 'root', 'names [[cold]]');
+        File(p.join(a.path, 'cold.md')).writeAsStringSync(Page(
+          topic: 'cold',
+          fields: Fields(type: MemType.semantic, attention: Attention(0.2)),
+          body: 'chilly',
+        ).serialize());
+
+        final out = _Out(), diag = _Out();
+        final code = await mem(out: out, diagnostics: diag)
+            .call(['walk', 'mem://alfred.mem/root', '--hot', '--dry-run']);
+        expect(code, 0);
+        expect(out.text, contains('   0      2  root  ← entry'));
+        expect(out.text, contains('cold  ← root  — filtered'));
+      });
+    });
+
+    test('an ordinary walk keeps the skip on the diagnostic channel',
+        () async {
+      await site.runAsync(() async {
+        final a = materialize('alfred.mem');
+        write(a, 'root', 'names [[ghost]]');
+
+        final out = _Out(), diag = _Out();
+        final code = await mem(out: out, diagnostics: diag)
+            .call(['walk', 'mem://alfred.mem/root']);
+        expect(code, 0);
+        expect(diag.text, contains('skipped mem://alfred.mem/ghost'));
+        expect(out.text, isNot(contains('not entered')));
       });
     });
   });
