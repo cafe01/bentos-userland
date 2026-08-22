@@ -194,12 +194,12 @@ final class FakeActs implements ChatActs {
   }
 
   @override
-  ChatActOutcome attempt(
+  Future<ChatActOutcome> attempt(
     String noun, {
     required void Function(ChatArea area) write,
     String? Function(ChatArea area)? gate,
     String? say,
-  }) {
+  }) async {
     if (!born) {
       throw StateError('not born: $chatOntology:$channel');
     }

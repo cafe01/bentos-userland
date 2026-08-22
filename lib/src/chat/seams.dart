@@ -119,14 +119,18 @@ abstract interface class ChatActs {
   /// finds an unborn channel by [attempt] refusing to open an area at all.
   void ensureBorn();
 
-  /// One attempt: opens the private area at the tip, asks [gate] of **that
-  /// area** (never of the present tree — the question is *was this act legal
-  /// where it lands*), runs [write] when the gate allows it, and lands the
-  /// compare-and-swap under [noun] with the legible sentence [say].
+  /// One attempt: asks [gate] of the instance's own standing tree, runs
+  /// [write] there when the gate allows it, and lands the act under [noun]
+  /// with the legible sentence [say].
   ///
-  /// Never retries. [ChatContested] is the caller's cue to attempt again with
-  /// a fresh area — the ref simply moved under this one.
-  ChatActOutcome attempt(
+  /// Never retries. [ChatContested] is the caller's cue to attempt again —
+  /// **kept in the type for a caller of this interface to handle, not
+  /// because an entity-backed implementation can still produce it.** The
+  /// private area and its compare-and-swap are retired; an act now commits
+  /// where the instance already stands, one attached tree per instance, and
+  /// there is no swap left to lose. An implementation that still opens a
+  /// private area per attempt may return it honestly.
+  Future<ChatActOutcome> attempt(
     String noun, {
     required void Function(ChatArea area) write,
     String? Function(ChatArea area)? gate,

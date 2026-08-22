@@ -100,8 +100,6 @@ final class EntityRunner {
       ..addCommand(ResolveCommand(this))
       ..addCommand(TipCommand(this))
       ..addCommand(PathCommand(this))
-      ..addCommand(WorkCommand(this))
-      ..addCommand(CommitCommand(this))
       ..addCommand(ReleaseCommand(this))
       ..addCommand(EmitCommand(this));
   }
@@ -420,8 +418,6 @@ final class _Surface extends CommandRunner<void> {
       'resolve',
       'tip',
       'path',
-      'work',
-      'commit',
       'release',
     ],
   };

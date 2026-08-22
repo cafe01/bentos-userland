@@ -30,4 +30,3 @@ export 'src/entity/transaction.dart';
 export 'src/git/model/actor.dart';
 export 'src/git/model/commit.dart';
 export 'src/git/model/remote.dart';
-export 'src/entity/workspace.dart';

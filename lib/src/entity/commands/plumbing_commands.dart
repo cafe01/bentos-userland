@@ -7,16 +7,18 @@ import '../event.dart';
 import '../transaction.dart';
 import '../../git/git.dart';
 import '../../git/git_ambient.dart';
-import '../../git/model/commit.dart';
-import '../workspace.dart';
 import 'entity_command.dart';
 
-/// The plumbing family exists for what does not fit the bracket, and **it is
-/// the family that matters most: the callers here are programs.**
+/// The plumbing family exists for what does not fit the bracket: `resolve`,
+/// `tip`, `path`, `emit` and `release` are the escape hatches and the hook's
+/// own callee, kept at the shell for programs that are not a callback.
 ///
-/// `work` and `commit` are also the one shape a callback cannot serve — three
-/// separate processes, no closure spanning them — which is why the pieces
-/// survive at the shell after the library made the bracket its only safe path.
+/// **`work` and `commit` are gone.** They were the private-area CAS's own
+/// three-process shape — no closure spanning `work`, `commit` and `release` —
+/// and that path is retired: `act` commits in the instance's own attached
+/// worktree now, and a caller opening a private area beside it would land a
+/// ref move from outside the tree that follows it, which is exactly the
+/// corruption the new path exists to remove.
 
 /// `entity resolve <coord>` → path.
 ///
@@ -107,97 +109,6 @@ final class PathCommand extends EntityCommand {
   Future<void> run() async {
     final named = requirePositionals().first;
     cli.out.writeln(gitDirOf(cli.entityNamed(named, place: placeOption)));
-  }
-}
-
-/// `entity work <coord>` → a private materialization, with the obligation
-/// attached.
-///
-/// The compare-and-swap protects the ref and nothing inside a directory: two
-/// bodies writing into one shared worktree corrupt each other before either
-/// reaches the swap, and both then land honestly. So the primitive owes the
-/// area, and whoever opens one owes `commit` and `release`.
-final class WorkCommand extends EntityCommand {
-  WorkCommand(super.cli);
-
-  @override
-  String get name => 'work';
-
-  @override
-  String get description => 'Open a private write area at the tip.';
-
-  @override
-  List<String> get positionalLabels => const ['coord'];
-
-  @override
-  Future<void> run() async {
-    final opened = cli.instanceAt(coordinate(), place: placeOption).beginAct();
-    // Both halves on one line, because a workspace *is* the pair: the area to
-    // write in, and the value the swap will demand the ref still holds. A
-    // caller that had to fetch the tip separately could be handed one taken a
-    // moment after the area was cut, and would then swap against a state its
-    // own files were never based on.
-    cli.out.writeln('${opened.directory.path}\t${opened.expectedTip.sha}');
-  }
-}
-
-/// `entity commit <coord> <action> -w <path> --parent <sha> [--actor <a>] [--say <phrase>]`
-/// — close an act opened by `work`.
-///
-/// `--parent` is the whole reason the last step is plumbing: ordinary Git
-/// commits onto whatever tip it finds when it runs, and an act must instead
-/// name the value the ref is required to still hold.
-///
-/// The coordinate is named here and nowhere in the spec's shorter form,
-/// because a workspace does not survive a process: `work`, `commit` and
-/// `release` are three of them, and the ref an act lands on is the one fact a
-/// detached directory cannot report about itself.
-final class CommitCommand extends EntityCommand {
-  CommitCommand(super.cli) {
-    takesActor();
-    argParser
-      ..addOption('worktree', abbr: 'w', help: 'The area opened by `work`.')
-      ..addOption('parent', help: 'The value the ref must still hold.')
-      ..addOption(
-        'say',
-        help: 'The legible sentence, stored and never interpreted.',
-        valueHelp: 'phrase',
-      );
-  }
-
-  @override
-  String get name => 'commit';
-
-  @override
-  String get description => 'Land an act from a private area, by compare-and-swap.';
-
-  @override
-  List<String> get positionalLabels => const ['coord', 'action'];
-
-  @override
-  Future<void> run() async {
-    final rest = requirePositionals();
-    final area = argResults!['worktree'] as String?;
-    if (area == null) usageException('commit: -w <path> is required');
-    final parent = argResults!['parent'] as String?;
-    if (parent == null) usageException('commit: --parent <sha> is required');
-
-    final coord = coordinate();
-    final instance = cli.instanceAt(coord, place: placeOption);
-    final actor = statedActor();
-    final workspace = Workspace(
-      directory: Directory(cli.locate(area)),
-      gitDir: gitDirOf(instance.entity),
-      ref: instance.ref,
-      expectedTip: Commit(parent),
-    );
-    cli.report(
-      workspace.commit(
-        rest[1],
-        actor: actor,
-        say: argResults!['say'] as String?,
-      ),
-    );
   }
 }
 

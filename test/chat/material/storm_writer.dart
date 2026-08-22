@@ -179,14 +179,14 @@ final class _CountingActs implements ChatActs {
   void ensureBorn() => _inner.ensureBorn();
 
   @override
-  ChatActOutcome attempt(
+  Future<ChatActOutcome> attempt(
     String noun, {
     required void Function(ChatArea area) write,
     String? Function(ChatArea area)? gate,
     String? say,
-  }) {
+  }) async {
     attempts++;
-    final outcome = _inner.attempt(noun, write: write, gate: gate, say: say);
+    final outcome = await _inner.attempt(noun, write: write, gate: gate, say: say);
     if (outcome is ChatContested) contested++;
     return outcome;
   }

@@ -24,11 +24,11 @@ void main() {
   });
 
   test('a contested attempt still asks the gate and still runs the write',
-      () {
+      () async {
     acts.contestNext('message', 1);
     var gateCalls = 0;
     var writeCalls = 0;
-    final outcome = acts.attempt(
+    final outcome = await acts.attempt(
       'message',
       gate: (area) {
         gateCalls++;
@@ -44,11 +44,11 @@ void main() {
     expect(writeCalls, 1);
   });
 
-  test('a barred attempt still asks the gate and still runs the write', () {
+  test('a barred attempt still asks the gate and still runs the write', () async {
     acts.barNext('message', 'refused by a gate');
     var gateCalls = 0;
     var writeCalls = 0;
-    final outcome = acts.attempt(
+    final outcome = await acts.attempt(
       'message',
       gate: (area) {
         gateCalls++;
@@ -65,9 +65,9 @@ void main() {
   });
 
   test('a gate refusal is asked before the write, and the write never runs',
-      () {
+      () async {
     var writeCalls = 0;
-    final outcome = acts.attempt(
+    final outcome = await acts.attempt(
       'message',
       gate: (area) => 'no',
       write: (area) => writeCalls++,
@@ -77,12 +77,12 @@ void main() {
   });
 
   test('every attempt records that the gate was called, contested and '
-      'barred alike', () {
+      'barred alike', () async {
     acts.contestNext('message', 1);
-    acts.attempt('message', gate: (area) => null, write: (area) {});
+    await acts.attempt('message', gate: (area) => null, write: (area) {});
     acts.barNext('message', 'no');
-    acts.attempt('message', gate: (area) => null, write: (area) {});
-    acts.attempt('message', gate: (area) => null, write: (area) {});
+    await acts.attempt('message', gate: (area) => null, write: (area) {});
+    await acts.attempt('message', gate: (area) => null, write: (area) {});
 
     final attempts = acts.attemptsAt('message');
     expect(attempts, hasLength(3));
@@ -90,7 +90,7 @@ void main() {
   });
 
   test('the gate reads a fresh area each attempt, so a concurrent change '
-      'between attempts is seen', () {
+      'between attempts is seen', () async {
     tree.land(
       noun: 'membership',
       authorName: 'Alfred',
@@ -100,7 +100,7 @@ void main() {
     acts.contestNext('message', 1);
 
     final seenAt = <bool>[];
-    acts.attempt(
+    await acts.attempt(
       'message',
       gate: (area) {
         seenAt.add(area.exists('$participantsPath/alfred'));
@@ -116,7 +116,7 @@ void main() {
       authorEmail: 'alfred@bentos.life',
       removes: ['$participantsPath/alfred'],
     );
-    acts.attempt(
+    await acts.attempt(
       'message',
       gate: (area) {
         seenAt.add(area.exists('$participantsPath/alfred'));

@@ -318,11 +318,12 @@ void main() {
         () async {
       await site.runAsync(() async {
         final s = stand();
-        final ws = s.entity.instance('main').beginAct();
-        File(p.join(ws.directory.path, 'broken.md'))
-            .writeAsStringSync('---\nattention: 0.5\n---\nno type here\n');
-        ws.commit('page', actor: Actor('seed', email: 'seed@test.local'));
-        ws.release();
+        await s.entity.instance('main').act(
+          'page',
+          (area) => File(p.join(area.directory.path, 'broken.md'))
+              .writeAsStringSync('---\nattention: 0.5\n---\nno type here\n'),
+          actor: Actor('seed', email: 'seed@test.local'),
+        );
         s.bank.advance();
         expect(s.bank.handEdited, isEmpty, reason: 'landed and advanced — the tree is clean');
 

@@ -11,7 +11,6 @@ import 'materialization.dart';
 import '../git/model/actor.dart';
 import '../git/model/commit.dart';
 import '../place/place.dart';
-import 'workspace.dart';
 
 /// One object of the class — a ref, whose state is the tree at that ref. A
 /// conversation, a case, a running process of a company: one of them, with its
@@ -235,33 +234,6 @@ final class Instance {
     return Barred(
       gateRefusalIn(outcome.report) ?? 'refused by a gate',
       discarded: discarded,
-    );
-  }
-
-  /// Opens the private area with the obligation attached — the piece of the
-  /// **old** acting path, for callers that cannot be a callback.
-  ///
-  /// **Retired in place, and not by this slice.** [act] no longer comes
-  /// through here: it commits in the instance's own attached worktree. What is
-  /// left standing is the plumbing family and the chat seam, and both come out
-  /// with [Workspace] itself. Until they do, a caller that opens one of these
-  /// while a materialization stands attached lands a ref move from *outside* a
-  /// tree that follows it — the corruption the new path exists to remove.
-  Workspace beginAct() {
-    final gitDir = _gitDir;
-    final at = ambientGit.revParse(gitDir, ref);
-    if (at == null) throw StateError('not born: $this');
-    // An area of its own, always. Two bodies sharing one worktree corrupt each
-    // other's payload before either reaches the swap — the race the CAS exists
-    // for, happening one floor below it.
-    final area = _privateArea(gitDir, 'acts', 'act-');
-    area.deleteSync();
-    ambientGit.worktreeAdd(gitDir, path: area.path, at: at);
-    return Workspace(
-      directory: Directory(area.path),
-      gitDir: gitDir,
-      ref: ref,
-      expectedTip: at,
     );
   }
 
@@ -707,21 +679,4 @@ final class ExecutableUnavailable implements Exception {
 
   @override
   String toString() => "cannot run '$function': $message";
-}
-
-/// A private directory of this installation's own, under [kind], freshly named.
-///
-/// **The ground an act stands on belongs to the place that holds the entity**,
-/// not to the machine: the installation's slice of the plot is where a thing
-/// nobody addressed can exist without being anywhere. The system's temp made a
-/// global namespace out of a local fact, and put the area outside the ontology
-/// entirely — invisible to the place that owns the entity it is writing into.
-///
-/// The slice is the repository's own parent, so resolution has already decided
-/// *which* place: the walk up that answered with this [gitDir] is the same walk
-/// that says where the act happens. Nothing here reaches for a `Place`.
-Directory _privateArea(String gitDir, String kind, String prefix) {
-  final ground = Directory(p.join(p.dirname(gitDir), kind))
-    ..createSync(recursive: true);
-  return ground.createTempSync(prefix);
 }

@@ -187,7 +187,7 @@ final class LocalChannel implements Channel {
   }) async {
     if (gated && !_acts.born) throw NoSuchChannel(coordinate);
     for (var attempt = 1; attempt <= _attempts; attempt++) {
-      final outcome = _acts.attempt(
+      final outcome = await _acts.attempt(
         noun,
         write: write,
         gate: gated ? _membershipGate : gate,
@@ -199,6 +199,14 @@ final class LocalChannel implements Channel {
         case ChatGateRefused(:final reason):
           return Refused(reason);
         case ChatContested():
+          // **Cannot fire through the entity-backed [ChatActs] any longer.**
+          // `act` commits in the instance's own attached tree now — one tree
+          // per instance, no swap — so this loop no longer detects two
+          // actors landing on one channel in the same instant; it only
+          // retries a value nothing here produces. Left standing rather than
+          // gutted: the race is real and known (a channel is many actors on
+          // one instance), gutting the retry is a chat-behaviour decision,
+          // and chat is carried for compilation, not for care right now.
           if (attempt < _attempts) await Future<void>.delayed(_backoff(attempt));
       }
     }

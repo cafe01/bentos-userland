@@ -89,9 +89,23 @@ final class EntityTree implements ChatTree {
   }
 }
 
-/// Opens the act bracket **in process**, through [Instance.beginAct] and
-/// [Workspace.commit] — no shell, no spawn. One attempt per call; the retry
-/// loop is [LocalChannel]'s, never this seam's.
+/// Opens the act bracket **in process**, through [Instance.materialize] and
+/// [Instance.act] — no shell, no spawn, no private area: the tree the gate
+/// reads and the tree the act commits in are the same one, attached.
+///
+/// **What this seam no longer has, and deliberately.** The retired path
+/// opened a private area per attempt and landed it by compare-and-swap, so
+/// two attempts racing the same tip produced one [Landed] and one
+/// [ChatContested] — a value [LocalChannel] retried on. `act` now commits
+/// where the instance already stands: one attached tree per instance, no
+/// swap, and therefore no detection of two actors landing in the same
+/// instant. The race did not go away — a channel is many actors on one
+/// instance, so chat is the surface that most feels the cost — only the
+/// compare-and-swap that used to *report* it did, ruled out of the act path
+/// on purpose and kept for one job alone: an instance's birth. [LocalChannel]'s
+/// retry loop is left standing on [ChatContested] rather than gutted, because
+/// silently removing it is a chat-behaviour decision this seam does not own;
+/// it simply cannot fire through this implementation any longer.
 final class EntityActs implements ChatActs {
   EntityActs(this.instance, {required this.identity});
 
@@ -120,42 +134,51 @@ final class EntityActs implements ChatActs {
   }
 
   @override
-  ChatActOutcome attempt(
+  Future<ChatActOutcome> attempt(
     String noun, {
     required void Function(ChatArea area) write,
     String? Function(ChatArea area)? gate,
     String? say,
-  }) {
-    final workspace = instance.beginAct();
-    try {
-      final area = _WorkspaceArea(workspace.directory);
-      final refusal = gate?.call(area);
-      if (refusal != null) return ChatGateRefused(refusal);
-      write(area);
-      final actor = Actor(identity.displayName, email: identity.handle.email);
-      final result = workspace.commit(noun, actor: actor, say: say);
-      switch (result) {
-        case Landed(:final action):
-          return ChatLanded(action.commit.sha);
-        case Barred(:final reason):
-          return ChatGateRefused(reason);
-        case Contested():
-          return const ChatContested();
-        case Diverged():
-          // Only [Instance.fetch] can diverge; a local act never does.
-          throw StateError('$chatOntology: an act diverged, which a local act never does');
-      }
-    } finally {
-      workspace.release();
+  }) async {
+    // The gate reads the standing tree **before** act is entered — nothing it
+    // asks needs the bracket, since under the retired law the private area
+    // was the only place a fresh-cut tip could be read from, and under this
+    // one the attached tree already *is* that reading. A refusal here lands
+    // nothing and opens no act.
+    final standing = instance.materialize();
+    final refusal = gate?.call(_MaterializedArea(standing.directory));
+    if (refusal != null) return ChatGateRefused(refusal);
+    final actor = Actor(identity.displayName, email: identity.handle.email);
+    final result = await instance.act(
+      noun,
+      (area) => write(_MaterializedArea(area.directory)),
+      actor: actor,
+      say: say,
+    );
+    switch (result) {
+      case Landed(:final action):
+        return ChatLanded(action.commit.sha);
+      case Barred(:final reason):
+        return ChatGateRefused(reason);
+      case Contested():
+        // Unreachable: `act` commits where the instance already stands, and
+        // there is no swap left to lose. Mirrors [Diverged] below rather than
+        // returning a value nothing here can produce.
+        throw StateError(
+            '$chatOntology: an act contested, which a local act never does '
+            'now that it commits in the instance\'s own attached tree');
+      case Diverged():
+        // Only [Instance.fetch] can diverge; a local act never does.
+        throw StateError('$chatOntology: an act diverged, which a local act never does');
     }
   }
 }
 
 /// [ChatArea] over a real materialized directory — ordinary file IO, and
 /// nothing else. The primitive never looks at what is written here; it only
-/// hashes the tree once [Workspace.commit] is asked.
-final class _WorkspaceArea implements ChatArea {
-  _WorkspaceArea(this._directory);
+/// hashes the tree once [Instance.act] commits.
+final class _MaterializedArea implements ChatArea {
+  _MaterializedArea(this._directory);
 
   final Directory _directory;
 

@@ -66,8 +66,6 @@ void main() {
       'resolve': 'resolve <coord>',
       'tip': 'tip <coord>',
       'path': 'path <name>',
-      'work': 'work <coord>',
-      'commit': 'commit <coord> <action>',
       'release': 'release <path>',
       'emit': 'emit <name> <phase>',
     };
