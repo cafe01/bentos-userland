@@ -414,14 +414,20 @@ final class ProcessGit implements Git {
     String? branch,
   }) {
     Directory(path).parent.createSync(recursive: true);
+    // A registration whose directory is gone would refuse the add by name,
+    // and *stand this directory up again* is one act to whoever needs the
+    // files. Prune clears exactly those and leaves every standing tree alone,
+    // which is why this is not `--force`: that flag would also override the
+    // one-attached-tree-per-branch guard the act path now depends on.
+    _git(gitDir, ['worktree', 'prune']);
     // Detached names the commit directly; attached names the branch and lets
     // Git resolve its own tip, which is what makes the checkout a real
     // attachment rather than a detached tree that merely happens to sit at
     // the same sha.
     final target = branch ?? at.sha;
     final args = branch == null
-        ? ['worktree', 'add', '--detach', '--force', path, target]
-        : ['worktree', 'add', '--force', path, target];
+        ? ['worktree', 'add', '--detach', path, target]
+        : ['worktree', 'add', path, target];
     _git(gitDir, args);
   }
 

@@ -32,7 +32,8 @@ final class ActCommand extends EntityCommand {
   String get name => 'act';
 
   @override
-  String get description => 'Take an action: write in a private area and land it.';
+  String get description =>
+      "Take an action: write in the instance's own tree and commit there.";
 
   @override
   List<String> get positionalLabels => const ['coord', 'action'];
@@ -63,12 +64,12 @@ final class ActCommand extends EntityCommand {
           );
         } on ProcessException catch (e) {
           // The body could not be started at all — almost always a relative
-          // path, which resolves against the private area and not against the
-          // directory the caller typed it in. That is the act's isolation
-          // working as designed, and the only thing wrong is that the caller
-          // was never told where their command was looked for. Told plainly it
-          // is one edit; left as a raw ProcessException it is a stack trace
-          // about a Dart library the reader did not open.
+          // path, which resolves against the instance's tree and not against
+          // the directory the caller typed it in. That is where the act
+          // happens by law, and the only thing wrong is that the caller was
+          // never told where their command was looked for. Told plainly it is
+          // one edit; left as a raw ProcessException it is a stack trace about
+          // a Dart library the reader did not open.
           throw BodyNotStartable(written.first, area.directory.path, e);
         }
         // Both of the body's streams are the operator's to read, and neither
@@ -140,7 +141,8 @@ final class BodyNotStartable implements Exception {
   /// The executable as the caller wrote it.
   final String command;
 
-  /// The act's private area — where it was looked for.
+  /// The instance's own tree — where the body ran, and where it was looked
+  /// for.
   final String directory;
 
   final ProcessException cause;
@@ -152,7 +154,7 @@ final class BodyNotStartable implements Exception {
   @override
   String toString() => [
         'entity: cannot run "$command": ${cause.message}',
-        "the act's body runs in the act's own private area ($directory), "
+        "the act's body runs in the instance's own tree ($directory), "
             'never in the directory you typed the command in',
         if (isRelative)
           'a relative path is resolved there — give an absolute path'
@@ -229,16 +231,20 @@ final class MaterializeCommand extends EntityCommand {
 /// `entity refresh <coord> <path>` — bring a standing worktree up to the
 /// instance's present tip.
 ///
-/// A face lags by construction: another participant may land an act at any
-/// moment, and nothing refreshes anyone's tree for them. This is the looker's
-/// own verb, and the sibling of `release` — both act on a directory somebody
-/// else's process stood up.
+/// The verb of a **face**: a detached tree at a commit, which lags by
+/// construction because nothing moves it when the instance acts. The
+/// instance's own attached tree does not come through here — a commit taken in
+/// it moves the branch by happening — and this says so rather than passing in
+/// silence.
+///
+/// The sibling of `release`: both act on a directory somebody else's process
+/// stood up.
 ///
 /// **It takes the coordinate as well as the path**, for the reason `commit`
-/// does: a worktree of ours is checked out detached, so the directory can
-/// report the repository it belongs to and the commit it stands at, but never
-/// the ref it follows — and the ref is the whole question, since refreshing
-/// means catching up with where that ref now points.
+/// does: a face is checked out detached, so the directory can report the
+/// repository it belongs to and the commit it stands at, but never the ref it
+/// follows — and the ref is the whole question, since refreshing means
+/// catching up with where that ref now points.
 ///
 /// A tree already standing at the tip is left alone, and so is one that follows
 /// no ref at all: a place's materialization stands at a commit declared from

@@ -286,6 +286,23 @@ final class EntityRunner {
       // question answered.
       err.writeln('entity: barred — $e');
       exitCode = barredCode;
+    } on InstanceStandsElsewhere catch (e) {
+      // A decided refusal: the instance stands, and it stands somewhere the
+      // message names. Nothing was touched, and a script branching on the
+      // number is told *declined* rather than *crashed*.
+      err.writeln('entity: barred — $e');
+      exitCode = barredCode;
+    } on WorktreeUnattached catch (e) {
+      // Same shape: a tree is there and it follows something else, so the act
+      // that would have committed in it is declined before anything moves.
+      err.writeln('entity: barred — $e');
+      exitCode = barredCode;
+    } on TreeCarriesWork catch (e) {
+      // The tree holds work this act did not deposit. Refused, never merged:
+      // landing it would put somebody else's edits into the ledger under this
+      // act's name.
+      err.writeln('entity: barred — $e');
+      exitCode = barredCode;
     } on WorktreeNotOurs catch (e) {
       // Refusal and not a fault: the caller named a directory this repository
       // does not hold, and the answer a script must be able to branch on is

@@ -73,23 +73,26 @@ void main() {
       expect(action.diff().paths, ['messages/1.txt']);
     });
 
-    test('the bracket releases its area even when the body throws', () async {
+    test('a throwing body unwinds the tree rather than losing it', () async {
       late Directory area;
       await expectLater(
         site.runAsync(() => llm.instance('s1').act('prompt', (ws) {
               area = ws.directory;
               throw StateError('the body failed');
             }, actor: testActor)),
-        throwsA(isA<StateError>()),
+        throwsA(isA<ActUnwound>()
+            .having((e) => e.cause, 'cause', isA<StateError>())),
       );
       expect(
         area.existsSync(),
-        isFalse,
-        reason: 'Dart has no destructor, so the bracket owns the lifetime',
+        isTrue,
+        reason: "the tree is the instance's own, standing before the body ran "
+            'and after it failed — there is no private area to release, only '
+            'a ledger the failed write must not reach',
       );
     });
 
-    test('each act writes in an area of its own', () async {
+    test('two acts on one instance write in the same tree, reused', () async {
       final areas = <String>[];
       for (var i = 0; i < 2; i++) {
         await site.runAsync(() => llm.instance('s1').act('prompt', (ws) {
@@ -99,8 +102,9 @@ void main() {
       }
       expect(
         areas.first,
-        isNot(areas.last),
-        reason: 'a shared worktree corrupts payloads before the swap can see it',
+        areas.last,
+        reason: 'one attached tree per instance — an act commits where the '
+            'instance already stands rather than standing a second one up',
       );
     });
 
@@ -448,13 +452,43 @@ void main() {
     });
 
     test('a persistent worktree lags, and refreshing is the looker\'s duty', () async {
-      final face = site.run(() => llm.instance('s1').materialize());
-      final at = site.run(() => face.at);
+      // The instance's own tree does not lag — an act commits in it, so
+      // asking for it at no address, or at the address it already stands at,
+      // hands back the very tree the next act writes into. A genuine face is
+      // asked for **elsewhere**: detached by construction, and the one tree
+      // this law still lets fall behind.
       await writeAct(site.run(() => llm.instance('s1')), 'prompt', 'hello');
+      final where = p.join(site.root.path, 'face');
+      final face = site.run(() {
+        final m = llm.instance('s1').materialization(where);
+        m.refresh();
+        return m;
+      });
+      final at = site.run(() => face.at);
+      await writeAct(site.run(() => llm.instance('s1')), 'reply', 'world');
       site.run(() {
         expect(face.at, at, reason: 'nothing refreshes a face for it');
         face.refresh();
         expect(face.at, llm.instance('s1').tip);
+      });
+    });
+
+    test('refreshing an unstood instance at its own address attaches it',
+        () async {
+      // Standing an absent tree up and putting the instance into the
+      // materialized condition are the same act at this one address. A
+      // detached tree stood up here by mistake would meet the next act's own
+      // refusal of a tree it does not follow — [WorktreeUnattached] — so the
+      // address itself is what tells `refresh` to attach rather than the
+      // caller's intent, which it cannot see.
+      site.run(() => llm.instance('s2').create());
+      final address = site.run(() => llm.instance('s2').conventionAddress);
+      site.run(() => llm.instance('s2').materialization(address).refresh());
+
+      final result = await writeAct(site.run(() => llm.instance('s2')), 'prompt', 'hello');
+      expect(result, isA<Landed>());
+      site.run(() {
+        expect(File(p.join(address, 'messages/1.txt')).existsSync(), isTrue);
       });
     });
   });

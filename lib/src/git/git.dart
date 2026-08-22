@@ -243,12 +243,27 @@ abstract interface class Git {
   /// commit the caller believes the branch presently holds; the argument
   /// travelling to Git is the branch's name, and Git resolves its own tip.
   ///
-  /// Zero, one, or several worktrees may stand attached to the same branch at
-  /// once — Git's own default refuses a second, and every call here overrides
-  /// that safeguard on purpose, because several standing at once is a legal
-  /// shape here, not an accident to be caught. What follows from allowing it
-  /// is on the caller: a branch two attached trees both watch can leave either
-  /// one behind the other, and nothing at this port catches that up for free.
+  /// **One attached tree per branch, and Git's own default is the guard.** A
+  /// second attached tree on one branch is refused by the substrate, and
+  /// nothing here overrides that: the refusal is load-bearing. Two trees
+  /// watching one branch leave each other behind the moment either commits,
+  /// and a commit taken in the lagging one carries its stale index into the
+  /// ledger — the sibling's files leave the branch while still standing on the
+  /// sibling's disk. That is silent loss of the one thing the product is.
+  ///
+  /// The override used to be passed on every call, and it was correct while a
+  /// tree of ours was always detached: several detached faces at one sha are
+  /// legal and Git's guard never fires on them. It became wrong the instant
+  /// trees attach, and it is gone.
+  ///
+  /// Several **detached** worktrees at one commit remain legal and need no
+  /// override — measured, not assumed.
+  ///
+  /// The one job the override still did is done by name instead: a path that
+  /// is registered but missing from disk — a face somebody deleted by hand —
+  /// is pruned before the add, so *stand this directory up again* stays one
+  /// act. Pruning clears registrations whose directory is gone and touches no
+  /// standing tree.
   void worktreeAdd(
     String gitDir, {
     required String path,

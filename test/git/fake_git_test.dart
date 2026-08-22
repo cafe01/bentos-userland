@@ -159,18 +159,37 @@ void main() {
       expect(git.worktreeHead(where), advanced);
     });
 
-    test('several worktrees may stand attached to the same branch at once',
+    test('a second worktree is refused the branch the first already follows',
         () {
+      // The double must agree with the substrate exactly at the point this
+      // slice's law lives: a second attached tree on one branch is refused,
+      // never modelled as legal.
       final head = Commit(commitWith({'a.txt': 'one'}));
       git.updateRef('/e.git', ref: 'refs/heads/feature', newCommit: head, expected: null);
       final first = p.join(tmp.path, 'first');
       final second = p.join(tmp.path, 'second');
 
       git.worktreeAdd('/e.git', path: first, at: head, branch: 'feature');
-      git.worktreeAdd('/e.git', path: second, at: head, branch: 'feature');
 
-      expect(git.currentBranch(first), 'feature');
-      expect(git.currentBranch(second), 'feature');
+      expect(
+        () => git.worktreeAdd('/e.git', path: second, at: head, branch: 'feature'),
+        throwsA(isA<ProcessException>()),
+      );
+      expect(Directory(second).existsSync(), isFalse);
+    });
+
+    test('a directory whose registration outlived it does not block the add',
+        () {
+      final head = Commit(commitWith({'a.txt': 'one'}));
+      git.updateRef('/e.git', ref: 'refs/heads/feature', newCommit: head, expected: null);
+      final where = p.join(tmp.path, 'standing');
+
+      git.worktreeAdd('/e.git', path: where, at: head, branch: 'feature');
+      Directory(where).deleteSync(recursive: true);
+
+      git.worktreeAdd('/e.git', path: where, at: head, branch: 'feature');
+
+      expect(git.currentBranch(where), 'feature');
     });
   });
 
@@ -188,16 +207,19 @@ void main() {
       expect(git.worktreesOn('/e.git', 'feature'), isEmpty);
     });
 
-    test('names every attached worktree, sorted', () {
+    test('one instance per branch, and a query never answers for a sibling',
+        () {
       final head = Commit(commitWith({'a.txt': 'one'}));
       git.updateRef('/e.git', ref: 'refs/heads/feature', newCommit: head, expected: null);
-      final second = p.join(tmp.path, 'zzz-second');
-      final first = p.join(tmp.path, 'aaa-first');
+      git.updateRef('/e.git', ref: 'refs/heads/other', newCommit: head, expected: null);
+      final second = p.join(tmp.path, 'aaa-other');
+      final first = p.join(tmp.path, 'zzz-feature');
 
-      git.worktreeAdd('/e.git', path: second, at: head, branch: 'feature');
+      git.worktreeAdd('/e.git', path: second, at: head, branch: 'other');
       git.worktreeAdd('/e.git', path: first, at: head, branch: 'feature');
 
-      expect(git.worktreesOn('/e.git', 'feature'), [first, second]);
+      expect(git.worktreesOn('/e.git', 'feature'), [first]);
+      expect(git.worktreesOn('/e.git', 'other'), [second]);
     });
 
     test('an unrelated branch is not named', () {

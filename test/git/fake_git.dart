@@ -331,6 +331,35 @@ class FakeGit implements Git {
     String? branch,
   }) {
     final repo = _repo(gitDir);
+    // Pruned first, as the real port now does: a registration whose directory
+    // is gone is dead weight, and *stand this directory up again* stays one
+    // act rather than a caller's separate cleanup.
+    for (final registered in repo.worktrees.keys.toList()) {
+      if (!Directory(registered).existsSync()) {
+        repo.worktrees.remove(registered);
+        heads.remove(registered);
+      }
+    }
+    // One attached tree per branch — git's own guard, modelled honestly now
+    // that nothing overrides it. A second attach is refused with the same
+    // sentence real Git writes, never invented here.
+    if (branch != null) {
+      String? holder;
+      for (final registered in repo.worktrees.keys) {
+        if (heads[registered] == branch) {
+          holder = registered;
+          break;
+        }
+      }
+      if (holder != null) {
+        throw ProcessException(
+          'git',
+          ['worktree', 'add', path, branch],
+          "fatal: '$branch' is already used by worktree at '$holder'",
+          128,
+        );
+      }
+    }
     final tree = repo.trees[repo.commits[at.sha]?.tree] ?? const {};
     Directory(path).createSync(recursive: true);
     for (final entry in tree.entries) {

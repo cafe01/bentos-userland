@@ -21,7 +21,7 @@ void main() {
   });
   tearDown(() => site.dispose());
 
-  /// A body: a real program on disk, run inside the private area.
+  /// A body: a real program on disk, run inside the instance's own tree.
   List<String> writes(String path, String content) =>
       ['sh', '-c', 'printf %s ${_quote(content)} > $path'];
 
@@ -92,7 +92,7 @@ void main() {
 
     test('a body that fails lands nothing and answers with its own number',
         () async {
-      final before = (await cli.run(['ls', 't.chat'])).out;
+      final beforeSha = (await cli.run(['ls', 't.chat'])).out.trim().split('\t')[1];
 
       final r = await cli.run([
         'act', 't.chat:c1', 'prompt', ...Cli.signed, '--',
@@ -101,9 +101,13 @@ void main() {
 
       expect(r.code, 7);
       expect(r.out, isEmpty);
-      expect((await cli.run(['ls', 't.chat'])).out, before,
-          reason: 'the tip did not move');
       expect((await cli.run(['log', 't.chat:c1'])).out, isEmpty);
+      final after = (await cli.run(['ls', 't.chat'])).out.trim().split('\t');
+      expect(after[1], beforeSha, reason: 'the tip did not move');
+      expect(after[2], isNotEmpty,
+          reason: "the tree the body failed in is the instance's own, and a "
+              'failed act unwinds the write it attempted, never the tree '
+              'itself');
     });
 
     test('the area is released whether the body succeeded or not', () async {
@@ -143,16 +147,16 @@ void main() {
     });
 
     test('a body that cannot start is a clean answer, not a crash', () async {
-      // The body runs in the act's private area, so `./x` never resolves
-      // against the caller's directory. That is the isolation working — and
-      // the caller has to be told, in their own vocabulary, or they go looking
-      // for a bug in their own script. A Dart stack trace tells them nothing
-      // and claims the coreutil broke.
+      // The body runs in the instance's own tree, so `./x` never resolves
+      // against the caller's directory. That is where the act happens by law
+      // — and the caller has to be told, in their own vocabulary, or they go
+      // looking for a bug in their own script. A Dart stack trace tells them
+      // nothing and claims the coreutil broke.
       final r = await cli.run(['act', 't.chat:c1', 'prompt', ...Cli.signed, '--', './nope']);
 
       expect(r.code, EntityRunner.notFoundCode);
       expect(r.err, contains('./nope'));
-      expect(r.err, contains('private area'),
+      expect(r.err, contains("instance's own tree"),
           reason: 'the message must say WHERE the body was looked for');
       expect(r.err, contains('absolute path'));
 
@@ -227,17 +231,36 @@ void main() {
   });
 
   group('entity materialize', () {
-    test('--at stands the files where someone can look at them', () async {
+    test('--at the instance\'s own standing address answers with it',
+        () async {
+      // An act already stood the instance's tree up. Asking for it again at
+      // the same address is idempotent — the ordinary case now that the tree
+      // an act commits in and the tree a person looks at are one tree.
+      await cli.run(['act', 't.chat:c1', 'prompt', ...Cli.signed, '--', ...writes('1.txt', 'hello')]);
+      final standing = (await cli.run(['materialize', 't.chat:c1'])).out.trim();
+
+      final r = await cli.run(['materialize', 't.chat:c1', '--at', standing]);
+      expect(r.code, 0);
+      expect(r.out.trim(), standing);
+      expect(File('$standing/1.txt').readAsStringSync(), 'hello');
+    });
+
+    test('--at elsewhere is barred once the instance already stands',
+        () async {
+      // A second address is retired: one attached tree per instance, so a
+      // caller who wants a face somewhere else is told where the instance
+      // actually stands rather than being handed a second tree that would
+      // fall behind the first.
       await cli.run(['act', 't.chat:c1', 'prompt', ...Cli.signed, '--', ...writes('1.txt', 'hello')]);
       final where = '${site.root.path}/face';
 
       final r = await cli.run(['materialize', 't.chat:c1', '--at', where]);
-      expect(r.code, 0);
-      expect(r.out.trim(), where);
-      expect(File('$where/1.txt').readAsStringSync(), 'hello');
+      expect(r.code, EntityRunner.barredCode);
+      expect(r.err, contains('already stands'));
+      expect(Directory(where).existsSync(), isFalse);
     });
 
-    test('without --at, the face stands on the ground of the place that holds it',
+    test('without --at, the tree stands on the ground of the place that holds it',
         () async {
       await cli.run(['act', 't.chat:c1', 'prompt', ...Cli.signed, '--', ...writes('1.txt', 'hello')]);
 
@@ -246,7 +269,7 @@ void main() {
       final where = r.out.trim();
 
       expect(where, startsWith(site.root.path),
-          reason: 'a private area is born in the plot, never in the machine');
+          reason: "the instance's own tree stands in the plot, never in the machine");
       expect(File('$where/1.txt').readAsStringSync(), 'hello');
     });
 
@@ -260,10 +283,17 @@ void main() {
 
   group('entity refresh', () {
     /// A face standing where someone looks, and the path it stands at.
+    ///
+    /// **`refresh`, never `materialize --at`.** The instance already stands
+    /// attached at its own address by the time this runs, so a second address
+    /// is `materialize`'s to refuse. `refresh` is the verb that stands an
+    /// absent directory up as a genuine face — detached, at whatever the ref
+    /// held when it was asked — which is exactly what a face at another path
+    /// is for.
     Future<String> face() async {
       await cli.run(['act', 't.chat:c1', 'prompt', ...Cli.signed, '--', ...writes('1.txt', 'first')]);
       final where = '${site.root.path}/face';
-      await cli.run(['materialize', 't.chat:c1', '--at', where]);
+      await cli.run(['refresh', 't.chat:c1', where]);
       return where;
     }
 

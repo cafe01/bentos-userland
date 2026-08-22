@@ -155,8 +155,15 @@ final class Instance {
   /// there**. The branch moves because the commit happened in it — no private
   /// area, no tree written aside, no compare-and-swap.
   ///
-  /// The worktree is stood up at the convention address if none stands, and
-  /// it is attached to this instance's branch: a commit in a detached tree
+  /// **It commits where the instance already stands.** [standingAt] is the
+  /// substrate's own answer to that, and it is asked rather than assumed: an
+  /// act that materialized at the convention address regardless would stand a
+  /// *second* tree beside a face somebody put at another path, commit there,
+  /// and leave that face behind holding the previous state — the person who
+  /// asked for the files watching them never change. Only when the instance
+  /// stands nowhere is a tree stood up, at the convention address.
+  ///
+  /// It is attached to this instance's branch: a commit in a detached tree
   /// advances nothing anyone holds, which is why [Git.commitInWorktree]
   /// refuses one.
   ///
@@ -195,7 +202,11 @@ final class Instance {
     String? say,
   }) async {
     final gitDir = _gitDir;
-    final area = materialize();
+    // Where it stands, or where it will: `materialize` with the standing path
+    // is the idempotent branch and returns that same tree untouched, so this
+    // is one call for both cases and never a second tree.
+    final standingHere = standingAt;
+    final area = materialize(at: standingHere.isEmpty ? null : standingHere.first);
     final path = area.directory.path;
     final standing = ambientGit.revParse(gitDir, ref)!;
     final carried = ambientGit.worktreeDirtyPaths(path);
@@ -354,6 +365,18 @@ final class Instance {
   /// at it. A tree of ours standing **detached** there is refused rather than
   /// re-attached — it is residue of the old acting path, and re-attaching it
   /// silently would carry whatever it holds into the ledger.
+  ///
+  /// **One attached tree, and a second address is refused.** An instance
+  /// stands in exactly one place, named by [standingAt]; asking for it at
+  /// another path while it stands somewhere raises [InstanceStandsElsewhere]
+  /// rather than putting a second tree on the branch. The substrate refuses
+  /// that too, now that [Git.worktreeAdd] no longer overrides it — this
+  /// refuses first, so the reader is told where the instance actually stands
+  /// instead of reading Git's own sentence about a branch.
+  ///
+  /// A face somewhere else is a **detached** tree at a commit, read-only by
+  /// construction: nothing it commits can move a ref, which is exactly what
+  /// makes several of them free.
   Materialization materialize({String? at}) {
     final gitDir = _gitDir;
     final standing = ambientGit.revParse(gitDir, ref);
@@ -364,6 +387,13 @@ final class Instance {
       if (follows != id) throw WorktreeUnattached(path, '$this', follows: follows);
       return materialization(path);
     }
+    // Asked before the add, because the substrate's refusal names a branch and
+    // a directory the caller never typed, and the question they actually asked
+    // is *where does this instance stand*.
+    final elsewhere = standingAt;
+    if (elsewhere.isNotEmpty) {
+      throw InstanceStandsElsewhere(path, '$this', standingAt: elsewhere);
+    }
     ambientGit.worktreeAdd(gitDir, path: path, at: standing, branch: id);
     return materialization(path);
   }
@@ -372,14 +402,15 @@ final class Instance {
   /// handle for a process that did not stand the tree up and holds only a
   /// directory.
   ///
-  /// The ref comes from here and not from the tree, because a worktree of ours
-  /// is detached and cannot report which instance it follows: that is the same
-  /// fact `commit` names a coordinate for, and the reason `entity refresh`
-  /// takes one too.
+  /// The ref comes from here and not from the tree. An instance's own tree is
+  /// attached and could name its branch, but a **face** — a detached tree at a
+  /// commit — cannot, and this handle serves both. That is the same fact
+  /// `entity refresh` takes a coordinate for.
   Materialization materialization(String path) => Materialization(
         directory: Directory(path),
         gitDir: _gitDir,
         ref: ref,
+        attachAddress: conventionAddress,
       );
 
   /// Sends this instance's ref to [remote]. The receiving side runs its own
@@ -500,6 +531,40 @@ final class WorktreeUnattached implements Exception {
         '  an act commits in the instance\'s own tree, and a tree that follows '
             'something else would land its content under this act',
         '  release it or attach it at the line: git -C $directory status',
+      ].join('\n');
+}
+
+/// A second address was asked for an instance that already stands somewhere.
+///
+/// **One attached tree per instance.** Two trees following one branch leave
+/// each other behind the moment either commits, and the lagging one carries
+/// its stale index into the ledger: the sibling's files leave the branch while
+/// still standing on the sibling's disk. Git refuses the second tree on its
+/// own; this refuses first, so the sentence names where the instance stands
+/// rather than which branch was already checked out.
+///
+/// A face at another path is a detached worktree at a commit — read-only, and
+/// as many as anyone wants.
+final class InstanceStandsElsewhere implements Exception {
+  const InstanceStandsElsewhere(this.asked, this.instance,
+      {required this.standingAt});
+
+  /// The path the caller asked for.
+  final String asked;
+
+  final String instance;
+
+  /// Where the instance presently stands — the substrate's own answer.
+  final List<String> standingAt;
+
+  @override
+  String toString() => [
+        '$instance already stands at ${standingAt.join(', ')}, '
+            'and cannot also stand at $asked',
+        '  one attached tree per instance: a second would fall behind the '
+            'first, and a commit taken in it would drop the first tree\'s '
+            'files from the line',
+        '  read it where it stands, or release it first',
       ].join('\n');
 }
 

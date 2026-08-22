@@ -11,19 +11,27 @@ import '../git/model/commit.dart';
 /// The distinction is load-bearing. Git shares one object store across every
 /// worktree, so history costs one copy however many stand at once; the *files*
 /// do not. For small contents that is nothing; for heavy artifacts it is not.
-/// So: a face keeps one of these because someone is looking, an acting body
-/// takes a private [Workspace] and discards it, and everything else reads at
-/// the ref with no worktree at all — which is exactly what lets a federated
-/// site that only reacts hold no tree whatsoever.
+/// So an instance stands in a tree because someone acts or looks, and
+/// everything else reads at the ref with no worktree at all — which is exactly
+/// what lets a federated site that only reacts hold no tree whatsoever.
 ///
-/// **It belongs to whoever looks, not to the entity.** It necessarily lags the
-/// instance — another participant may land an act at any moment — and
-/// refreshing before anything writes through it is the duty of whoever uses it.
+/// **The instance's own tree does not lag, because the act happens in it.** A
+/// commit taken here moves index, `HEAD` and branch in one motion, so there is
+/// no interval in which the files and the line disagree. That is why exactly
+/// one attached tree stands per instance: a second would fall behind the first
+/// the moment either committed, and a commit taken in the lagging one would
+/// carry its stale index into the ledger. [Instance.materialize] refuses it,
+/// and the substrate refuses it underneath.
+///
+/// The one lag left is a ref moved from **outside** every tree — a fetch —
+/// and it is repaired at [Instance.fetch], which holds the pre-fetch tip that
+/// tells it from a person's own edits. Nothing here pretends to.
 final class Materialization {
   Materialization({
     required this.directory,
     required this.gitDir,
     required this.ref,
+    this.attachAddress,
   });
 
   /// Where the files stand. An ordinary directory: by the time work happens the
@@ -39,6 +47,30 @@ final class Materialization {
   /// ref-follow. So [refresh] has nothing to do there, and says so by doing
   /// nothing.
   final String? ref;
+
+  /// **The one address [refresh] is allowed to attach at**, when it stands an
+  /// absent tree up — the instance's own convention address, named by whoever
+  /// built this handle. Null for every handle that is not an instance's own
+  /// tree: the class's stage, a place's pin, and a face asked for at any other
+  /// path all stay detached by construction, because attaching is what makes a
+  /// tree the thing an act commits in, and only one tree may ever be that per
+  /// branch.
+  ///
+  /// **Why [refresh] cannot decide this from [directory] and [ref] alone.**
+  /// Both a face and the instance's own tree follow the same branch — that is
+  /// the whole difficulty an unattached face exists to solve — so the only fact
+  /// that tells them apart is the address itself, and only the caller who knows
+  /// the convention can state it.
+  final String? attachAddress;
+
+  /// The branch [ref] names, or null when [ref] follows none — [refresh]'s own
+  /// reading of it, since attaching a freshly-stood-up tree needs the bare name
+  /// and not the full ref.
+  String? get _branch {
+    final r = ref;
+    if (r == null || !r.startsWith('refs/heads/')) return null;
+    return r.substring('refs/heads/'.length);
+  }
 
   /// The commit the files currently stand at — not the instance's tip, which
   /// may have moved.
@@ -174,7 +206,17 @@ final class Materialization {
     if (directory.existsSync() && directory.listSync().isNotEmpty) {
       throw WorktreeNotOurs(directory.path, repository: gitDir);
     }
-    ambientGit.worktreeAdd(gitDir, path: directory.path, at: tip);
+    // Attached only at the instance's own address — the tree an act commits
+    // in — and detached everywhere else, a face read-only by construction.
+    // Standing this up attached at any other path would put a second tree on
+    // the branch, which the substrate now refuses on its own.
+    final attach = directory.path == attachAddress;
+    ambientGit.worktreeAdd(
+      gitDir,
+      path: directory.path,
+      at: tip,
+      branch: attach ? _branch : null,
+    );
     return const WorktreeCheckout(moved: true);
   }
 

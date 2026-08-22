@@ -148,8 +148,14 @@ void main() {
       expect(git.worktreeHead(where), advanced);
     });
 
-    test('several worktrees may stand attached to the same branch at once',
+    test('a second worktree is refused the branch the first already follows',
         () async {
+      // The charter gate of the retired law dies with it: several trees no
+      // longer stand attached to one branch at once, because a second one
+      // would fall behind the first the moment either committed, and a
+      // commit taken in the lagging tree would carry its stale index into
+      // the ledger. `--force` used to override this on every call; it is
+      // gone, and this proves the substrate's own guard now stands.
       final repo = enclosing('two-lookers');
       final gitDir = p.join(repo, '.git');
       final head = git.revParse(gitDir, 'HEAD')!;
@@ -158,10 +164,35 @@ void main() {
       final second = p.join(scratch.path, 'second');
 
       git.worktreeAdd(gitDir, path: first, at: head, branch: 'feature');
-      git.worktreeAdd(gitDir, path: second, at: head, branch: 'feature');
 
-      expect(git.currentBranch(first), 'feature');
-      expect(git.currentBranch(second), 'feature');
+      expect(
+        () => git.worktreeAdd(gitDir, path: second, at: head, branch: 'feature'),
+        throwsA(isA<ProcessException>()),
+      );
+      expect(Directory(second).existsSync(), isFalse,
+          reason: 'a refused add leaves nothing behind for the caller to find');
+    });
+
+    test('a directory whose registration outlived it does not block the add',
+        () async {
+      // The other half of the job `--force` used to do, unwritten until now:
+      // *stand this directory up again* is one act to whoever needs the
+      // files, even where somebody deleted the tree by hand and left the
+      // registration behind. `worktree prune` clears exactly that dead
+      // entry, and a live tree is never in its way — this is the reason a
+      // second attach is still refused right above.
+      final repo = enclosing('recreated');
+      final gitDir = p.join(repo, '.git');
+      final head = git.revParse(gitDir, 'HEAD')!;
+      Process.runSync('git', ['-C', repo, 'branch', 'feature', head.sha]);
+      final where = p.join(scratch.path, 'standing');
+
+      git.worktreeAdd(gitDir, path: where, at: head, branch: 'feature');
+      Directory(where).deleteSync(recursive: true);
+
+      git.worktreeAdd(gitDir, path: where, at: head, branch: 'feature');
+
+      expect(git.currentBranch(where), 'feature');
     });
   });
 
@@ -184,18 +215,27 @@ void main() {
       expect(git.worktreesOn(gitDir, 'feature'), isEmpty);
     });
 
-    test('names every attached worktree, sorted', () async {
+    test('one instance per branch, and a query never answers for a sibling',
+        () async {
+      // The old fixture stood two trees on one branch to have something to
+      // sort — the very shape the guard above now refuses. What survives the
+      // law is the claim underneath the fixture: several instances, each
+      // holding its own single tree, and a query for one branch's tree must
+      // never leak another's — proved here by naming the paths so that
+      // returning the wrong instance's tree would read as a passing sort.
       final repo = enclosing('several-standing');
       final gitDir = p.join(repo, '.git');
       final head = git.revParse(gitDir, 'HEAD')!;
       Process.runSync('git', ['-C', repo, 'branch', 'feature', head.sha]);
-      final second = p.join(scratch.path, 'zzz-second');
-      final first = p.join(scratch.path, 'aaa-first');
+      Process.runSync('git', ['-C', repo, 'branch', 'other', head.sha]);
+      final second = p.join(scratch.path, 'aaa-other');
+      final first = p.join(scratch.path, 'zzz-feature');
 
-      git.worktreeAdd(gitDir, path: second, at: head, branch: 'feature');
+      git.worktreeAdd(gitDir, path: second, at: head, branch: 'other');
       git.worktreeAdd(gitDir, path: first, at: head, branch: 'feature');
 
-      expect(git.worktreesOn(gitDir, 'feature'), [first, second]);
+      expect(git.worktreesOn(gitDir, 'feature'), [first]);
+      expect(git.worktreesOn(gitDir, 'other'), [second]);
     });
 
     test('an unrelated branch is not named', () async {
