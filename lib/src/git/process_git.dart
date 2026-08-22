@@ -133,12 +133,37 @@ final class ProcessGit implements Git {
   /// environment empty is what let it answer, so the environment is never left
   /// empty; an act with nobody behind it is refused a floor above, where the
   /// caller is written.
-  static Map<String, String> _identity(Actor actor) => {
-        'GIT_AUTHOR_NAME': actor.name,
-        'GIT_AUTHOR_EMAIL': actor.email,
-        'GIT_COMMITTER_NAME': actor.name,
-        'GIT_COMMITTER_EMAIL': actor.email,
-      };
+  ///
+  /// The date travels the same way and for the same reason: `_poisoned`
+  /// scrubs every location variable but neither `GIT_AUTHOR_DATE` nor
+  /// `GIT_COMMITTER_DATE` is a location, so an ambient date passes straight
+  /// through to git's own clock. The ledger's date is part of what it means to
+  /// act, exactly as the ledger's author is, so it is decided here and stated
+  /// — never left for the ambient environment, or a foreign machine's clock,
+  /// to supply by default.
+  static Map<String, String> _identity(Actor actor) {
+    final now = _timestamp(DateTime.now());
+    return {
+      'GIT_AUTHOR_NAME': actor.name,
+      'GIT_AUTHOR_EMAIL': actor.email,
+      'GIT_AUTHOR_DATE': now,
+      'GIT_COMMITTER_NAME': actor.name,
+      'GIT_COMMITTER_EMAIL': actor.email,
+      'GIT_COMMITTER_DATE': now,
+    };
+  }
+
+  /// [time] in git's own raw date format — `<unix-seconds> <±HHMM>` — the one
+  /// spelling git never has to interpret through a locale or an approximate
+  /// parser, so what we state is exactly what lands.
+  static String _timestamp(DateTime time) {
+    final seconds = time.millisecondsSinceEpoch ~/ 1000;
+    final offset = time.timeZoneOffset;
+    final sign = offset.isNegative ? '-' : '+';
+    final hours = offset.abs().inHours.toString().padLeft(2, '0');
+    final minutes = (offset.abs().inMinutes % 60).toString().padLeft(2, '0');
+    return '$seconds $sign$hours$minutes';
+  }
 
   // ------------------------------------------------------------- the repository
 

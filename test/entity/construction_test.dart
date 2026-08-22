@@ -392,6 +392,62 @@ void main() {
       );
     });
 
+    test('a poisoned date does not reach the commit the shipped act path writes',
+        () {
+      // The debt this closes: `_poisoned` scrubs eight variables and every one
+      // is a location — GIT_DIR, GIT_WORK_TREE, and the rest. Neither
+      // GIT_AUTHOR_DATE nor GIT_COMMITTER_DATE is a location, so both pass
+      // straight through to git, and an ambient date silently dates every act
+      // we take. The ledger's date is stated the same way its author is:
+      // decided here, not inherited from whatever the environment claims.
+      final tip = land({'a': '1\n'}, ref: 'refs/heads/one');
+      final path = '${scratch.path}/attached_date';
+      final before = DateTime.now();
+
+      final child = Process.runSync(
+        Platform.resolvedExecutable,
+        [
+          'run', 'test/entity/tools/poisoned_act.dart',
+          gitDir, path, 'refs/heads/one', 'one',
+        ],
+        workingDirectory: Directory.current.path,
+        environment: {
+          'GIT_AUTHOR_DATE': '2001-01-01T00:00:00',
+          'GIT_COMMITTER_DATE': '2001-01-01T00:00:00',
+        },
+      );
+      expect(child.exitCode, isZero, reason: '${child.stderr}');
+
+      final landed = (child.stdout as String).trim();
+      final stamps = Process.runSync('git', [
+        '--git-dir=$gitDir',
+        'log',
+        '-1',
+        '--format=%at|%ct',
+        landed,
+      ]).stdout as String;
+      final parts = stamps.trim().split('|');
+      final authorEpoch = int.parse(parts[0]);
+      final committerEpoch = int.parse(parts[1]);
+      final poisonedEpoch =
+          DateTime.parse('2001-01-01T00:00:00').millisecondsSinceEpoch ~/ 1000;
+
+      expect(authorEpoch, isNot(equals(poisonedEpoch)),
+          reason: 'the poisoned date must not reach the object');
+      expect(committerEpoch, isNot(equals(poisonedEpoch)));
+      // Both stamps land within a generous window of when the process actually
+      // ran — proving they were stated, not merely "not 2001".
+      expect(
+        (authorEpoch - before.millisecondsSinceEpoch ~/ 1000).abs() < 120,
+        isTrue,
+        reason: 'the author date must be roughly now, not ambient',
+      );
+      expect(
+        (committerEpoch - before.millisecondsSinceEpoch ~/ 1000).abs() < 120,
+        isTrue,
+      );
+    });
+
     test('a worktree shares the object store with the entity', () {
       final tip = land({'greeting': 'hello\n'}, ref: 'refs/heads/one');
       final at = '${scratch.path}/look';
