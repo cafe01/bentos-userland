@@ -1,12 +1,12 @@
-/// The type spine — design §4.
+/// The type spine.
 ///
 /// Every component page compiles against these. They are values: immutable,
 /// comparable, serializable, and free of any dependency on git, on the place,
 /// or on a running process.
 library;
 
-/// Who acted. Supplied by whoever acts (R2.3.3, and the floor demand in §3 of
-/// the requirements); never derived from the machine's owner.
+/// Who acted. Supplied by whoever acts; never derived from the machine's
+/// owner.
 final class Actor {
   const Actor({required this.name, required this.address});
   final String name;
@@ -28,13 +28,13 @@ final class Actor {
 extension type const Point(String _id) implements Object {}
 
 /// An instant of the world. Always the date the action was taken, never the
-/// date it reached this copy (R2.6.4, R2.2.3).
+/// date it reached this copy.
 typedef Instant = DateTime;
 
 /// What a source is to this copy. A source may hold both.
 enum Role { publishTo, follow }
 
-/// When an instance moves against a source (R2.6.3).
+/// When an instance moves against a source.
 sealed class Cadence {
   const Cadence();
 }
@@ -56,42 +56,25 @@ final class OnClock extends Cadence {
   final Duration every;
 }
 
-/// An address the substrate accepts, with the roles and cadence this copy
-/// gives it. Held by the copy and by nobody else (R2.6.1).
-final class Source {
-  const Source({
-    required this.name,
-    required this.address,
-    required this.roles,
-    required this.cadence,
-  });
-  final String name;
-  final String address;
-  final Set<Role> roles;
-  final Cadence cadence;
-}
+/// How this copy's line relates to a source's, measured live against that
+/// source's remote-tracking ref by `git rev-list --left-right --count`: the
+/// commits each side holds that the other lacks. There is no `unknown`
+/// relation here — a copy that has never contacted a source has no
+/// remote-tracking ref to measure against at all, which is a different and
+/// honest statement than any of these four, made by the absence of a
+/// [Standing] rather than by a fifth value on this enum.
+enum Relation { current, behind, ahead, diverged }
 
-/// How this copy's line relates to a source's, as of the last contact
-/// (R2.9.1). The counts are part of the answer, never an extra (R2.9.1a).
-enum Relation { current, behind, ahead, diverged, unknown }
-
-/// A standing answer. There is no constructor path to a dated `unknown` or an
-/// undated `behind` (R2.9.2): [Standing.unknown] is the one undated value, and
-/// [Standing.known] requires the age.
+/// A standing answer: the outcome of measuring one instance against one
+/// source, right now. It carries no age — what is dated is the last fetch,
+/// and git already holds that on the remote-tracking ref itself, so nothing
+/// here duplicates it.
 final class Standing {
-  const Standing.known({
+  const Standing({
     required this.relation,
     required this.behind,
     required this.ahead,
-    required Instant this.contacted,
-  }) : assert(relation != Relation.unknown, 'unknown carries no age');
-
-  /// The honest answer for a source never contacted about this instance.
-  const Standing.unknown()
-      : relation = Relation.unknown,
-        behind = 0,
-        ahead = 0,
-        contacted = null;
+  });
 
   final Relation relation;
 
@@ -101,22 +84,17 @@ final class Standing {
   /// Landings this copy holds that the source lacks.
   final int ahead;
 
-  /// When the contact this answer rests on happened. Null only for
-  /// [Relation.unknown], which is the one value that carries no age (R2.9.2).
-  final Instant? contacted;
-
   @override
   bool operator ==(Object other) =>
       other is Standing &&
       other.relation == relation &&
       other.behind == behind &&
-      other.ahead == ahead &&
-      other.contacted == contacted;
+      other.ahead == ahead;
 
   @override
-  int get hashCode => Object.hash(relation, behind, ahead, contacted);
+  int get hashCode => Object.hash(relation, behind, ahead);
 
   @override
   String toString() =>
-      'Standing(${relation.name}, behind: $behind, ahead: $ahead, contacted: $contacted)';
+      'Standing(${relation.name}, behind: $behind, ahead: $ahead)';
 }

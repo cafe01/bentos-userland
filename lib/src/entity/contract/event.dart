@@ -23,11 +23,11 @@ final class Event {
   final Instant when;
   final String? say;
 
-  /// The source it arrived from, or null when it was authored here (R2.4.1).
+  /// The source it arrived from, or null when it was authored here.
   final String? arrivedFrom;
 }
 
-/// An arming standing on this copy (R2.4.2). Local, travelling nowhere.
+/// An arming standing on this copy. Local, travelling nowhere.
 final class Registration {
   const Registration({
     required this.id,

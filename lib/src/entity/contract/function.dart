@@ -1,4 +1,4 @@
-/// `function` — the verbs a thing ships, run against an instance (R2.8.1).
+/// `function` — the verbs a thing ships, run against an instance.
 library;
 
 /// The slice of `Instance` this component owns.

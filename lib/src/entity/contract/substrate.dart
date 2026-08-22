@@ -7,11 +7,13 @@
 library;
 
 /// A copy is stood as a partial clone with blobs filtered: commits and trees
-/// arrive, content does not (R2.1.2, R2.1.3).
+/// arrive, content does not.
 const String cloneFilter = 'blob:none';
 
 /// The fetch refspec every source is held under, into that source's
-/// remote-tracking refs — the record standing is read from (R2.9.4).
+/// remote-tracking refs — the refs standing is measured against, live, by
+/// `git rev-list --left-right --count` on every ask. Nothing of ours stores
+/// what that measurement says.
 String fetchRefspecFor(String source) =>
     '+refs/heads/*:refs/remotes/$source/*';
 
@@ -23,7 +25,7 @@ String remoteTrackingRef(String source, String instance) =>
 String instanceRef(String instance) => 'refs/heads/$instance';
 
 /// The commit trailer that carries an instance's displayed title, which is
-/// what makes a far instance nameable on a copy holding no content (R2.1.5).
+/// what makes a far instance nameable on a copy holding no content.
 const String titleTrailer = 'Title';
 
 /// The commit trailer that names the source a landing arrived from. Absent on
