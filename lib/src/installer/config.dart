@@ -18,7 +18,6 @@ final class BentosConfig {
   const BentosConfig({
     required this.home,
     required this.prefix,
-    required this.legacyPrefix,
     required this.streams,
   });
 
@@ -28,13 +27,6 @@ final class BentosConfig {
   /// `<home>/bin` — where the installed executables live, and the one directory
   /// this product asks to be on the PATH.
   final String prefix;
-
-  /// Where the layout before substitution put the names — `~/.local/bin`, the
-  /// old bootstrap's default. Not a prefix we install into: the one directory
-  /// we look at to leave a machine that predates this store still working.
-  /// `BENTOS_LEGACY_PREFIX` exists so a gate can mount a fixture of that layout
-  /// under its own root.
-  final String legacyPrefix;
 
   final Map<String, StreamConfig> streams;
 
@@ -95,15 +87,9 @@ final class BentosConfig {
         ? _expandUser(envPrefix, userHome)
         : p.join(home, 'bin');
 
-    final envLegacy = env['BENTOS_LEGACY_PREFIX'];
-    final legacyPrefix = envLegacy != null && envLegacy.isNotEmpty
-        ? _expandUser(envLegacy, userHome)
-        : p.join(userHome, '.local', 'bin');
-
     return BentosConfig(
       home: home,
       prefix: prefix,
-      legacyPrefix: legacyPrefix,
       streams: streams,
     );
   }

@@ -7,7 +7,7 @@ library;
 export 'src/installer/bentos_runner.dart';
 export 'src/installer/config.dart';
 export 'src/installer/installer.dart';
-export 'src/installer/legacy.dart';
+export 'src/installer/path_shadows.dart';
 export 'src/installer/manifest.dart';
 export 'src/installer/platform.dart';
 export 'src/installer/source.dart';

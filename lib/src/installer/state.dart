@@ -6,13 +6,11 @@ import 'package:path/path.dart' as p;
 /// `~/.bentos/state.json` — which version of each stream is live, and which one
 /// it replaced.
 ///
-/// It carries exactly what the `current` and `previous` links used to carry and
-/// nothing else. The disk stays the truth about *content*: what a version holds
-/// is read from its own directory, and what is on the PATH is read by hashing
-/// the file that is on the PATH. This file only says which version those
-/// readings are supposed to agree with — so a disagreement between the pointer
-/// and the disk is drift, which the installer reports, and never a fact one of
-/// them silently wins.
+/// The disk stays the truth about *content*: what a version holds is read from
+/// its own directory, and what is on the PATH is read by hashing the file that
+/// is on the PATH. This file only says which version those readings are supposed
+/// to agree with — so a disagreement between the pointer and the disk is drift,
+/// which the installer reports, and never a fact one of them silently wins.
 final class InstallState {
   InstallState({required this.path, Map<String, StreamState>? streams})
       : _streams = {...?streams};
@@ -51,15 +49,6 @@ final class InstallState {
       current: version,
       previous: live == version ? _streams[stream]?.previous : live,
     );
-    _write();
-  }
-
-  /// Record a pointer read from somewhere else — the links the layout before
-  /// substitution carried. Both ends are taken as given rather than derived
-  /// from what is here, because nothing is here: this is the first write this
-  /// file gets on a machine that predates it.
-  void adopt(String stream, {required String current, String? previous}) {
-    _streams[stream] = StreamState(current: current, previous: previous);
     _write();
   }
 

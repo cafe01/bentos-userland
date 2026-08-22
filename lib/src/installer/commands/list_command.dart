@@ -37,7 +37,6 @@ final class ListCommand extends Command<void> {
 
   @override
   Future<void> run() async {
-    bentos.adoptLegacyLayout();
     final store = bentos.store;
     final out = bentos.out;
     final shadows = bentos.shadows;

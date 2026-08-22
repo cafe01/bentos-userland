@@ -10,7 +10,7 @@ import 'commands/rollback_command.dart';
 import 'commands/update_command.dart';
 import 'config.dart';
 import 'installer.dart';
-import 'legacy.dart';
+import 'path_shadows.dart';
 import 'platform.dart';
 import 'source.dart';
 import 'store.dart';
@@ -86,34 +86,8 @@ final class BentosRunner {
 
   VersionStore get store => VersionStore(home: config.home, prefix: config.prefix);
 
-  LegacyLayout get legacy => LegacyLayout(
-        home: config.home,
-        legacyPrefix: config.legacyPrefix,
-        store: store,
-      );
-
   PathShadows get shadows =>
       PathShadows.of(config.prefix, _environment ?? io.Platform.environment);
-
-  /// Bring a machine installed by the layout before substitution into this
-  /// store, and say what moved.
-  ///
-  /// Called at the top of every verb that reads or writes the store, because
-  /// the failure it cures is silent: a command that needs to be remembered
-  /// would only ever be typed by someone who already knew.
-  void adoptLegacyLayout() {
-    for (final report in legacy.adopt(config.streams.keys)) {
-      out.writeln(
-        'adopted ${report.stream} ${report.version} from the previous layout  '
-        '→  ${config.prefix}',
-      );
-      if (report.shimmed.isNotEmpty) {
-        out.writeln(
-          '  ${config.legacyPrefix} now forwards: ${report.shimmed.join(" ")}',
-        );
-      }
-    }
-  }
 
   Installer get installer => Installer(
         config: config,

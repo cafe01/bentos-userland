@@ -27,7 +27,6 @@ final class UpdateCommand extends Command<void> {
 
   @override
   Future<void> run() async {
-    bentos.adoptLegacyLayout();
     final stream = argResults!['stream'] as String;
     final installer = bentos.installer;
     final source = installer.sourceFor(stream);

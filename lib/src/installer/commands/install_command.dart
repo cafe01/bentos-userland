@@ -27,7 +27,6 @@ final class InstallCommand extends Command<void> {
 
   @override
   Future<void> run() async {
-    bentos.adoptLegacyLayout();
     final stream = argResults!['stream'] as String;
     final report = await bentos.installer.install(
       stream: stream,
