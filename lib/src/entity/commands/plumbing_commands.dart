@@ -29,10 +29,10 @@ import 'entity_command.dart';
 /// address — coordinate resolves, path operates — and this is the verb that
 /// crosses between the two.
 ///
-/// Zero, one, or several equally legal answers. Zero is not found: a
-/// coordinate that stands nowhere has nothing to resolve to, bogus or real.
-/// Several is answered by the first, sorted — deterministic, and the same
-/// tie-break [standingAt] already sorts for.
+/// Zero or one — never several, since [standingAt] can only ever answer for
+/// one address or none, a fact Git enforces on the branch itself. Zero is not
+/// found: a coordinate that stands nowhere has nothing to resolve to, bogus
+/// or real.
 final class ResolveCommand extends EntityCommand {
   ResolveCommand(super.cli);
 
@@ -49,12 +49,12 @@ final class ResolveCommand extends EntityCommand {
   Future<void> run() async {
     final coord = coordinate();
     final standingAt = cli.instanceAt(coord, place: placeOption).standingAt;
-    if (standingAt.isEmpty) {
+    if (standingAt == null) {
       cli.err.writeln('entity resolve: stands nowhere: $coord');
       cli.exitCode = EntityRunner.notFoundCode;
       return;
     }
-    cli.out.writeln(standingAt.first);
+    cli.out.writeln(standingAt);
   }
 }
 

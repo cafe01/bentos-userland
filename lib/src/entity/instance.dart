@@ -205,7 +205,7 @@ final class Instance {
     // is the idempotent branch and returns that same tree untouched, so this
     // is one call for both cases and never a second tree.
     final standingHere = standingAt;
-    final area = materialize(at: standingHere.isEmpty ? null : standingHere.first);
+    final area = materialize(at: standingHere);
     final path = area.directory.path;
     final standing = ambientGit.revParse(gitDir, ref)!;
     final carried = ambientGit.worktreeDirtyPaths(path);
@@ -301,12 +301,16 @@ final class Instance {
     return ProcessResult(child.pid, code, '', '');
   }
 
-  /// Where this instance presently stands as a materialization — zero, one, or
-  /// several paths, all equally legal. Read straight from the substrate's own
-  /// record of worktrees attached to this instance's branch: nothing here
-  /// keeps a register of its own, so this is exactly as current as `git
-  /// worktree list` is.
-  List<String> get standingAt => ambientGit.worktreesOn(_gitDir, id);
+  /// Where this instance presently stands as a materialization, or null if it
+  /// stands nowhere. Read straight from the substrate's own record of the
+  /// worktree attached to this instance's branch: nothing here keeps a
+  /// register of its own, so this is exactly as current as `git worktree
+  /// list` is.
+  ///
+  /// **Zero or one, never several** — [materialize] refuses a second address
+  /// while the instance already stands somewhere, and Git refuses it too, now
+  /// that nothing overrides its one-attached-tree-per-branch guard.
+  String? get standingAt => ambientGit.worktreesOn(_gitDir, id);
 
   /// Where this instance's worktree stands when nobody names a path — the
   /// **convention address**, `instances/<id>` inside the installation, sibling
@@ -363,7 +367,7 @@ final class Instance {
     // a directory the caller never typed, and the question they actually asked
     // is *where does this instance stand*.
     final elsewhere = standingAt;
-    if (elsewhere.isNotEmpty) {
+    if (elsewhere != null) {
       throw InstanceStandsElsewhere(path, '$this', standingAt: elsewhere);
     }
     ambientGit.worktreeAdd(gitDir, path: path, at: standing, branch: id);
@@ -527,11 +531,11 @@ final class InstanceStandsElsewhere implements Exception {
   final String instance;
 
   /// Where the instance presently stands — the substrate's own answer.
-  final List<String> standingAt;
+  final String standingAt;
 
   @override
   String toString() => [
-        '$instance already stands at ${standingAt.join(', ')}, '
+        '$instance already stands at $standingAt, '
             'and cannot also stand at $asked',
         '  one attached tree per instance: a second would fall behind the '
             'first, and a commit taken in it would drop the first tree\'s '

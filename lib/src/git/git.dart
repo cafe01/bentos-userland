@@ -271,11 +271,16 @@ abstract interface class Git {
     String? branch,
   });
 
-  /// The linked worktrees of [gitDir] presently attached to [branch] — the
-  /// substrate's own record of where an instance stands, since nothing above
-  /// this port keeps a register of its own. Zero, one, or several, all
-  /// equally legal; sorted, so a caller reading one deterministically may.
-  List<String> worktreesOn(String gitDir, String branch);
+  /// The linked worktree of [gitDir] presently attached to [branch], or null
+  /// if none stands — the substrate's own record of where an instance
+  /// stands, since nothing above this port keeps a register of its own.
+  ///
+  /// **Zero or one, never several.** [worktreeAdd] refuses a second attached
+  /// tree on a branch already held — Git's own guard, no longer overridden —
+  /// so for a single named branch that is the only pair of answers Git can
+  /// ever give. A plural return here would promise a state the substrate
+  /// itself cannot produce.
+  String? worktreesOn(String gitDir, String branch);
 
   /// Discards the worktree at [path] and deregisters it. Leaving it registered
   /// is the leak the API exists to prevent.

@@ -1188,7 +1188,7 @@ final class _WatchedGit implements Git {
       _inner.worktreeAdd(gitDir, path: path, at: at, branch: branch);
 
   @override
-  List<String> worktreesOn(String gitDir, String branch) =>
+  String? worktreesOn(String gitDir, String branch) =>
       _inner.worktreesOn(gitDir, branch);
 
   @override

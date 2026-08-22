@@ -177,7 +177,7 @@ void main() {
       site.run(() {
         final e = Entity('bentos.mem', from: site.root.path).create(actor: testActor);
         final instance = e.instance('main')..create();
-        expect(instance.standingAt, isEmpty);
+        expect(instance.standingAt, isNull);
       });
     });
 
@@ -194,7 +194,7 @@ void main() {
         // from what the substrate itself now shows, never from having been told.
         site.git.worktreeAdd(gitDir, path: where, at: at, branch: 'main');
 
-        expect(instance.standingAt, [where]);
+        expect(instance.standingAt, where);
       });
     });
   });

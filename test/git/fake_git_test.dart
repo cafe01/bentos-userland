@@ -195,7 +195,7 @@ void main() {
 
   group('worktreesOn', () {
     test('nothing stands on a branch nobody attached to', () {
-      expect(git.worktreesOn('/e.git', 'feature'), isEmpty);
+      expect(git.worktreesOn('/e.git', 'feature'), isNull);
     });
 
     test('a detached worktree at the same commit does not count', () {
@@ -204,7 +204,7 @@ void main() {
       final where = p.join(tmp.path, 'standing');
       git.worktreeAdd('/e.git', path: where, at: head);
 
-      expect(git.worktreesOn('/e.git', 'feature'), isEmpty);
+      expect(git.worktreesOn('/e.git', 'feature'), isNull);
     });
 
     test('one instance per branch, and a query never answers for a sibling',
@@ -218,8 +218,8 @@ void main() {
       git.worktreeAdd('/e.git', path: second, at: head, branch: 'other');
       git.worktreeAdd('/e.git', path: first, at: head, branch: 'feature');
 
-      expect(git.worktreesOn('/e.git', 'feature'), [first]);
-      expect(git.worktreesOn('/e.git', 'other'), [second]);
+      expect(git.worktreesOn('/e.git', 'feature'), first);
+      expect(git.worktreesOn('/e.git', 'other'), second);
     });
 
     test('an unrelated branch is not named', () {
@@ -229,7 +229,7 @@ void main() {
       final where = p.join(tmp.path, 'standing');
       git.worktreeAdd('/e.git', path: where, at: head, branch: 'feature');
 
-      expect(git.worktreesOn('/e.git', 'other'), isEmpty);
+      expect(git.worktreesOn('/e.git', 'other'), isNull);
     });
 
     test('removing an attached worktree drops it from the record', () {
@@ -240,7 +240,7 @@ void main() {
 
       git.worktreeRemove('/e.git', path: where);
 
-      expect(git.worktreesOn('/e.git', 'feature'), isEmpty);
+      expect(git.worktreesOn('/e.git', 'feature'), isNull);
     });
   });
 

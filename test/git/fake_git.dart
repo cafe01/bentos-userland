@@ -390,12 +390,12 @@ class FakeGit implements Git {
   }
 
   @override
-  List<String> worktreesOn(String gitDir, String branch) {
+  String? worktreesOn(String gitDir, String branch) {
     final repo = _repo(gitDir);
-    return [
-      for (final path in repo.worktrees.keys)
-        if (heads[path] == branch) path,
-    ]..sort();
+    for (final path in repo.worktrees.keys) {
+      if (heads[path] == branch) return path;
+    }
+    return null;
   }
 
   @override

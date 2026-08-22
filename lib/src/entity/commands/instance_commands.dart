@@ -76,7 +76,7 @@ final class LsCommand extends EntityCommand {
     if (!target.contains(':')) {
       for (final one in cli.entityNamed(target, place: placeOption).instances) {
         cli.out.writeln(
-          '${one.id}\t${one.tip?.sha ?? ''}\t${one.standingAt.join(',')}',
+          '${one.id}\t${one.tip?.sha ?? ''}\t${one.standingAt ?? ''}',
         );
       }
       return;

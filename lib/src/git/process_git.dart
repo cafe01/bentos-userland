@@ -432,24 +432,23 @@ final class ProcessGit implements Git {
   }
 
   @override
-  List<String> worktreesOn(String gitDir, String branch) {
+  String? worktreesOn(String gitDir, String branch) {
     final result = _run(['--git-dir=$gitDir', 'worktree', 'list', '--porcelain']);
-    if (result.exitCode != 0) return const [];
+    if (result.exitCode != 0) return null;
     final target = 'refs/heads/$branch';
-    final paths = <String>[];
     String? current;
     for (final line in _text(result.stdout).split('\n')) {
       if (line.startsWith('worktree ')) {
         current = line.substring('worktree '.length).trim();
       } else if (line.startsWith('branch ')) {
         if (current != null && line.substring('branch '.length).trim() == target) {
-          paths.add(current);
+          return current;
         }
       } else if (line.isEmpty) {
         current = null;
       }
     }
-    return paths..sort();
+    return null;
   }
 
   @override

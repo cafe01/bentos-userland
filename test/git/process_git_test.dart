@@ -201,7 +201,7 @@ void main() {
       final repo = enclosing('none-standing');
       final gitDir = p.join(repo, '.git');
 
-      expect(git.worktreesOn(gitDir, 'feature'), isEmpty);
+      expect(git.worktreesOn(gitDir, 'feature'), isNull);
     });
 
     test('a detached worktree at the same commit does not count', () async {
@@ -212,17 +212,16 @@ void main() {
       final where = p.join(scratch.path, 'standing');
       git.worktreeAdd(gitDir, path: where, at: head);
 
-      expect(git.worktreesOn(gitDir, 'feature'), isEmpty);
+      expect(git.worktreesOn(gitDir, 'feature'), isNull);
     });
 
     test('one instance per branch, and a query never answers for a sibling',
         () async {
-      // The old fixture stood two trees on one branch to have something to
-      // sort — the very shape the guard above now refuses. What survives the
-      // law is the claim underneath the fixture: several instances, each
-      // holding its own single tree, and a query for one branch's tree must
-      // never leak another's — proved here by naming the paths so that
-      // returning the wrong instance's tree would read as a passing sort.
+      // Two trees on one branch is no longer a state to construct here at
+      // all — `worktreeAdd`'s own guard above refuses it, proved against real
+      // Git. What survives is the claim underneath the old fixture: several
+      // instances, each holding its own single tree, and a query for one
+      // branch's tree must never leak another's.
       final repo = enclosing('several-standing');
       final gitDir = p.join(repo, '.git');
       final head = git.revParse(gitDir, 'HEAD')!;
@@ -234,8 +233,8 @@ void main() {
       git.worktreeAdd(gitDir, path: second, at: head, branch: 'other');
       git.worktreeAdd(gitDir, path: first, at: head, branch: 'feature');
 
-      expect(git.worktreesOn(gitDir, 'feature'), [first]);
-      expect(git.worktreesOn(gitDir, 'other'), [second]);
+      expect(git.worktreesOn(gitDir, 'feature'), first);
+      expect(git.worktreesOn(gitDir, 'other'), second);
     });
 
     test('an unrelated branch is not named', () async {
@@ -247,7 +246,7 @@ void main() {
       final where = p.join(scratch.path, 'standing');
       git.worktreeAdd(gitDir, path: where, at: head, branch: 'feature');
 
-      expect(git.worktreesOn(gitDir, 'other'), isEmpty);
+      expect(git.worktreesOn(gitDir, 'other'), isNull);
     });
   });
 
