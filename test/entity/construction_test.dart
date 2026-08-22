@@ -753,6 +753,96 @@ void main() {
           reason: 'and the content arrived with it');
     });
 
+    test('a fetch with nothing materialized has no tree to report on', () async {
+      // A federated site that only reacts — the ordinary case elsewhere in
+      // this group — materializes nothing at all. An instance born here for
+      // the first time by fetch, never acted on and never materialized
+      // locally, is the same fact from the other direction: there is nothing
+      // at its convention address for the catch-up to touch, and that is
+      // reported rather than left for a reader to infer from an absent field.
+      final born = await theirs().instance('untouched').create().act('note',
+          (workspace) {
+        File('${workspace.directory.path}/note').writeAsStringSync('elsewhere\n');
+      }, actor: testActor) as Landed;
+      final newcomer = mine.instance('untouched');
+      expect(newcomer.tip, isNull, reason: 'this site never heard of it');
+
+      final result =
+          await newcomer.fetch(repositoryOf(there.path, mine.name)) as Landed;
+
+      expect(result.action.commit, equals(born.action.commit));
+      expect(result.tree, isA<TreeNotMaterialized>());
+    });
+
+    test('a fetch carries a clean attached tree forward, still attached',
+        () async {
+      // The tree stands exactly where the last act here left it — proof that
+      // nothing but the coming fetch will touch it — so the catch-up is
+      // provably safe.
+      final area = one.materialize();
+      final landed = await theirs().instance('one').act('note', (workspace) {
+        File('${workspace.directory.path}/note').writeAsStringSync('theirs\n');
+      }, actor: testActor) as Landed;
+
+      final result = await one.fetch(repositoryOf(there.path, mine.name)) as Landed;
+
+      expect(result.tree, isA<TreeCaughtUp>());
+      expect(one.tip, equals(landed.action.commit));
+      expect(
+        File('${area.directory.path}/note').readAsStringSync(),
+        equals('theirs\n'),
+        reason: 'the files came forward with the ref, not just the object store',
+      );
+      // Never `checkout <sha>` — that would detach `HEAD`, and a detached
+      // tree cannot be acted in again. The catch-up must keep the tree the
+      // thing an act still commits into.
+      final head = Process.runSync(
+        'git',
+        ['symbolic-ref', '-q', 'HEAD'],
+        workingDirectory: area.directory.path,
+      );
+      expect(head.exitCode, equals(0),
+          reason: 'the tree must stay attached to its branch');
+      expect((head.stdout as String).trim(), equals('refs/heads/one'));
+    });
+
+    test(
+        'a fetch leaves a genuinely dirty attached tree exactly as it stood',
+        () async {
+      // The falsifying case: something of a person's own — untracked, never
+      // committed — sits in the tree the instant before the fetch runs.
+      // `worktreeDirtyPaths`, read at that moment against the tip the tree is
+      // about to lose, is the only thing standing between this and silently
+      // discarding it.
+      final area = one.materialize(); // already stands here — setUp's own act
+      expect(File('${area.directory.path}/note').readAsStringSync(), 'first\n',
+          reason: 'sanity: the tree carries the state setUp left it in');
+      File('${area.directory.path}/scratch.txt')
+          .writeAsStringSync('written by a person, never committed\n');
+
+      final landed = await theirs().instance('one').act('note', (workspace) {
+        File('${workspace.directory.path}/note').writeAsStringSync('theirs\n');
+      }, actor: testActor) as Landed;
+
+      final result = await one.fetch(repositoryOf(there.path, mine.name)) as Landed;
+
+      expect(result.tree, isA<TreeLeftAlone>());
+      expect((result.tree as TreeLeftAlone).reason, contains('scratch.txt'));
+      expect(one.tip, equals(landed.action.commit),
+          reason: 'the ref still moved — the line is real regardless of the tree');
+      expect(
+        File('${area.directory.path}/note').readAsStringSync(),
+        equals('first\n'),
+        reason: 'the files were left exactly as they stood — never caught up '
+            'to "theirs"',
+      );
+      expect(
+        File('${area.directory.path}/scratch.txt').readAsStringSync(),
+        equals('written by a person, never committed\n'),
+        reason: 'the one thing this must never destroy, untouched',
+      );
+    });
+
     test('a fetch of an instance born elsewhere brings it into being here', () async {
       // The other direction of the same choice: no local ref at all. Nothing to
       // fast-forward, and the honest outcome is still a landing — this is how an

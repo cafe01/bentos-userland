@@ -174,9 +174,48 @@ sealed class ActionResult {
 }
 
 /// The act became true, at [action].
+///
+/// [tree] answers a second question [action] cannot: what happened to a
+/// materialized tree of this instance while the ref moved. Every ordinary act
+/// commits *inside* the tree it advances, so there is nothing to report and
+/// [tree] defaults to [TreeNotMaterialized] unread — the field exists for
+/// [Instance.fetch], the one act that moves a ref from *outside* every tree
+/// standing on it.
 final class Landed extends ActionResult {
-  const Landed(this.action);
+  const Landed(this.action, {this.tree = const TreeNotMaterialized()});
   final Action action;
+  final FetchTreeOutcome tree;
+}
+
+/// What a materialized tree of this instance did while [Instance.fetch] moved
+/// the ref that anchors it — the fact [Landed.tree] carries because the ref
+/// moving and the files catching up are no longer the same event once the
+/// mover stands outside every tree.
+sealed class FetchTreeOutcome {
+  const FetchTreeOutcome();
+}
+
+/// Nothing stood at this instance's convention address, so there was no tree
+/// for the fetch to consider. The ordinary case for a federated site that
+/// only reacts, and for every act that is not a fetch.
+final class TreeNotMaterialized extends FetchTreeOutcome {
+  const TreeNotMaterialized();
+}
+
+/// The tree stood exactly where it was left the moment before the fetch ran —
+/// proving nothing but the fetch itself had touched it since — so it was
+/// carried forward to the new tip.
+final class TreeCaughtUp extends FetchTreeOutcome {
+  const TreeCaughtUp();
+}
+
+/// The tree carried something of its own — tracked or untracked — at the
+/// commit this fetch started from, so catching it up was declined. The ref
+/// moved; the files did not. [reason] is the substrate's own account, safe to
+/// print verbatim.
+final class TreeLeftAlone extends FetchTreeOutcome {
+  const TreeLeftAlone(this.reason);
+  final String reason;
 }
 
 /// The ref moved under the act. Nobody decided anything — ordinary concurrent

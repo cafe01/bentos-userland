@@ -224,8 +224,15 @@ final class EntityRunner {
   /// so. Here the field is the only `exitCode` in scope.
   void report(ActionResult result) {
     switch (result) {
-      case Landed(:final action):
+      case Landed(:final action, :final tree):
         out.writeln(action.commit.sha);
+        // Silence here would read as *your files are current* — the exact
+        // belief `entity refresh`'s own history shows a reader forms from an
+        // unqualified success. Only `entity fetch` ever produces this, since
+        // every other landing commits inside the tree it advances.
+        if (tree case TreeLeftAlone(:final reason)) {
+          err.writeln('entity: left alone — $reason');
+        }
       case Barred(:final reason):
         err.writeln('entity: barred — $reason');
         exitCode = barredCode;

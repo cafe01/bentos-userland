@@ -412,9 +412,31 @@ final class Instance {
   /// come back as an [ActionResult] at all: nothing declined it and nothing
   /// raced it, the thing named is simply not there. It raises
   /// [InstanceNotAtRemote], which the coreutil answers as not-found.
+  ///
+  /// **It also carries a materialized tree of this instance forward, when
+  /// it can prove that is safe.** The swap above moves `refs/heads/$id` from
+  /// outside every worktree standing on it — the one motion nothing else in
+  /// this class performs — so a tree attached to this instance goes stale the
+  /// instant this returns unless something here catches it up. Nothing at the
+  /// tree's own address ([Materialization.refresh]) can do it: once the ref
+  /// has moved, `git status` there reads the lag and a person's own staged
+  /// edit as the identical two-letter code, `M `. The only vantage from which
+  /// they are different facts is **before** the swap, comparing the tree to
+  /// the tip it is about to lose — which only this call holds. So the read
+  /// happens first, while [standing] is still what the tree's `HEAD` names,
+  /// and the catch-up happens last, once the swap is the only thing that has
+  /// moved since. [Landed.tree] says which of the three things happened, and
+  /// never travels as silence: a caller printing this to a person is the
+  /// exact reader who must be told when their files did not move.
   Future<ActionResult> fetch(String remote) async {
     final gitDir = _gitDir;
     final standing = ambientGit.revParse(gitDir, ref);
+    // Read now, against the *old* tip: `standingAt` and the dirty check both
+    // ask the substrate before anything of this call has moved, which is the
+    // only moment a lag the fetch is about to cause and a person's own edit
+    // are still two different facts rather than one code.
+    final path = standingAt;
+    final dirtyBefore = path == null ? const <String>[] : ambientGit.worktreeDirtyPaths(path);
     final arrived = await ambientGit.fetch(gitDir, remote: remote, ref: ref);
     if (arrived == null) {
       throw InstanceNotAtRemote(id, remote);
@@ -423,8 +445,12 @@ final class Instance {
       if (standing == arrived) {
         // Already holding it. Idempotent on purpose: fetching twice is the
         // ordinary shape of a face that polls, and the second one is not a
-        // refusal.
-        return Landed(Action(gitDir: gitDir, ref: ref, commit: arrived));
+        // refusal. Nothing moved, so nothing here needed catching up — the
+        // tree's own present state, read fresh, is the honest report.
+        return Landed(
+          Action(gitDir: gitDir, ref: ref, commit: arrived),
+          tree: _treeAsItStands(path),
+        );
       }
       if (!ambientGit.isAncestor(gitDir, ancestor: standing, descendant: arrived)) {
         return Diverged(local: standing, remote: arrived);
@@ -442,7 +468,49 @@ final class Instance {
         found: ambientGit.revParse(gitDir, ref),
       );
     }
-    return Landed(Action(gitDir: gitDir, ref: ref, commit: arrived));
+    return Landed(
+      Action(gitDir: gitDir, ref: ref, commit: arrived),
+      tree: _catchUp(path, dirtyBefore: dirtyBefore, arrived: arrived),
+    );
+  }
+
+  /// The tree's own state, read fresh — for the idempotent branch of [fetch],
+  /// where nothing moved and `HEAD` still means what it always does.
+  FetchTreeOutcome _treeAsItStands(String? path) {
+    if (path == null) return const TreeNotMaterialized();
+    final dirty = ambientGit.worktreeDirtyPaths(path);
+    if (dirty.isEmpty) return const TreeCaughtUp();
+    return TreeLeftAlone(
+      'the tree at $path carries work of its own:\n  '
+      '${dirty.join('\n  ')}\n  '
+      'commit it or set it aside: git -C $path status',
+    );
+  }
+
+  /// Carries the tree at [path] to [arrived] when [dirtyBefore] — read before
+  /// the swap, against the tip the tree is about to lose — proved it clean.
+  /// That is the whole of the proof: a tree that stood at [standing] with
+  /// nothing carried has nothing in it the fetch could destroy, so `reset
+  /// --hard` onto the new tip discards only what the fetch itself deposited.
+  /// **Never `checkout <sha>`** — that detaches `HEAD` from the branch, which
+  /// would silently undo the one invariant an instance's own tree keeps: that
+  /// its acts commit where they already stand.
+  FetchTreeOutcome _catchUp(
+    String? path, {
+    required List<String> dirtyBefore,
+    required Commit arrived,
+  }) {
+    if (path == null) return const TreeNotMaterialized();
+    if (dirtyBefore.isNotEmpty) {
+      return TreeLeftAlone(
+        'the tree at $path carried work of its own at the commit this fetch '
+        'started from, so the new line was not brought to it:\n  '
+        '${dirtyBefore.join('\n  ')}\n  '
+        'commit it or set it aside, then fetch again: git -C $path status',
+      );
+    }
+    ambientGit.worktreeDiscard(path, to: arrived);
+    return const TreeCaughtUp();
   }
 
   /// The ref this instance is, fully qualified.
