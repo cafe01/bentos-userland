@@ -348,6 +348,50 @@ void main() {
       expect(git.branches(decoy), isEmpty, reason: 'the decoy was never written');
     });
 
+    test('a poisoned identity does not reach the commit the shipped act path writes',
+        () {
+      // The debt this closes: `commitInWorktree` passes `_identity(actor)`
+      // last, so the caller wins over whatever the ambient exports — but
+      // identity is never scrubbed the way the location variables are, so
+      // that guarantee lives in every future call remembering to pass it,
+      // and nothing here proved it. Read back from git itself, not from our
+      // own `RawCommit` (it does not even carry the committer) — asking our
+      // own reader would be asking the accused to testify.
+      final tip = land({'a': '1\n'}, ref: 'refs/heads/one');
+      final path = '${scratch.path}/attached';
+
+      final child = Process.runSync(
+        Platform.resolvedExecutable,
+        [
+          'run', 'test/entity/tools/poisoned_act.dart',
+          gitDir, path, 'refs/heads/one', 'one',
+        ],
+        workingDirectory: Directory.current.path,
+        environment: {
+          'GIT_AUTHOR_NAME': 'a liar',
+          'GIT_AUTHOR_EMAIL': 'liar@nowhere.invalid',
+          'GIT_COMMITTER_NAME': 'a liar',
+          'GIT_COMMITTER_EMAIL': 'liar@nowhere.invalid',
+        },
+      );
+      expect(child.exitCode, isZero, reason: '${child.stderr}');
+
+      final landed = (child.stdout as String).trim();
+      final fields = Process.runSync('git', [
+        '--git-dir=$gitDir',
+        'log',
+        '-1',
+        '--format=%an|%ae|%cn|%ce',
+        landed,
+      ]).stdout as String;
+      expect(
+        fields.trim().split('|'),
+        equals(['real actor', 'real@test.local', 'real actor', 'real@test.local']),
+        reason: 'the poisoned identity must not reach the object, whatever the '
+            'ambient environment says',
+      );
+    });
+
     test('a worktree shares the object store with the entity', () {
       final tip = land({'greeting': 'hello\n'}, ref: 'refs/heads/one');
       final at = '${scratch.path}/look';
