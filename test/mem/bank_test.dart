@@ -324,40 +324,5 @@ void main() {
         expect((landing as Barred).reason, contains('never born'));
       });
     });
-
-    test('two acts against one tip: one lands, the other is Contested',
-        () async {
-      await site.runAsync(() async {
-        final entity = Entity('alfred.mem', from: site.root.path).create(actor: testActor);
-        entity.instance('main').create();
-
-        final bank =
-            (Bank.resolve('alfred.mem', vantage: site.root.path) as Found)
-                .bank;
-
-        final first = bank.land(
-          'page',
-          (draft) => draft.write(Page(
-            topic: 'a',
-            fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
-            body: '1',
-          )),
-          actor: Actor('one', email: 'one@test.local'),
-        );
-        final second = bank.land(
-          'page',
-          (draft) => draft.write(Page(
-            topic: 'b',
-            fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
-            body: '2',
-          )),
-          actor: Actor('two', email: 'two@test.local'),
-        );
-
-        final results = await Future.wait([first, second]);
-        expect(results, anyElement(isA<Landed>()));
-        expect(results, anyElement(isA<Contested>()));
-      });
-    });
   });
 }

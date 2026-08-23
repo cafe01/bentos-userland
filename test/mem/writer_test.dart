@@ -466,44 +466,4 @@ void main() {
       });
     });
   });
-
-  group('a contested tip', () {
-    test('exhausting the attempts refuses, and nothing of that act lands',
-        () async {
-      await site.runAsync(() async {
-        final s = stand();
-        final one = Writer(s.bank, actor: Actor('one', email: 'one@test.local'), gist: FixedGist('cue'), attempts: 1);
-        final two = Writer(s.bank, actor: Actor('two', email: 'two@test.local'), gist: FixedGist('cue'), attempts: 1);
-
-        final results = await Future.wait([
-          one.remember('a', type: MemType.semantic, attention: Attention(0.5), body: '1'),
-          two.remember('b', type: MemType.semantic, attention: Attention(0.5), body: '2'),
-        ]);
-
-        expect(results, anyElement(isA<Written>()));
-        expect(results, anyElement(isA<RefusedAsContested>()));
-        final refused =
-            results.firstWhere((o) => o is RefusedAsContested) as RefusedAsContested;
-        expect(refused.attempts, 1);
-      });
-    });
-
-    test('is absorbed by a retry, landing on the second attempt', () async {
-      await site.runAsync(() async {
-        final s = stand();
-        final one = Writer(s.bank, actor: Actor('one', email: 'one@test.local'), gist: FixedGist('cue'));
-        final two = Writer(s.bank, actor: Actor('two', email: 'two@test.local'), gist: FixedGist('cue'));
-
-        final results = await Future.wait([
-          one.remember('a', type: MemType.semantic, attention: Attention(0.5), body: '1'),
-          two.remember('b', type: MemType.semantic, attention: Attention(0.5), body: '2'),
-        ]);
-
-        expect(results, everyElement(isA<Written>()));
-        s.bank.advance();
-        expect(s.bank.page('a'), isNotNull);
-        expect(s.bank.page('b'), isNotNull);
-      });
-    });
-  });
 }

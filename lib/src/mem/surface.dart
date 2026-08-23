@@ -945,9 +945,6 @@ void _reportOutcome(Mem cli, String bankName, Outcome outcome) {
     case RefusedByGate(:final reason):
       cli.diagnostics.add('mem: refused — $reason\n');
       cli.exitCode = 1;
-    case RefusedAsContested(:final attempts):
-      cli.diagnostics.add('mem: refused — contested after $attempts attempts\n');
-      cli.exitCode = 1;
     case RefusedOnAssumedFields(:final topic, :final assumptions):
       cli.diagnostics.add(
         'mem: refused — $topic carries assumed fields '

@@ -6,7 +6,6 @@ import '../entity/action.dart' as ent;
 import '../entity/entity.dart';
 import '../git/git_ambient.dart';
 import '../git/model/actor.dart';
-import '../git/model/commit.dart';
 import 'page.dart';
 
 /// The store, and the only component of `mem/` that speaks to it. Resolves a
@@ -114,12 +113,13 @@ final class Bank {
   }
 
   /// One act: the body writes into a private area the primitive opens, and
-  /// the line moves by compare-and-swap. Nothing is written in the working
+  /// the line moves by an ordinary commit. Nothing is written in the working
   /// tree.
   ///
-  /// The floor's four outcomes are collapsed to three: [ent.Diverged] is a
-  /// fetch outcome, structurally unreachable from `Instance.act`'s commit
-  /// path, and a case that cannot fire must not be handed to callers.
+  /// The floor's four outcomes collapse to two: [ent.Contested] and
+  /// [ent.Diverged] are both fetch outcomes, and `Instance.act`'s commit path
+  /// never fetches — [ent.Landed] or [ent.Barred] is all it can return, so a
+  /// case that cannot fire must not be handed to callers.
   Future<Landing> land(
     String payload,
     void Function(Draft) body, {
@@ -143,12 +143,10 @@ final class Bank {
     );
     return switch (result) {
       ent.Landed(:final action) => Landed(action),
-      ent.Contested(:final expected, :final found) =>
-        Contested(expected: expected, found: found),
       ent.Barred(:final reason) => Barred(reason),
-      ent.Diverged() => throw StateError(
-          'unreachable: Instance.act cannot diverge — divergence is a fetch '
-          'outcome, and land never fetches'),
+      ent.Contested() || ent.Diverged() => throw StateError(
+          'unreachable: Instance.act cannot contest or diverge — both are '
+          'fetch outcomes, and land never fetches'),
     };
   }
 
@@ -230,10 +228,10 @@ final class Draft {
   }
 }
 
-/// The floor's own outcomes, passed through unflattened bar [ent.Diverged],
-/// which never fires here. Each one is a different obligation on the
-/// caller — proceed, retry, stop — and collapsing any two would produce a
-/// false account of what happened.
+/// The floor's own outcomes, passed through bar [ent.Contested] and
+/// [ent.Diverged], neither of which ever fires here. Each one remaining is a
+/// different obligation on the caller — proceed or stop — and collapsing
+/// them would produce a false account of what happened.
 sealed class Landing {
   const Landing();
 }
@@ -241,14 +239,6 @@ sealed class Landing {
 final class Landed extends Landing {
   const Landed(this.action);
   final ent.Action action;
-}
-
-/// The line moved underneath the act. Nobody decided anything, and retrying
-/// is correct and terminates.
-final class Contested extends Landing {
-  const Contested({this.expected, this.found});
-  final Commit? expected;
-  final Commit? found;
 }
 
 /// A gate refused. Retrying is an infinite loop wearing a retry policy.

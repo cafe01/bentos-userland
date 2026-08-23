@@ -22,18 +22,13 @@ final class Writer {
   /// author, and the only other thing that could fill that field is the
   /// machine's own git cascade — which describes whoever owns a checkout here
   /// and never whoever is remembering.
-  Writer(this._bank, {required Actor actor, GistSource? gist, this.attempts = 3})
+  Writer(this._bank, {required Actor actor, GistSource? gist})
       : _actor = actor,
         _gist = gist;
 
   final Bank _bank;
   final Actor _actor;
   final GistSource? _gist;
-
-  /// How many times a [Contested] landing is retried before it is reported
-  /// as [RefusedAsContested]. Never applies to [Barred] — retrying a bar is
-  /// an infinite loop wearing a retry policy.
-  final int attempts;
 
   /// Creates or replaces a page whole. The gist is derived through the model
   /// seam unless [gist] is given, in which case the seam is never called.
@@ -213,31 +208,20 @@ final class Writer {
     return Attention(tenths / 10);
   }
 
-  /// Lands one act, absorbing a contested tip up to [attempts] times before
-  /// reporting [RefusedAsContested]. [build] runs once, ahead of the loop —
-  /// a decision, not an oversight: retrying re-attempts the swap against a
-  /// fresh tip, never the selection or the derivation that produced [build]
-  /// in the first place. A page contested out from under this call therefore
-  /// lands with the field values this call read before the retry, not a
-  /// fresher one — bounded by [attempts], and resolved for good on the
-  /// caller's next invocation, which reads the tree fresh from the top.
+  /// Lands one act. [Bank.land] itself can only return [Landed] or [Barred]
+  /// — there is no contested tip to absorb here, so there is nothing to
+  /// retry.
   Future<Outcome> _land({
     required List<String> topics,
     required void Function(Draft) build,
     required String say,
   }) async {
-    for (var attempt = 0; attempt < attempts; attempt++) {
-      final landing = await _bank.land('page', build, actor: _actor, say: say);
-      switch (landing) {
-        case Landed(:final action):
-          return Written(topics: topics, action: action, advance: _bank.advance());
-        case Barred(:final reason):
-          return RefusedByGate(reason);
-        case Contested():
-          continue;
-      }
-    }
-    return RefusedAsContested(attempts);
+    final landing = await _bank.land('page', build, actor: _actor, say: say);
+    return switch (landing) {
+      Landed(:final action) =>
+        Written(topics: topics, action: action, advance: _bank.advance()),
+      Barred(:final reason) => RefusedByGate(reason),
+    };
   }
 }
 
@@ -262,13 +246,6 @@ sealed class Refused extends Outcome {
 final class RefusedByGate extends Refused {
   const RefusedByGate(this.reason);
   final String reason;
-}
-
-/// The tip moved underneath the act for [attempts] tries running. A caller
-/// may try again; nothing was decided.
-final class RefusedAsContested extends Refused {
-  const RefusedAsContested(this.attempts);
-  final int attempts;
 }
 
 /// A selected page carries fields this parse had to assume, and a write
