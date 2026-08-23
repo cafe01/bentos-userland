@@ -233,6 +233,9 @@ final class EntityRunner {
         if (tree case TreeLeftAlone(:final reason)) {
           err.writeln('entity: left alone — $reason');
         }
+        if (tree case TreeOvertaken(:final reason)) {
+          err.writeln('entity: overtaken — $reason');
+        }
       case Barred(:final reason):
         err.writeln('entity: barred — $reason');
         exitCode = barredCode;

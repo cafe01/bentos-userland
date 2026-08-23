@@ -218,6 +218,19 @@ final class TreeLeftAlone extends FetchTreeOutcome {
   final String reason;
 }
 
+/// The tree stood clean when this fetch read it, but carried something of its
+/// own — tracked or untracked — by the time the catch-up was about to run.
+/// Nothing here wrote it: the only actor between those two reads is whatever
+/// else touched this worktree while `git fetch` was talking to the remote, so
+/// the files are somebody else's, mid-flight, and not this fetch's to
+/// destroy. The ref moved; the files were left exactly as that other actor
+/// left them. [reason] is the substrate's own account, safe to print
+/// verbatim — the same shape as [TreeLeftAlone], for a different moment.
+final class TreeOvertaken extends FetchTreeOutcome {
+  const TreeOvertaken(this.reason);
+  final String reason;
+}
+
 /// The ref moved under the act. Nobody decided anything — ordinary concurrent
 /// agency — and retrying, having re-read the tip, is correct and terminates.
 ///

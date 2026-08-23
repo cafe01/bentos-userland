@@ -621,6 +621,27 @@ final class ProcessGit implements Git {
     return paths..sort();
   }
 
+  @override
+  List<String> worktreeUnstagedPaths(String path) {
+    final result = _run(['status', '--porcelain'], workingDirectory: path);
+    if (result.exitCode != 0) {
+      throw _failure(['status', '--porcelain'], result);
+    }
+    final paths = <String>[];
+    for (final line in _text(result.stdout).split('\n')) {
+      if (line.isEmpty) continue;
+      // XY<space>path. Untracked is `??` — both columns agree, so it passes
+      // either test — and every other line's second character, Y, is the
+      // worktree-versus-index verdict this ignores X to get at.
+      final y = line.length > 1 ? line[1] : ' ';
+      if (y == ' ') continue;
+      final field = line.length > 3 ? line.substring(3) : line;
+      final arrow = field.indexOf(' -> ');
+      paths.add(arrow < 0 ? field : field.substring(arrow + 4));
+    }
+    return paths..sort();
+  }
+
   /// The **linked** worktrees this repository has registered, canonical and
   /// absolute — its register of what it may discard.
   ///

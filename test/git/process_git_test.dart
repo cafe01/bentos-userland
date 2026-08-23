@@ -421,6 +421,80 @@ void main() {
     });
   });
 
+  group('worktreeUnstagedPaths', () {
+    // The method Instance.fetch's catch-up re-reads once the ref has already
+    // moved, when an ordinary `git status` would read the fetch's own lag as
+    // dirt. It answers from the worktree-versus-index column alone, which a
+    // moved `HEAD` cannot touch — proven here by the one case that column
+    // cannot see: a change already staged answers empty, exactly the gap the
+    // caller's doc comment names rather than hides.
+    test('a clean tree answers empty', () {
+      final repo = enclosing('unstaged_spotless');
+      final gitDir = p.join(repo, '.git');
+      final head = git.revParse(gitDir, 'HEAD')!;
+      final where = p.join(scratch.path, 'standing');
+      git.worktreeAdd(gitDir, path: where, at: head);
+
+      expect(git.worktreeUnstagedPaths(where), isEmpty);
+    });
+
+    test('a modified tracked file appears', () {
+      final repo = enclosing('unstaged_modified');
+      final gitDir = p.join(repo, '.git');
+      File(p.join(repo, 'f.txt')).writeAsStringSync('base');
+      Process.runSync('git', ['-C', repo, 'add', '.']);
+      Process.runSync('git', [
+        '-C', repo,
+        '-c', 'user.email=gate@bentos',
+        '-c', 'user.name=gate',
+        'commit', '--quiet', '-m', 'one',
+      ]);
+      final head = git.revParse(gitDir, 'HEAD')!;
+      final where = p.join(scratch.path, 'standing');
+      git.worktreeAdd(gitDir, path: where, at: head);
+      File(p.join(where, 'f.txt')).writeAsStringSync('edited by hand');
+
+      expect(git.worktreeUnstagedPaths(where), ['f.txt']);
+    });
+
+    test('an untracked file appears', () {
+      final repo = enclosing('unstaged_untracked');
+      final gitDir = p.join(repo, '.git');
+      final head = git.revParse(gitDir, 'HEAD')!;
+      final where = p.join(scratch.path, 'standing');
+      git.worktreeAdd(gitDir, path: where, at: head);
+      File(p.join(where, 'new.txt')).writeAsStringSync('never committed');
+
+      expect(git.worktreeUnstagedPaths(where), ['new.txt']);
+    });
+
+    test(
+        'a staged file answers empty — the one gap this method cannot close',
+        () {
+      // The residual named in Instance.fetch's doc comment: a concurrent
+      // write that reaches `git add` inside the window looks exactly like
+      // the fetch's own index-versus-HEAD lag, because both live in the
+      // column this method deliberately ignores.
+      final repo = enclosing('unstaged_staged');
+      final gitDir = p.join(repo, '.git');
+      File(p.join(repo, 'f.txt')).writeAsStringSync('base');
+      Process.runSync('git', ['-C', repo, 'add', '.']);
+      Process.runSync('git', [
+        '-C', repo,
+        '-c', 'user.email=gate@bentos',
+        '-c', 'user.name=gate',
+        'commit', '--quiet', '-m', 'one',
+      ]);
+      final head = git.revParse(gitDir, 'HEAD')!;
+      final where = p.join(scratch.path, 'standing');
+      git.worktreeAdd(gitDir, path: where, at: head);
+      File(p.join(where, 'f.txt')).writeAsStringSync('staged edit');
+      Process.runSync('git', ['-C', where, 'add', '.']);
+
+      expect(git.worktreeUnstagedPaths(where), isEmpty);
+    });
+  });
+
   /// The act, at the port. The fake cannot answer any of it: a commit made
   /// inside a worktree moves the branch through Git's own transaction, and a
   /// `reference-transaction` hook is the substrate's, not a model's.

@@ -425,9 +425,14 @@ final class Instance {
   /// the tip it is about to lose — which only this call holds. So the read
   /// happens first, while [standing] is still what the tree's `HEAD` names,
   /// and the catch-up happens last, once the swap is the only thing that has
-  /// moved since. [Landed.tree] says which of the three things happened, and
-  /// never travels as silence: a caller printing this to a person is the
-  /// exact reader who must be told when their files did not move.
+  /// moved since. Between those two reads sits `ambientGit.fetch` itself — a
+  /// real network round trip — so [_catchUp] takes a second read immediately
+  /// before it would discard anything, and refuses rather than destroys work
+  /// that arrived in that gap (see [_catchUp]'s own doc for the residual
+  /// window that leaves). [Landed.tree] says which of the four things
+  /// happened, and never travels as silence: a caller printing this to a
+  /// person is the exact reader who must be told when their files did not
+  /// move.
   Future<ActionResult> fetch(String remote) async {
     final gitDir = _gitDir;
     final standing = ambientGit.revParse(gitDir, ref);
@@ -495,6 +500,42 @@ final class Instance {
   /// **Never `checkout <sha>`** — that detaches `HEAD` from the branch, which
   /// would silently undo the one invariant an instance's own tree keeps: that
   /// its acts commit where they already stand.
+  ///
+  /// [dirtyBefore] is read **before** `ambientGit.fetch` — a real network
+  /// round trip, awaited by the caller — and that gap is exactly where
+  /// something else can dirty the tree without this call ever seeing it:
+  /// another process of ours mid-`act` on the same worktree, writing but not
+  /// yet committed. A stale [dirtyBefore] proving clean is not proof of
+  /// anything by the time we get here, so it is proof of nothing here — this
+  /// re-reads the tree **now**, immediately before the one call that would
+  /// destroy whatever it finds, and refuses to run that call if that read is
+  /// not clean too. Reproduced 2026-08-23: an untracked file written in that
+  /// gap survived `dirtyBefore`'s stale "clean" and was silently erased by
+  /// `reset --hard` + `clean -fd` before this re-read existed.
+  ///
+  /// **The re-read asks [Git.worktreeUnstagedPaths], never
+  /// [Git.worktreeDirtyPaths].** By the time this runs, the CAS above has
+  /// already moved the branch's `HEAD` out from under this worktree's own
+  /// index, so an ordinary `git status` here reads the fetch's own lag —
+  /// index still at [dirtyBefore]'s tip, `HEAD` already at [arrived] — as an
+  /// apparent change on every single ordinary fetch, indistinguishable from
+  /// a real one. That was measured, not guessed: the first version of this
+  /// fix used the ordinary check here and turned every clean fetch into a
+  /// false [TreeOvertaken]. Worktree-versus-index never involves `HEAD`, so
+  /// it cannot be fooled by `HEAD` moving — which is exactly why it is the
+  /// one comparison honest to make after the swap.
+  ///
+  /// **This narrows the window; it does not close it, and two gaps remain
+  /// unclosed on purpose rather than by oversight.** Between the re-read
+  /// below and `worktreeDiscard` are two separate subprocess calls with no
+  /// lock held across them, so a write landing in that much smaller gap is
+  /// still lost — what moved is the odds, from the length of a network fetch
+  /// to the length of one `git status` invocation. And a concurrent write
+  /// that reaches `git add` inside the very same window this guards is
+  /// staged into the index before this reads it, which makes it look exactly
+  /// like the fetch's own lag — the one case [worktreeUnstagedPaths] cannot
+  /// tell apart from nothing having happened. Nothing here is a lock, and
+  /// nothing here should be read as one.
   FetchTreeOutcome _catchUp(
     String? path, {
     required List<String> dirtyBefore,
@@ -507,6 +548,26 @@ final class Instance {
         'started from, so the new line was not brought to it:\n  '
         '${dirtyBefore.join('\n  ')}\n  '
         'commit it or set it aside, then fetch again: git -C $path status',
+      );
+    }
+    // The fetch itself never touches this worktree — it lands only
+    // `FETCH_HEAD` and objects — so anything dirty here now, when it was
+    // clean above, was written by someone else while we were waiting on the
+    // network. That is theirs, mid-flight, and not this call's to erase.
+    // Unstaged, never the ordinary check: the CAS above already moved `HEAD`
+    // out from under this worktree's index, and an ordinary `git status`
+    // would read that lag as dirt on every ordinary fetch.
+    final dirtyNow = ambientGit.worktreeUnstagedPaths(path);
+    if (dirtyNow.isNotEmpty) {
+      return TreeOvertaken(
+        'the tree at $path stood clean when this fetch began, but now '
+        'carries work that was not here a moment ago — written while the '
+        'fetch was talking to the remote, by something else with a hand in '
+        'this worktree:\n  '
+        '${dirtyNow.join('\n  ')}\n  '
+        'that work is not this fetch\'s to discard. The ref moved to '
+        '${arrived.sha}; the tree was left exactly as it now stands. Resolve '
+        'the other write, then fetch again: git -C $path status',
       );
     }
     ambientGit.worktreeDiscard(path, to: arrived);

@@ -7,6 +7,7 @@ import 'package:bentos_userland/entity.dart';
 import 'package:bentos_userland/src/git/process_git.dart';
 import 'package:test/test.dart';
 
+import 'cli_harness.dart' show WatchedGit;
 import 'helpers.dart';
 
 /// **Tier C — what only the real substrate can answer.**
@@ -892,6 +893,54 @@ void main() {
       expect(one.tip, equals(ours.action.commit),
           reason: 'our line is untouched — divergence is legitimate');
       expect(utf8.decode(one.read('note')), equals('ours\n'));
+    });
+
+    test(
+        'a write landing after the fetch call, before the catch-up, survives — '
+        'named overtaken, not silently destroyed', () async {
+      // The TOCTOU: `dirtyBefore` is read before `ambientGit.fetch` — a real
+      // network round trip — and the tree it describes can go dirty in that
+      // gap without this call ever knowing, because nothing between the read
+      // and the catch-up looks again. This simulates the one thing that can
+      // land there: another process of ours, mid-`act`, writing into this
+      // same worktree but not yet committed. `WatchedGit.afterFetch` is the
+      // existing seam for exactly this — installation_life_test.dart already
+      // uses it to make a different lost-race genuine rather than simulated.
+      final area = one.materialize(); // clean — setUp's own act, untouched
+      final landed = await theirs().instance('one').act('note', (workspace) {
+        File('${workspace.directory.path}/note').writeAsStringSync('theirs\n');
+      }, actor: testActor) as Landed;
+
+      final racer = File('${area.directory.path}/concurrent-write.txt');
+      final racing = WatchedGit(const ProcessGit())
+        ..afterFetch = () => racer
+            .writeAsStringSync('written by a concurrent actor, never committed\n');
+
+      final result = await runWithGitAsync(
+        racing,
+        () => one.fetch(repositoryOf(there.path, mine.name)),
+      ) as Landed;
+
+      expect(result.action.commit, equals(landed.action.commit),
+          reason: 'the line still advances — the ref is not what this guards');
+      expect(result.tree, isA<TreeOvertaken>(),
+          reason: 'named distinctly from TreeLeftAlone: this tree was clean '
+              'when the fetch began, so the two facts are not the same one');
+      expect((result.tree as TreeOvertaken).reason,
+          contains('concurrent-write.txt'));
+      expect(racer.existsSync(), isTrue,
+          reason: 'the fix must prove survival, not only refusal — a tree '
+              'already reset before the refusal is thrown would still lose '
+              'the file');
+      expect(racer.readAsStringSync(),
+          equals('written by a concurrent actor, never committed\n'),
+          reason: 'untouched, not merely re-created');
+      expect(
+        File('${area.directory.path}/note').readAsStringSync(),
+        equals('first\n'),
+        reason: 'the catch-up did not run at all — the tree stands exactly '
+            'where the concurrent actor left it, not caught up to "theirs"',
+      );
     });
 
     test('a remote that carries no such instance is not found, and not a '

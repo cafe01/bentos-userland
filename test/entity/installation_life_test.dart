@@ -1210,6 +1210,10 @@ final class _WatchedGit implements Git {
   List<String> worktreeDirtyPaths(String path) => _inner.worktreeDirtyPaths(path);
 
   @override
+  List<String> worktreeUnstagedPaths(String path) =>
+      _inner.worktreeUnstagedPaths(path);
+
+  @override
   String? worktreeRepository(String path) => _inner.worktreeRepository(path);
 
   @override
@@ -1395,6 +1399,10 @@ final class NetworkRecordingGit implements Git {
 
   @override
   List<String> worktreeDirtyPaths(String path) => _inner.worktreeDirtyPaths(path);
+
+  @override
+  List<String> worktreeUnstagedPaths(String path) =>
+      _inner.worktreeUnstagedPaths(path);
 
   @override
   String? worktreeRepository(String path) => _inner.worktreeRepository(path);

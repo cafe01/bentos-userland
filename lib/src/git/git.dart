@@ -374,6 +374,23 @@ abstract interface class Git {
   /// tree standing at [path], not about the repository by name.
   List<String> worktreeDirtyPaths(String path);
 
+  /// The paths where the worktree at [path] disagrees with **its own
+  /// index** — modified, deleted, or untracked. `git status --porcelain`'s
+  /// second column alone, deliberately dropping the first.
+  ///
+  /// [worktreeDirtyPaths] answers a question that only holds still while
+  /// nothing has moved a ref out from under the worktree: it reads both
+  /// columns, and the first — index versus `HEAD` — turns ambiguous the
+  /// instant something moves `HEAD` from outside the worktree, because the
+  /// index has not moved with it. [Instance.fetch] is exactly that mover, so
+  /// a caller asking *did anyone else touch these files* **after** such a
+  /// move must ask this instead: the second column never involves `HEAD`, so
+  /// a ref moving elsewhere cannot manufacture an answer here. What it
+  /// cannot resolve is a change already staged into the index in that same
+  /// window — indistinguishable, by design, from the lag the first column
+  /// would also show.
+  List<String> worktreeUnstagedPaths(String path);
+
   /// The repository a standing worktree belongs to — its **common** directory,
   /// never the private one a worktree also has.
   ///
