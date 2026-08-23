@@ -202,6 +202,69 @@ void main() {
       });
     });
 
+    group('a bank installed but never materialized reads NO TREE, not empty',
+        () {
+      // Before the read-path guard, this exact fixture answered "no pages"
+      // for survey/recall/health and every entry came back "dead" from
+      // walk — indistinguishable from a bank that genuinely holds nothing.
+      // The guard's whole job is to make "empty" and "invisible" say
+      // different things.
+      Entity installOnly(Directory root) {
+        final entity =
+            Entity('alfred.mem', from: root.path).create(actor: testActor);
+        entity.instance('main').create();
+        return entity;
+      }
+
+      test('survey', () async {
+        await site.runAsync(() async {
+          installOnly(site.root);
+          final out = _Out(), diag = _Out();
+          final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+              .call(['survey']);
+          expect(code, Mem.materializationLagCode);
+          expect(diag.text, contains('NO TREE'));
+          expect(diag.text, isNot(contains('no pages under')));
+          expect(diag.text, contains(p.join(site.root.path, 'alfred.mem')));
+        });
+      });
+
+      test('recall', () async {
+        await site.runAsync(() async {
+          installOnly(site.root);
+          final out = _Out(), diag = _Out();
+          final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+              .call(['recall', 'domain/hello']);
+          expect(code, Mem.materializationLagCode);
+          expect(diag.text, contains('NO TREE'));
+          expect(diag.text, isNot(contains('no pages under')));
+        });
+      });
+
+      test('health', () async {
+        await site.runAsync(() async {
+          installOnly(site.root);
+          final out = _Out(), diag = _Out();
+          final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+              .call(['health']);
+          expect(code, Mem.materializationLagCode);
+          expect(diag.text, contains('NO TREE'));
+        });
+      });
+
+      test('walk', () async {
+        await site.runAsync(() async {
+          installOnly(site.root);
+          final out = _Out(), diag = _Out();
+          final code = await mem(out: out, diagnostics: diag)
+              .call(['walk', 'mem://alfred.mem/domain/hello']);
+          expect(code, Mem.materializationLagCode);
+          expect(diag.text, contains('NO TREE'));
+          expect(diag.text, isNot(contains('dead')));
+        });
+      });
+    });
+
     test(
         'a materialization-lag exit is distinct from a decided refusal\'s exit',
         () async {

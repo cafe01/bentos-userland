@@ -77,12 +77,25 @@ final class Bank {
 
   String get name => _entity.name;
 
+  /// Whether a tree of this bank stands, so a reader can tell "empty" from
+  /// "invisible" before asking [pages] or [page] — both answer `[]`/`null`
+  /// either way, which is honest about *what came back* and silent about
+  /// *why*. A caller that means to report the difference checks this first.
+  bool get hasTree => _entity.materializedAt != null;
+
+  /// The address a tree of this bank would stand at, whether or not one
+  /// does — what a "no tree" reader message names. The one place this path
+  /// is composed for reads, mirroring [advance]'s own use of it for writes.
+  Directory get materializationAddress => _entity.materializationAddress;
+
   /// Every page of the bank, read from the working tree with ordinary file
   /// IO. **Not `Instance.read`**, which answers at the ref with no worktree
   /// and would make a hand-edited page invisible.
   ///
   /// A bank with no working tree materialized has no pages, and says so with
-  /// an empty list.
+  /// an empty list — indistinguishable from a bank that has a tree and
+  /// genuinely holds nothing. A caller that must tell the two apart checks
+  /// [hasTree] first; this method does not.
   List<Page> pages() {
     final root = _entity.materializedAt;
     if (root == null) return const [];

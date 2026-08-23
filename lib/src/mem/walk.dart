@@ -72,6 +72,7 @@ final class Walk {
     final openIndexes = <String, Index>{};
     final byTopicOf = <String, Map<String, Page>>{};
     final unresolved = <String>{};
+    final noTreeBanks = <String>{};
 
     final bankQueue = Queue<String>();
     final pending = <String, Queue<_Pending>>{};
@@ -99,23 +100,36 @@ final class Walk {
       final queue = pending[bankName]!;
 
       var index = openIndexes[bankName];
-      if (index == null && !unresolved.contains(bankName)) {
+      if (index == null &&
+          !unresolved.contains(bankName) &&
+          !noTreeBanks.contains(bankName)) {
         final resolution = Bank.resolve(bankName, vantage: vantage);
         if (resolution is Found) {
-          index = _open(resolution.bank);
-          openIndexes[bankName] = index;
-          byTopicOf[bankName] = {for (final p in index.pages) p.topic: p};
+          if (!resolution.bank.hasTree) {
+            // Found and installed, but no tree of it stands. Reading its
+            // pages here would answer `[]` — the same silent lie the read
+            // guard exists to refuse — so this is decided before the index
+            // ever opens, not after.
+            noTreeBanks.add(bankName);
+          } else {
+            index = _open(resolution.bank);
+            openIndexes[bankName] = index;
+            byTopicOf[bankName] = {for (final p in index.pages) p.topic: p};
+          }
         } else {
           unresolved.add(bankName);
         }
       }
 
       if (index == null) {
+        final reason = noTreeBanks.contains(bankName)
+            ? SkipReason.noTree
+            : SkipReason.bankNotFound;
         for (final item in queue) {
           skipped.add(Skipped(
             address: Address(bank: bankName, topic: item.topic),
             from: item.from,
-            reason: SkipReason.bankNotFound,
+            reason: reason,
           ));
         }
         pending.remove(bankName);
@@ -254,4 +268,11 @@ enum SkipReason {
   /// names the vantage; it never claims the bank is absent from the
   /// machine (R6.5).
   bankNotFound,
+
+  /// Its bank resolved, but no tree of it stands — the walk's own version
+  /// of the read path's NO TREE. Without this, a bank found but
+  /// unmaterialized reads its own pages as `[]` and every one of its
+  /// entries is misreported [dead], indistinguishable from a topic that
+  /// genuinely does not exist.
+  noTree,
 }

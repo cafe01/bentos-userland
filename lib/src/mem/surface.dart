@@ -363,6 +363,7 @@ final class SurveyCommand extends MemCommand with SelectorArgs {
     final bank = resolveBank();
     if (bank == null) return;
     cli.out.add(_bankHeader(bank.name));
+    if (_reportIfNoTree(cli, bank)) return;
 
     final selector = buildSelector();
     final index = Index.of(bank);
@@ -427,6 +428,7 @@ final class RecallCommand extends MemCommand with SelectorArgs {
     final bank = resolveBank();
     if (bank == null) return;
     cli.out.add(_bankHeader(bank.name));
+    if (_reportIfNoTree(cli, bank)) return;
 
     final index = Index.of(bank);
     final seenTopics = <String>{};
@@ -537,6 +539,28 @@ final class WalkCommand extends MemCommand with SelectorArgs {
     );
     final walked = await walk.from(entries);
 
+    // The walk's own NO TREE: a bank resolved but never materialized, so
+    // reading its pages would have answered `[]` for every entry it holds
+    // and each one would have shown up as an ordinary dead link. Same voice
+    // and exit code as [_reportIfNoTree], one bank at a time — walk cannot
+    // share that helper directly, since it opens banks itself mid-drain
+    // rather than through [resolveBank].
+    final noTreeBanks = <String>{
+      for (final skip in walked.skipped)
+        if (skip.reason == SkipReason.noTree) skip.address.bank,
+    };
+    for (final bankName in noTreeBanks) {
+      final resolution = Bank.resolve(bankName, vantage: vantage);
+      if (resolution is Found) {
+        cli.diagnostics.add(
+          'mem: ${resolution.bank.name} — NO TREE: no tree of this bank '
+          'stands at ${resolution.bank.materializationAddress.path}, so '
+          'nothing is readable here. Materialize it.\n',
+        );
+      }
+      cli.exitCode = Mem.materializationLagCode;
+    }
+
     final dry = argResults!['dry-run'] as bool;
 
     if (walked.reached.isEmpty) {
@@ -598,6 +622,7 @@ final class HealthCommand extends MemCommand with SelectorArgs {
     final bank = resolveBank();
     if (bank == null) return;
     cli.out.add(_bankHeader(bank.name));
+    if (_reportIfNoTree(cli, bank)) return;
 
     final index = Index.of(bank);
     final topic = optionalPositional();
@@ -901,6 +926,34 @@ Future<String?> _readBody(MemCommand cmd, Mem cli) async {
     );
   }
   return reader();
+}
+
+/// The read path's own NO TREE — same diagnostic voice and the same exit
+/// code as the write path's [NoTree] (see `LANDED, NO TREE` below), spelled
+/// once so every read command that opens a single bank says it the same
+/// way. **Deliberately not [Advance]/[NoTree] themselves**: those are the
+/// vocabulary of bringing a tree up to the line a write just landed on, and
+/// a read lands nothing — borrowing them would carry write vocabulary into
+/// a layer that never writes.
+///
+/// The lie this guards against sits one level down, in [Bank.pages] and
+/// [Bank.page]: both answer "nothing" whether the bank is genuinely empty or
+/// its tree is simply not standing here. This is the cure at the consumer;
+/// the source-level cure — making that distinction unrepresentable in
+/// [Bank]'s own signature — is not this pass's to make.
+///
+/// Returns true when the bank has no tree, having already said why; the
+/// caller's cue to stop rather than render "no pages" for what may in fact
+/// be "no tree to read".
+bool _reportIfNoTree(Mem cli, Bank bank) {
+  if (bank.hasTree) return false;
+  cli.diagnostics.add(
+    'mem: ${bank.name} — NO TREE: no tree of this bank stands at '
+    '${bank.materializationAddress.path}, so nothing is readable here. '
+    'Materialize it.\n',
+  );
+  cli.exitCode = Mem.materializationLagCode;
+  return true;
 }
 
 void _reportOutcome(Mem cli, String bankName, Outcome outcome) {
