@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'entity.dart';
 import '../git/git.dart';
 import '../git/git_ambient.dart';
 import '../git/model/commit.dart';
@@ -220,8 +221,28 @@ final class Materialization {
     return const WorktreeCheckout(moved: true);
   }
 
-  /// Discards the worktree and deregisters it. Public here — unlike in
-  /// [Workspace], where the bracket owns the lifetime — because the lifetime of
-  /// a face's worktree is the face's own affair and may outlive any call.
-  void release() => ambientGit.worktreeRemove(gitDir, path: directory.path);
+  /// Discards the worktree and deregisters it. Public — a face has no bracket
+  /// that owns its lifetime, and the tree may outlive any call that stood it
+  /// up. The same paired teardown for an instance's own attached tree, which
+  /// [Instance.materialize] stands up: releasing what you deliberately
+  /// materialized is the ordinary lifecycle, attached or not.
+  ///
+  /// **This deletes a directory, so consequence is checked before it acts, on
+  /// top of the possession [ambientGit.worktreeRemove] already checks.**
+  /// [worktreeRemove] removes with `--force`, which overrides Git's own
+  /// uncommitted-work refusal — so a caller here that is merely done with a
+  /// clean tree loses nothing, but one that releases a tree still carrying
+  /// work loses it silently, with no commit anywhere to recover it from. That
+  /// is the actual loss [Entity.materialize]'s sibling refusal was named for;
+  /// **attachment alone is not it** — a freshly materialized, never-touched
+  /// instance tree is attached and safe to release, which the ordinary
+  /// materialize-then-release lifecycle proves every time it runs clean.
+  void release() {
+    final carried =
+        _ours ? ambientGit.worktreeDirtyPaths(directory.path) : const <String>[];
+    if (carried.isNotEmpty) {
+      throw WorktreeCarriesWork(directory.path, carried);
+    }
+    ambientGit.worktreeRemove(gitDir, path: directory.path);
+  }
 }

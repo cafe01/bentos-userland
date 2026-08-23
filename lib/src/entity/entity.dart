@@ -851,6 +851,36 @@ final class WorktreeAttached implements Exception {
       ].join('\n');
 }
 
+/// [Materialization.release] found uncommitted work in the tree it was asked
+/// to discard.
+///
+/// **The refusal that closes the other data-loss path.** `worktreeRemove`
+/// discards with `--force`, overriding Git's own refusal to touch a dirty
+/// tree — so a release that does not ask first takes whatever the tree was
+/// carrying with it, with no commit anywhere to recover it from. A tree
+/// released clean loses nothing regardless of whether it stands attached or
+/// detached, which is why this checks work carried rather than kind: the
+/// ordinary materialize-then-release lifecycle stands an attached tree up
+/// and tears it down clean, and refusing that would refuse the lifecycle
+/// itself.
+final class WorktreeCarriesWork implements Exception {
+  const WorktreeCarriesWork(this.path, this.paths);
+
+  /// The worktree `release` was asked to discard.
+  final String path;
+
+  /// What stands there: modified, staged and untracked alike.
+  final List<String> paths;
+
+  @override
+  String toString() => [
+        'refusing to release the tree at $path: it carries uncommitted work, '
+            'and release discards with force',
+        ...paths.map((p) => '  $p'),
+        '  commit it or set it aside first: git -C $path status',
+      ].join('\n');
+}
+
 /// The place's own repository already tracks files where the installation's
 /// gitlink must go.
 ///

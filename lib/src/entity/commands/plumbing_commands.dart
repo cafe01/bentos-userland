@@ -4,6 +4,7 @@ import 'dart:io';
 import '../entity.dart';
 import '../entity_runner.dart';
 import '../event.dart';
+import '../materialization.dart';
 import '../transaction.dart';
 import '../../git/git.dart';
 import '../../git/git_ambient.dart';
@@ -203,6 +204,12 @@ final class ReleaseCommand extends EntityCommand {
       if (Directory(path).existsSync()) throw WorktreeNotOurs(path);
       return;
     }
-    ambientGit.worktreeRemove(repository, path: path);
+    // Routed through the primitive rather than calling the port directly: the
+    // uncommitted-work check is [Materialization.release]'s law, not this
+    // command's to re-decide. `ref`
+    // is never asked here because release does not need it; only [directory]
+    // and [gitDir] are.
+    Materialization(directory: Directory(path), gitDir: repository, ref: null)
+        .release();
   }
 }

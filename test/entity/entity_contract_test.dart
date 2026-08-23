@@ -268,4 +268,49 @@ void main() {
       });
     });
   });
+
+  group('release refuses to discard uncommitted work', () {
+    test('release stays legal on a clean attached tree — the ordinary '
+        'materialize-then-release lifecycle', () {
+      site.run(() {
+        final e = Entity('bentos.mem', from: site.root.path).create(actor: testActor);
+        final instance = e.instance('main')..create();
+        final where = p.join(site.root.path, e.name);
+        final area = instance.materialize(at: where);
+
+        area.release();
+
+        expect(instance.standingAt, isNull,
+            reason: 'a clean tree loses nothing by being released, attached '
+                'or not — refusing this would refuse the ordinary lifecycle');
+        expect(Directory(where).existsSync(), isFalse);
+      });
+    });
+
+    test('a dirty attached tree is not silently force-discarded', () {
+      site.run(() {
+        final e = Entity('bentos.mem', from: site.root.path).create(actor: testActor);
+        final instance = e.instance('main')..create();
+        final where = p.join(site.root.path, e.name);
+        final area = instance.materialize(at: where);
+        final marker = p.join(where, 'uncommitted.txt');
+        File(marker).writeAsStringSync('never landed');
+
+        expect(
+          area.release,
+          throwsA(isA<WorktreeCarriesWork>()),
+          reason: 'worktreeRemove deletes with --force, so a dirty-blind '
+              "release would take an instance's uncommitted work with it and "
+              'nothing committed anywhere would recover it',
+        );
+
+        expect(instance.standingAt, where,
+            reason: 'a refusal that throws after already removing the '
+                'worktree is not a fix');
+        expect(File(marker).existsSync(), isTrue,
+            reason: 'the uncommitted file must still be on disk — this is '
+                'the content --force would have destroyed silently');
+      });
+    });
+  });
 }

@@ -512,8 +512,14 @@ void main() {
         workingDirectory: face.directory.path,
       );
       expect(update.exitCode, isZero, reason: update.stderr.toString());
-      face.release();
-
+      // No release(): the direct update-ref above moves the branch from
+      // outside the tree on purpose, to fire the hook from a worktree — which
+      // leaves the tree lagging its own ref, indistinguishable from real
+      // uncommitted work to `git status`. release() now refuses to
+      // force-discard what looks dirty, correctly: telling a lag from a
+      // person's edits needs the pre-move tip, which only Instance.fetch
+      // holds. Nothing here needs the tree gone; tearDown deletes the whole
+      // site regardless.
       await _settles(witness);
       expect(
         witness.readAsStringSync().trim(),

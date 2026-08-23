@@ -478,8 +478,13 @@ final class ProcessGit implements Git {
 
   @override
   void worktreeRemove(String gitDir, {required String path}) {
-    // Possession before deletion. Everything below this line destroys disk, and
-    // the only claim that authorizes it is the repository's own register.
+    // Possession before deletion — necessary, never sufficient. This settles
+    // only whether the repository's own register claims [path]; it says
+    // nothing about what kind of tree stands there or what it is presently
+    // holding. A registered tree can be a live instance's attached worktree,
+    // carrying uncommitted work — and `--force` below removes it anyway. The
+    // kind question belongs to the caller that knows what [path] is meant to
+    // be: [Materialization.release] asks it before reaching here.
     if (!_linkedWorktrees(gitDir).contains(_canonical(path))) {
       throw WorktreeNotOurs(path, repository: gitDir);
     }
