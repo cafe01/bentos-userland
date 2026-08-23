@@ -325,6 +325,65 @@ void main() {
         );
       });
     });
+
+    test(
+        'a legacy-detached bank tree: land() stands a SECOND attached tree '
+        'elsewhere, and advance() on the original reports Behind', () async {
+      await site.runAsync(() async {
+        final entity = Entity('alfred.mem', from: site.root.path).create(actor: testActor);
+        entity.instance('main').create();
+        final where = p.join(site.root.path, entity.name);
+        entity.instance('main').materialize(at: where);
+
+        // The legacy condition: a tree of ours stands at the bank's own
+        // materialization address, but detached — following no branch.
+        // `standingAt` asks the substrate for an *attached* worktree of
+        // 'main' only, so a detached tree here is invisible to it.
+        final detach =
+            Process.runSync('git', ['-C', where, 'checkout', '--detach']);
+        expect(detach.exitCode, 0);
+
+        // Untracked, and colliding with the very file the coming write
+        // introduces — the shape that makes Git's own checkout decline
+        // rather than silently fast-forward the stale tree underneath it.
+        File(p.join(where, 'a.md')).writeAsStringSync('stale local content');
+
+        final bank =
+            (Bank.resolve('alfred.mem', vantage: site.root.path) as Found)
+                .bank;
+
+        // `land()` finds no attached tree, so it materializes a second one
+        // at the instance's own convention address and commits there — the
+        // branch moves under a tree nobody asked to read from.
+        final landing = await bank.land(
+          'page',
+          (draft) => draft.write(Page(
+            topic: 'a',
+            fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
+            body: 'x',
+          )),
+          actor: Actor('tester', email: 'tester@test.local'),
+        );
+        expect(landing, isA<Landed>());
+
+        // The original tree at the bank's own address never received the
+        // write — the second tree did — and it is still detached.
+        expect(
+          File(p.join(where, 'a.md')).readAsStringSync(),
+          'stale local content',
+        );
+
+        // advance() reads at the bank's own address — the original,
+        // detached tree — and tries to catch it up. Git's own checkout
+        // declines because the untracked local file would be overwritten,
+        // and that decline is exactly what Behind carries outward: real,
+        // not merely theoretical, on this route.
+        final advance = bank.advance();
+        expect(advance, isA<Behind>());
+        expect((advance as Behind).blocking, contains('a.md'));
+        expect(advance.report, contains('would be overwritten'));
+      });
+    });
   });
 
   group('land', () {

@@ -171,10 +171,51 @@ void main() {
     // is not: an act now commits in the very tree it materializes, so the
     // tree an attached write just landed in is, by construction, already at
     // its own tip when `advance()` reads it afterward — Behind is
-    // unreachable from this call shape. The Behind/materializationLagCode
-    // contract itself is still real (see NoTree below and bank_test.dart's
-    // 'advance' group for the attached-and-dirty case, which now refuses at
-    // `land` itself rather than reporting stale here).
+    // unreachable *from that shape*. It IS reachable from a different one,
+    // proven below: a legacy-detached bank tree at the entity's own
+    // materialization address. `standingAt` only sees *attached* worktrees,
+    // so `land()` finds none standing, materializes a **second**, attached
+    // tree at the instance's own convention address (`instances/main`) and
+    // commits there — the branch moves under a tree the reader is not
+    // looking at. `advance()` then reads the original (still detached) tree
+    // and tries to catch it up to the new tip; if that tree carries content
+    // colliding with what the write introduced, Git's own checkout declines,
+    // and `Behind` is exactly what carries that decline outward.
+    test(
+        'remember on a legacy-detached bank tree lands, but reports TREE '
+        'STALE rather than a clean write', () async {
+      await site.runAsync(() async {
+        final where = materialize('alfred.mem');
+
+        // The legacy condition: detach the tree Git itself just attached.
+        final detach =
+            Process.runSync('git', ['-C', where.path, 'checkout', '--detach']);
+        expect(detach.exitCode, 0);
+
+        // Untracked, and colliding with the very file the coming write
+        // introduces — the shape that makes the substrate's own checkout
+        // decline rather than silently fast-forward the stale tree.
+        File(p.join(where.path, 'domain/hello.md'))
+          ..parent.createSync(recursive: true)
+          ..writeAsStringSync('stale local content');
+
+        final out = _Out(), diag = _Out();
+        final code = await mem(
+          bankEnv: 'alfred.mem',
+          out: out,
+          diagnostics: diag,
+          stdinReader: () async => 'World.',
+        ).call([...memSigned, 'remember', 'domain/hello', '-t', 'semantic',
+          '-A', '0.7', '--gist', 'a greeting']);
+
+        // The act landed — the line carries it — and the exit code and
+        // message say the tree did not follow, never that the write failed.
+        expect(diag.text, contains('written domain/hello'));
+        expect(code, Mem.materializationLagCode);
+        expect(diag.text, contains('LANDED, TREE STALE'));
+        expect(diag.text, isNot(contains('LANDED, NO TREE')));
+      });
+    });
 
     test('a write landing into a bank with no tree says so, and exits non-zero',
         () async {
