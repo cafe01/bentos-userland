@@ -482,16 +482,18 @@ final class ProcessGit implements Git {
     // only whether the repository's own register claims [path]; it says
     // nothing about what kind of tree stands there or what it is presently
     // holding. A registered tree can be a live instance's attached worktree,
-    // carrying uncommitted work — and `--force` below removes it anyway. The
-    // kind question belongs to the caller that knows what [path] is meant to
-    // be: [Materialization.release] asks it before reaching here.
+    // carrying uncommitted work — this port no longer forces past Git's own
+    // refusal to discard it (below), but that refusal is a fault surfaced
+    // late and named by Git's own error text, not this API's. The kind
+    // question belongs to the caller that knows what [path] is meant to be:
+    // [Materialization.release] asks it before ever reaching here.
     if (!_linkedWorktrees(gitDir).contains(_canonical(path))) {
       throw WorktreeNotOurs(path, repository: gitDir);
     }
     // `_git` and not `_run`: a refusal from the substrate is a fault of ours and
     // must travel. Read and discarded, it became an instruction to delete by
     // hand whatever Git had just declined to touch.
-    _git(gitDir, ['worktree', 'remove', '--force', path]);
+    _git(gitDir, ['worktree', 'remove', path]);
     // Deregistering is the half that matters: a directory deleted behind Git's
     // back leaves the entry standing, which is precisely the leak the API
     // exists to prevent. The residue below is reached only after Git removed a

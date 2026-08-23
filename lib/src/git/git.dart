@@ -298,9 +298,10 @@ abstract interface class Git {
   /// move would overwrite, and this member does exactly what plain
   /// `checkout` does: asks, and accepts the answer. Never `--force`, never a
   /// stash, never a clean — content Git declines to touch is content this
-  /// leaves standing. [worktreeRemove]'s forced discard is a different verb
-  /// for a different caller: releasing a tree nobody is reading from any
-  /// longer, not catching one up.
+  /// leaves standing. [worktreeRemove] is a different verb for a different
+  /// caller: releasing a tree nobody is reading from any longer, not
+  /// catching one up — and it asks the same way this does, refusing rather
+  /// than forcing past what Git declines.
   ///
   /// Returns a [WorktreeCheckout]: moved, or refused with the substrate's own
   /// account of why. A fault that is not the ordinary refusal — [path] no
