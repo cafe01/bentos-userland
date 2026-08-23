@@ -533,8 +533,16 @@ final class ProcessGit implements Git {
     // Asked from inside the worktree, like every other member that acts on
     // one: a linked worktree carries its own index and its own HEAD, and only
     // Git's discovery from the tree itself finds them.
+    //
+    // **Never `--force`.** That flag overrides the tree's own `.gitignore`,
+    // sweeping every ignored file into the ledger on every act — measured to
+    // permanently re-track a file the caller had `git rm --cached`'d, since
+    // the next act just re-added it. `--all` alone stages modifications,
+    // deletions and new files while still honouring what the tree asked to
+    // be left alone, which is the only staging an act committing "whatever
+    // stands here" should ever do.
     final staged = _run(
-      ['add', '--all', '--force', '--', '.'],
+      ['add', '--all', '--', '.'],
       workingDirectory: path,
     );
     if (staged.exitCode != 0) {
