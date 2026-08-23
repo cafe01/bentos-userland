@@ -1,9 +1,8 @@
 import 'dart:io';
 
 import 'package:bentos_userland/entity.dart';
+import 'package:bentos_userland/src/git/process_git.dart';
 import 'package:path/path.dart' as p;
-
-import '../git/fake_git.dart';
 
 /// Who acts, where a fixture's subject is something other than who acted.
 ///
@@ -27,6 +26,56 @@ String repositoryOf(String placePath, String name) => p.join(
       name,
       Entity.repositoryDirName,
     );
+
+/// Installs a real `reference-transaction` hook at [gitDir] that refuses
+/// **the next** ref transaction only, with [message] on stderr, then stands
+/// aside — the substrate's own gate mechanism, real, not modelled. A single
+/// shot, because the refused act's own cleanup is a further ref transaction
+/// (`worktreeDiscard`'s `reset --hard`) that must not itself be caught by the
+/// same trap. Mirrors `process_git_test.dart`'s own fixture for the hook.
+void installRefusingHook(String gitDir, String message) {
+  final hooks = Directory(p.join(gitDir, 'hooks'))..createSync(recursive: true);
+  final marker = p.join(hooks.path, '.refuse-next');
+  File(marker).createSync();
+  final hook = File(p.join(hooks.path, 'reference-transaction'));
+  hook.writeAsStringSync('#!/bin/sh\n'
+      '[ "\$1" = prepared ] || exit 0\n'
+      '[ -e "$marker" ] || exit 0\n'
+      'rm -f "$marker"\n'
+      'echo "$message" >&2\n'
+      'exit 1\n');
+  Process.runSync('chmod', ['+x', hook.path]);
+}
+
+/// Blocks the exact index path a gitlink named [name] would stage at, the way
+/// the real substrate genuinely refuses it: a tracked file already standing
+/// under that path makes the index hold one entry as both a directory and a
+/// blob, and `git update-index --add --cacheinfo` refuses with exactly the
+/// words `'$name' appears as both a file and as a directory` — measured
+/// against real Git, not modelled.
+void blockGitlinkPath(Site site, String name) {
+  final dir = Directory(p.join(site.root.path, name))
+    ..createSync(recursive: true);
+  File(p.join(dir.path, '.keep')).writeAsStringSync('blocking');
+  final result = Process.runSync(
+    'git',
+    ['-C', site.root.path, 'add', p.join(name, '.keep')],
+  );
+  if (result.exitCode != 0) {
+    throw ProcessException('git', ['add', name], '${result.stderr}');
+  }
+}
+
+/// Undoes [blockGitlinkPath] — clears the tracked collision so the next
+/// attempt at [name] is a first attempt again.
+void unblockGitlinkPath(Site site, String name) {
+  Process.runSync(
+    'git',
+    ['-C', site.root.path, 'rm', '-r', '--cached', '--ignore-unmatch', name],
+  );
+  final dir = Directory(p.join(site.root.path, name));
+  if (dir.existsSync()) dir.deleteSync(recursive: true);
+}
 
 /// A repository this system never authored — no `genesis` branch, no identity
 /// trailer, one ordinary commit on `main` with an `entity.yaml` at its root
@@ -69,17 +118,19 @@ String foreignRepository(
   return gitDir;
 }
 
-/// A hermetic site: a real directory marked as a place, with a [FakeGit]
-/// standing in for the substrate.
+/// A hermetic site: a real directory marked as a place, standing in a real
+/// Git repository of its own — the substrate is never faked.
 ///
-/// Real directories rather than a memory filesystem, because worktrees are real
-/// files by definition and the port's own verbs write them. What is faked is
-/// the one thing `IOOverrides` cannot reach — the subprocess.
+/// Real directories, because worktrees are real files by definition and the
+/// port's own verbs write them. [git] defaults to the ambient production
+/// port, [ProcessGit]; passed explicitly, it lets a caller stand a spy in
+/// front of the real substrate (a decorator that records and delegates)
+/// without inventing a second implementation of Git's own semantics.
 final class Site {
-  /// [git] defaults to a private port; passed explicitly it lets two sites
-  /// share one substrate, the way a source and its installer share one disk.
-  Site([String label = 'site', FakeGit? git])
-      : git = git ?? FakeGit() {
+  /// [initGit] is false only for the one legitimate case of a place standing
+  /// outside any repository at all — see [Site.loose].
+  Site([String label = 'site', Git? git, bool initGit = true])
+      : git = git ?? const ProcessGit() {
     // Resolved: a place answers with its canonical root, and the system temp is
     // reached through a link on some machines. A site that kept the link's
     // spelling would have its assertions comparing two vocabularies of one path.
@@ -95,11 +146,25 @@ final class Site {
     // no pin anywhere — the absent dimension, wearing an implementation
     // failure's clothes, since every assert about pinning was reading an empty
     // string that no implementation could have filled.
-    this.git.workTrees.add(root.path);
+    if (initGit) {
+      final result = Process.runSync(
+        'git',
+        ['init', '--quiet', '--initial-branch=main', root.path],
+      );
+      if (result.exitCode != 0) {
+        throw ProcessException('git', ['init', root.path], '${result.stderr}');
+      }
+    }
   }
 
+  /// A site whose root lies in no repository at all — the one case a real
+  /// `git init` must be withheld rather than granted, since a place outside
+  /// any repository is a real, distinct condition and not an absence of
+  /// setup.
+  factory Site.loose([String label = 'site']) => Site(label, null, false);
+
   late final Directory root;
-  final FakeGit git;
+  final Git git;
 
   /// Runs [body] with this site's port installed as the ambient one.
   R run<R>(R Function() body) => runWithGit(git, body);

@@ -165,44 +165,16 @@ void main() {
       });
     });
 
-    test('a write that lands but leaves the tree stale cannot look clean',
-        () async {
-      await site.runAsync(() async {
-        final where = materialize('alfred.mem');
-        // The person typed `git checkout main` in their bank at some point.
-        site.git.heads[where.path] = 'main';
-
-        final out = _Out(), diag = _Out();
-        final code = await mem(
-          bankEnv: 'alfred.mem',
-          out: out,
-          diagnostics: diag,
-          stdinReader: () async => 'World.',
-        ).call([...memSigned, 'remember', 'domain/hello', '-t', 'semantic',
-          '-A', '0.7', '--gist', 'a greeting']);
-
-        // The act landed — saying so is honest, and the line does carry it.
-        expect(diag.text, contains('written domain/hello'));
-        // But what a caller meets must not be the shape of a clean write. The
-        // failure that cost a session was never the stale tree; it was that
-        // nothing outside the process could tell. Both halves are asserted,
-        // because either alone is the silence again: a message nobody reads,
-        // or a code with nothing to explain it.
-        //
-        // And it must not be the *same* nonzero code a decided refusal
-        // carries — a script that greps one exit code for "nothing landed"
-        // would be lied to here exactly as badly as by a bare 0, since the
-        // write in fact landed. Mem.exitCode's own contract names 1 for a
-        // decided refusal; this is not one.
-        expect(code, Mem.materializationLagCode);
-        expect(code, isNot(1));
-        expect(diag.text, contains('TREE STALE'));
-        expect(diag.text, contains("follows the branch 'main'"));
-        // And the page really is unreadable where a reader would look, which
-        // is what makes the loud report true rather than merely cautious.
-        expect(File(p.join(where.path, 'domain/hello.md')).existsSync(), isFalse);
-      });
-    });
+    // A "written but the local tree is stale" case used to be reachable by
+    // faking a branch checkout (`site.git.heads[where] = 'main'`) ahead of a
+    // write, on the belief that an attached tree was inherently suspect. It
+    // is not: an act now commits in the very tree it materializes, so the
+    // tree an attached write just landed in is, by construction, already at
+    // its own tip when `advance()` reads it afterward — Behind is
+    // unreachable from this call shape. The Behind/materializationLagCode
+    // contract itself is still real (see NoTree below and bank_test.dart's
+    // 'advance' group for the attached-and-dirty case, which now refuses at
+    // `land` itself rather than reporting stale here).
 
     test('a write landing into a bank with no tree says so, and exits non-zero',
         () async {

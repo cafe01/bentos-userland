@@ -164,18 +164,15 @@ void main() {
       );
     });
 
-    test('a tree following a branch declines every time, and says why', () async {
+    test(
+        'an attached tree already stands at its tip — Advanced, not Behind, '
+        'because an act commits there and moves the ref by doing so',
+        () async {
       await site.runAsync(() async {
         final entity = Entity('alfred.mem', from: site.root.path).create(actor: testActor);
         entity.instance('main').create();
         final where = p.join(site.root.path, entity.name);
         entity.instance('main').materialize(at: where);
-
-        // What a person does by typing `git checkout main` inside their bank.
-        // Nothing about the directory looks different afterwards, and from
-        // that moment HEAD is a symref: it resolves through the ref an act
-        // moves, so it reads as the tip while the files stay behind.
-        site.git.heads[where] = 'main';
 
         final bank =
             (Bank.resolve('alfred.mem', vantage: site.root.path) as Found)
@@ -190,37 +187,23 @@ void main() {
           actor: Actor('tester', email: 'tester@test.local'),
         );
 
-        // The trap itself, asserted before the behaviour: HEAD now reads as
-        // the tip while the files stand a commit back. This is the condition
-        // that made `standing == tip` true by construction.
-        expect(
-          site.git.worktreeHead(where),
-          site.git.revParse(
-              site.git.worktreeRepository(where)!, 'refs/heads/main'),
-        );
+        // The act committed in this tree, so it is attached and already
+        // stands at the branch's tip — the ordinary condition of an instance
+        // now, not a trap. A guard once refused every attached tree on the
+        // belief that attached meant "detached by hand behind the ref"; that
+        // belief is false once an act commits where the tree stands.
+        expect(site.git.currentBranch(where), 'main');
 
-        // The defect, stated as the assertion that would have caught it: the
-        // outcome must not be Advanced while the file is absent. Asserting the
-        // file alone would have passed the day this broke, because what failed
-        // was the report and not the checkout.
+        // Loud, not silent: there is genuinely nothing to do, and the report
+        // says so rather than passing over it — the case `entity refresh`'s
+        // own caller relies on to tell "nothing moved" from "already home".
         final first = bank.advance();
-        expect(first, isA<Behind>());
-        expect((first as Behind).report, contains("follows the branch 'main'"));
-        expect(File(p.join(where, 'a.md')).existsSync(), isFalse);
+        expect(first, isA<Advanced>());
+        expect(File(p.join(where, 'a.md')).existsSync(), isTrue);
 
-        // Every time, not once. The condition is a property of the tree, so a
-        // decline that fired on the first write and went quiet afterwards is
-        // the same silence wearing a warning's clothes.
-        final second = bank.advance();
-        expect(second, isA<Behind>());
-        expect((second as Behind).report, contains("follows the branch 'main'"));
-
-        // And nothing was done to the tree in the attempt. A checkout here
-        // cannot repair it — Git reads the gap between the stale index and the
-        // moved HEAD as the person's own staged work — so the cure is the
-        // person's to apply, and the tree is left exactly as it was found.
-        expect(site.git.heads[where], 'main',
-            reason: "the tree was detached behind the person's back");
+        // Every time, not once: a clean attached tree answers the same way
+        // on every call, because the condition is a property of the tree.
+        expect(bank.advance(), isA<Advanced>());
       });
     });
 
@@ -250,7 +233,7 @@ void main() {
       });
     });
 
-    test('a dirty tree behind the line declines, and names what blocks it',
+    test('a dirty tree refuses the next land outright, naming what blocks it',
         () async {
       await site.runAsync(() async {
         final entity = Entity('alfred.mem', from: site.root.path).create(actor: testActor);
@@ -261,8 +244,8 @@ void main() {
         final bank =
             (Bank.resolve('alfred.mem', vantage: site.root.path) as Found)
                 .bank;
-        // A first page lands and is fast-forwarded into the tree, so its
-        // file is now tracked at the commit the tree stands at.
+        // A first page lands and is committed into the tree, so its file is
+        // now tracked at the commit the tree stands at.
         await bank.land(
           'page',
           (draft) => draft.write(Page(
@@ -274,27 +257,72 @@ void main() {
         );
         expect(bank.advance(), isA<Advanced>());
 
-        // The person edits the tracked file by hand, and a second page
-        // lands — moving the ref beyond what the dirty tree stands at.
+        // The person edits the tracked file by hand. An act commits in this
+        // very tree now, so the guard fires before the second land's body
+        // ever runs — there is no private area left for it to land into
+        // unseen, and no later `advance()` call to decline instead.
         File(p.join(where, 'a.md')).writeAsStringSync('mine, not yours');
-        await bank.land(
-          'page',
-          (draft) => draft.write(Page(
-            topic: 'b',
-            fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
-            body: 'y',
-          )),
-          actor: Actor('tester', email: 'tester@test.local'),
-        );
-
-        final advance = bank.advance();
-        expect(advance, isA<Behind>());
-        expect((advance as Behind).blocking, contains('a.md'));
+        Object? thrown;
+        try {
+          await bank.land(
+            'page',
+            (draft) => draft.write(Page(
+              topic: 'b',
+              fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
+              body: 'y',
+            )),
+            actor: Actor('tester', email: 'tester@test.local'),
+          );
+        } catch (e) {
+          thrown = e;
+        }
+        expect(thrown, isA<TreeCarriesWork>());
+        expect((thrown as TreeCarriesWork).paths, contains('a.md'));
         // Never discarded: the person's edit is still exactly there.
         expect(File(p.join(where, 'a.md')).readAsStringSync(), 'mine, not yours');
         // And the landed page never silently arrived either — nothing was
         // moved, exactly as the contract promises.
         expect(File(p.join(where, 'b.md')).existsSync(), isFalse);
+      });
+    });
+
+    test(
+        'a hand-dirtied tree declines advance() alone — Behind, naming what '
+        'blocks it, with no land() ever attempted', () async {
+      await site.runAsync(() async {
+        final entity = Entity('alfred.mem', from: site.root.path).create(actor: testActor);
+        entity.instance('main').create();
+        final where = p.join(site.root.path, entity.name);
+        entity.instance('main').materialize(at: where);
+
+        final bank =
+            (Bank.resolve('alfred.mem', vantage: site.root.path) as Found)
+                .bank;
+        await bank.land(
+          'page',
+          (draft) => draft.write(Page(
+            topic: 'a',
+            fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
+            body: 'x',
+          )),
+          actor: Actor('tester', email: 'tester@test.local'),
+        );
+        expect(bank.advance(), isA<Advanced>());
+
+        // The person edits the tracked file by hand, and nothing calls
+        // `land()` afterward — `advance()` is asked directly, on its own,
+        // the one route into `Behind` that bank.dart:168 still returns.
+        File(p.join(where, 'a.md')).writeAsStringSync('mine, not yours');
+
+        final advance = bank.advance();
+        expect(advance, isA<Behind>());
+        expect((advance as Behind).blocking, contains('a.md'));
+        expect(advance.report, contains('uncommitted work'));
+        // Never discarded, never overwritten: declining is the whole act.
+        expect(
+          File(p.join(where, 'a.md')).readAsStringSync(),
+          'mine, not yours',
+        );
       });
     });
   });

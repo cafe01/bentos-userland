@@ -363,7 +363,7 @@ void main() {
     });
 
     test('the manifest names the install when --as is silent', () async {
-      final origin = Site('origin', site.git);
+      final origin = Site('origin');
       addTearDown(origin.dispose);
       final source = repositoryOf(origin.root.path, 't.origin');
       await Cli(origin).run(['create', 't.origin', ...Cli.signed]);
@@ -376,7 +376,7 @@ void main() {
     });
 
     test('--as overrides a name the manifest declares', () async {
-      final origin = Site('origin', site.git);
+      final origin = Site('origin');
       addTearDown(origin.dispose);
       final source = repositoryOf(origin.root.path, 't.origin');
       await Cli(origin).run(['create', 't.origin', ...Cli.signed]);
@@ -395,7 +395,7 @@ void main() {
       // trailer — an ordinary repository as any forge hands one out. Every
       // other fixture in this suite passes through Entity.create and cannot
       // tell a real clone from a mirror of itself; this one can.
-      final origin = Site('origin', site.git);
+      final origin = Site('origin');
       addTearDown(origin.dispose);
       final source = foreignRepository(
         site.git,
@@ -435,7 +435,7 @@ void main() {
     group('a second install over what already stands', () {
       test('a registered name refuses — exit 3, and nothing touched',
           () async {
-        final origin = Site('origin', site.git);
+        final origin = Site('origin');
         addTearDown(origin.dispose);
         final source = repositoryOf(origin.root.path, 't.smoke');
         await Cli(origin).run(['create', 't.smoke', ...Cli.signed]);
@@ -458,7 +458,7 @@ void main() {
         'a directory standing with no registration refuses, and names the '
         'path rather than erasing it',
         () async {
-          final origin = Site('origin', site.git);
+          final origin = Site('origin');
           addTearDown(origin.dispose);
           final source = repositoryOf(origin.root.path, 't.smoke');
           await Cli(origin).run(['create', 't.smoke', ...Cli.signed]);
@@ -487,7 +487,7 @@ void main() {
         'two installs at the same coordinate reproduce the refusal, never a '
         'raw substrate exception',
         () async {
-          final origin = Site('origin', site.git);
+          final origin = Site('origin');
           addTearDown(origin.dispose);
           final source = repositoryOf(origin.root.path, 't.smoke');
           await Cli(origin).run(['create', 't.smoke', ...Cli.signed]);
@@ -511,7 +511,7 @@ void main() {
     /// that origin so a test can publish into it. Both sites share one port,
     /// the way two directories on one disk share a substrate.
     Future<({Site origin, String name})> installed() async {
-      final origin = Site('origin', site.git);
+      final origin = Site('origin');
       addTearDown(origin.dispose);
       await Cli(origin).run(['create', 't.thing', ...Cli.signed]);
       final r = await cli.run(['install', repositoryOf(origin.root.path, 't.thing')]);

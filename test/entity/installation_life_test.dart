@@ -19,7 +19,6 @@ import 'package:bentos_userland/src/git/process_git.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
-import '../git/fake_git.dart' show NetworkRecordingGit;
 import 'helpers.dart';
 
 /// **The installation's life after its constructor** — `refit` and `upgrade`,
@@ -412,12 +411,10 @@ void main() {
   });
 
   group('refit — the apparatus half, against real Git', () {
-    // Two claims [FakeGit] cannot honestly witness, both named in the fixture
-    // audit: a deleted directory, and a stranger's worktree. Both ask what the
-    // possession model is a register OR the disk — and a register-backed
-    // fake either has to be told by hand what the disk holds, or answers a
-    // question about its own bookkeeping rather than about Git. Real Git's
-    // `worktree list` and `rev-parse` are the only honest witness here.
+    // Two claims about the disk and about Git's own worktree registry, not
+    // about anything of ours: a deleted directory, and a stranger's worktree.
+    // Real Git's `worktree list` and `rev-parse` are the only honest witness
+    // here.
     const git = ProcessGit();
     late Directory root;
     late Entity llm;
@@ -838,8 +835,8 @@ void main() {
   });
 
   group('the refspec, against the substrate itself', () {
-    // FakeGit models no configuration, so it cannot witness a claim about
-    // `remote.origin.fetch`. This claim is about Git, and only Git answers it.
+    // This claim is about Git's own configuration — `remote.origin.fetch` —
+    // and only Git answers it.
     const git = ProcessGit();
     late Directory scratch;
     late Directory there;
@@ -1000,10 +997,11 @@ void main() {
 
   group('install then upgrade, against real Git', () {
     // The round trip the defect actually broke: a fresh installation, then the
-    // first verb ever to read what install wrote. FakeGit's `upgrade — the
-    // content half` group above proves the seven-step order; it cannot witness
-    // this, because it never clones anything and so has no staging directory
-    // to delete out from under itself.
+    // first verb ever to read what install wrote. The `upgrade — the content
+    // half` group above proves the seven-step order by watching the call
+    // sequence; it does not exercise a real installation whose staging clone
+    // was deleted the moment install finished, which is the one condition
+    // `upgrade` must survive here.
     const git = ProcessGit();
     late Directory scratch;
     late Directory there;
@@ -1060,8 +1058,9 @@ const _newSha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 ///
 /// It exists because two of this delivery's claims are unreachable from end
 /// state: the order of operations, which is normative, and the rollback, which
-/// needs a re-pin that fails for a reason the verb did not choose. [FakeGit] is
-/// `final`, so the escape is delegation rather than extension.
+/// needs a re-pin that fails for a reason the verb did not choose. Delegation
+/// rather than extension, so it can stand in front of any [Git] — the real
+/// substrate included.
 final class _WatchedGit implements Git {
   _WatchedGit(this._inner);
 
@@ -1257,4 +1256,186 @@ final class _WatchedGit implements Git {
   @override
   Future<void> push(String gitDir, {required String remote, String? ref}) =>
       _inner.push(gitDir, remote: remote, ref: ref);
+}
+
+/// A Git that records every verb reaching the network, standing in front of
+/// the real substrate — the strong witness for "reaches the network never",
+/// since a synchronous member's shape argues the point but does not show it.
+/// The same device as [_WatchedGit], narrowed to the three verbs a network
+/// ever answers for.
+final class NetworkRecordingGit implements Git {
+  NetworkRecordingGit([Git inner = const ProcessGit()]) : _inner = inner;
+
+  final Git _inner;
+
+  final List<String> networkCalls = [];
+
+  @override
+  Future<void> clone(String source, String gitDir, {bool bare = true}) {
+    networkCalls.add('clone $source -> $gitDir');
+    return _inner.clone(source, gitDir, bare: bare);
+  }
+
+  @override
+  Future<void> push(String gitDir, {required String remote, String? ref}) {
+    networkCalls.add('push $gitDir -> $remote');
+    return _inner.push(gitDir, remote: remote, ref: ref);
+  }
+
+  @override
+  Future<Commit?> fetch(String gitDir,
+      {required String remote, required String ref}) {
+    networkCalls.add('fetch $gitDir <- $remote $ref');
+    return _inner.fetch(gitDir, remote: remote, ref: ref);
+  }
+
+  // ------------------------------------------------------- plain forwarding
+
+  @override
+  void init(String gitDir, {bool bare = true}) =>
+      _inner.init(gitDir, bare: bare);
+
+  @override
+  String hashObject(String gitDir, List<int> bytes) =>
+      _inner.hashObject(gitDir, bytes);
+
+  @override
+  List<int> catFile(String gitDir, String object) =>
+      _inner.catFile(gitDir, object);
+
+  @override
+  List<String> lsTree(String gitDir,
+          {required Commit at, required String path}) =>
+      _inner.lsTree(gitDir, at: at, path: path);
+
+  @override
+  bool isAncestor(String gitDir,
+          {required Commit ancestor, required Commit descendant}) =>
+      _inner.isAncestor(gitDir, ancestor: ancestor, descendant: descendant);
+
+  @override
+  String writeTree(String gitDir, {required String workTree}) =>
+      _inner.writeTree(gitDir, workTree: workTree);
+
+  @override
+  String commitTree(String gitDir,
+          {required String tree,
+          required List<String> parents,
+          required String message,
+          required Actor actor}) =>
+      _inner.commitTree(gitDir,
+          tree: tree, parents: parents, message: message, actor: actor);
+
+  @override
+  RefUpdate updateRef(String gitDir,
+          {required String ref,
+          required Commit newCommit,
+          required Commit? expected}) =>
+      _inner.updateRef(gitDir, ref: ref, newCommit: newCommit, expected: expected);
+
+  @override
+  void branch(String gitDir, {required String name, required Commit startPoint}) =>
+      _inner.branch(gitDir, name: name, startPoint: startPoint);
+
+  @override
+  List<String> branches(String gitDir) => _inner.branches(gitDir);
+
+  @override
+  Commit? revParse(String gitDir, String rev) => _inner.revParse(gitDir, rev);
+
+  @override
+  List<RawCommit> log(
+    String gitDir, {
+    required String ref,
+    int? limit,
+    List<String> excluding = const [],
+  }) =>
+      _inner.log(gitDir, ref: ref, limit: limit, excluding: excluding);
+
+  @override
+  RawCommit showCommit(String gitDir, Commit commit) =>
+      _inner.showCommit(gitDir, commit);
+
+  @override
+  Diff diffTree(String gitDir, {required Commit from, required Commit to}) =>
+      _inner.diffTree(gitDir, from: from, to: to);
+
+  @override
+  void worktreeAdd(
+    String gitDir, {
+    required String path,
+    required Commit at,
+    String? branch,
+  }) =>
+      _inner.worktreeAdd(gitDir, path: path, at: at, branch: branch);
+
+  @override
+  String? worktreesOn(String gitDir, String branch) =>
+      _inner.worktreesOn(gitDir, branch);
+
+  @override
+  void worktreeRemove(String gitDir, {required String path}) =>
+      _inner.worktreeRemove(gitDir, path: path);
+
+  @override
+  WorktreeCheckout worktreeCheckout(String path, {required Commit to}) =>
+      _inner.worktreeCheckout(path, to: to);
+
+  @override
+  WorktreeCommit commitInWorktree(
+    String path, {
+    required String message,
+    required Actor actor,
+  }) =>
+      _inner.commitInWorktree(path, message: message, actor: actor);
+
+  @override
+  void worktreeDiscard(String path, {required Commit to}) =>
+      _inner.worktreeDiscard(path, to: to);
+
+  @override
+  List<String> worktreeDirtyPaths(String path) => _inner.worktreeDirtyPaths(path);
+
+  @override
+  String? worktreeRepository(String path) => _inner.worktreeRepository(path);
+
+  @override
+  Commit? worktreeHead(String path) => _inner.worktreeHead(path);
+
+  @override
+  String? topLevel(String path) => _inner.topLevel(path);
+
+  @override
+  String? currentBranch(String workTree) => _inner.currentBranch(workTree);
+
+  @override
+  List<String> branchesIn(String workTree) => _inner.branchesIn(workTree);
+
+  @override
+  void stageGitlink(String workTree, {required String path, required Commit at}) =>
+      _inner.stageGitlink(workTree, path: path, at: at);
+
+  @override
+  Commit? stagedGitlink(String workTree, String path) =>
+      _inner.stagedGitlink(workTree, path);
+
+  @override
+  List<({String mode, String sha, String path})> stagedEntries(
+          String workTree, String path) =>
+      _inner.stagedEntries(workTree, path);
+
+  @override
+  void unstageGitlink(String workTree, String path) =>
+      _inner.unstageGitlink(workTree, path);
+
+  @override
+  List<Remote> remotes(String gitDir) => _inner.remotes(gitDir);
+
+  @override
+  void addRemote(String gitDir, {required String name, required String url}) =>
+      _inner.addRemote(gitDir, name: name, url: url);
+
+  @override
+  void setRemoteUrl(String gitDir, {required String name, required String url}) =>
+      _inner.setRemoteUrl(gitDir, name: name, url: url);
 }

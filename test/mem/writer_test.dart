@@ -455,7 +455,10 @@ void main() {
       await site.runAsync(() async {
         final s = stand();
         final writer = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'), gist: FixedGist('cue'));
-        site.git.declineNextSwap = 'entity: refused by r4: bin/check\ncheck: illegal';
+        installRefusingHook(
+          repositoryOf(site.root.path, 'alfred.mem'),
+          'entity: refused by r4: bin/check\ncheck: illegal',
+        );
 
         final outcome = await writer.remember('a',
             type: MemType.semantic, attention: Attention(0.5), body: 'x');

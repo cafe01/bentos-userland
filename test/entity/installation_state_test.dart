@@ -7,7 +7,6 @@ import 'package:bentos_userland/src/place/place.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
-import '../git/fake_git.dart';
 import 'helpers.dart';
 
 /// **What stands, and what a constructor leaves behind when it throws.**
@@ -86,7 +85,7 @@ void main() {
         () {
       // No pin is possible where there is no index. Reported as *no pin can be
       // held here* and never as *the pin is missing*.
-      final loose = Site('loose')..git.workTrees.clear();
+      final loose = Site.loose('loose');
       addTearDown(loose.dispose);
       loose.run(() => Entity('t.loose', from: loose.root.path).create(actor: testActor));
 
@@ -108,13 +107,13 @@ void main() {
 
     test('a failure at the pin rolls the clone and the registration back',
         () async {
-      final origin = Site('origin', site.git);
+      final origin = Site('origin');
       addTearDown(origin.dispose);
       final source = sourceNamed('t.rolled', origin);
       // The reported failure, installed as a seam: `update-index --cacheinfo`
       // refusing over tracked files is a throw from inside `register`, after
       // the clone and after the `.gitmodules` line.
-      site.git.failStageGitlink = true;
+      blockGitlinkPath(site, 't.rolled');
 
       await expectLater(
         site.runAsync(() =>
@@ -134,17 +133,17 @@ void main() {
     });
 
     test('the rolled-back name installs cleanly on the next attempt', () async {
-      final origin = Site('origin2', site.git);
+      final origin = Site('origin2');
       addTearDown(origin.dispose);
       final source = sourceNamed('t.retry', origin);
-      site.git.failStageGitlink = true;
+      blockGitlinkPath(site, 't.retry');
       await site
           .runAsync(
               () => Entity.install(source, at: site.root.path, as: 't.retry'))
           .then<Object?>((_) => null, onError: (Object e) => e);
 
       // The whole point of rolling back: the second attempt is a first attempt.
-      site.git.failStageGitlink = false;
+      unblockGitlinkPath(site, 't.retry');
       final installed = await site.runAsync(
           () => Entity.install(source, at: site.root.path, as: 't.retry'));
 
@@ -154,13 +153,13 @@ void main() {
 
     test('it undoes only what it created — a foreign installation survives',
         () async {
-      final origin = Site('origin3', site.git);
+      final origin = Site('origin3');
       addTearDown(origin.dispose);
       final source = sourceNamed('t.neighbour', origin);
       // Somebody else's installation, whole, standing at the same place.
       site.run(() =>
           Entity('t.standing', from: site.root.path).create(actor: testActor));
-      site.git.failStageGitlink = true;
+      blockGitlinkPath(site, 't.neighbour');
 
       await site
           .runAsync(() =>
@@ -175,7 +174,7 @@ void main() {
 
   group('the bar an operator meets', () {
     test('a whole installation is refused as already installed', () async {
-      final origin = Site('origin4', site.git);
+      final origin = Site('origin4');
       addTearDown(origin.dispose);
       origin.run(
           () => Entity('t.twice', from: origin.root.path).create(actor: testActor));
@@ -194,7 +193,7 @@ void main() {
 
     test('a half-installation says which facts are missing, and does not resume',
         () async {
-      final origin = Site('origin5', site.git);
+      final origin = Site('origin5');
       addTearDown(origin.dispose);
       origin.run(
           () => Entity('t.partial', from: origin.root.path).create(actor: testActor));
@@ -237,7 +236,7 @@ void main() {
 
   group('create leaves nothing of its own behind on a throw', () {
     test('a failure at the pin rolls the init and the registration back', () {
-      site.git.failStageGitlink = true;
+      blockGitlinkPath(site, 't.half-born');
 
       expect(
         () => site
@@ -252,7 +251,7 @@ void main() {
     });
 
     test('the rolled-back name creates cleanly on the next attempt', () {
-      site.git.failStageGitlink = true;
+      blockGitlinkPath(site, 't.born-retry');
       try {
         site.run(() =>
             Entity('t.born-retry', from: site.root.path).create(actor: testActor));
@@ -260,7 +259,7 @@ void main() {
         // Expected — the point of this test is what happens after.
       }
 
-      site.git.failStageGitlink = false;
+      unblockGitlinkPath(site, 't.born-retry');
       final created = site.run(() =>
           Entity('t.born-retry', from: site.root.path).create(actor: testActor));
 

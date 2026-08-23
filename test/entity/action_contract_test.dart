@@ -227,20 +227,40 @@ void main() {
   });
 
   group('what an act is not', () {
-    test('acting never wakes a listener in process', () async {
+    test('a landed wake is detached, never the API\'s own doing', () async {
+      // Not a witness-file race: `touch` completes fast enough, through the
+      // real hook, that checking for it right after `act()` returns proves
+      // nothing either way. `deliveries()` is the journal's own record of
+      // what the detached body did, waited on rather than sampled once — the
+      // same proof `dispatch_contract_test.dart` and
+      // `subscribing_contract_test.dart` already use for this claim.
       final witness = File(p.join(site.root.path, 'woken'));
+      const pattern = EventPattern(action: 'prompt', phase: EventPhase.landed);
+      // A shim call appends the occurrence to the command line, so the body
+      // must not read those extra arguments as more of its own — `$0` is the
+      // one this test wrote, the rest are the shim's to add.
       site.run(() => llm.on(
-            {EventPattern.parse('prompt.landed')},
-            command: ['touch', witness.path],
+            {pattern},
+            command: ['bash', '-c', 'touch "\$0"', witness.path],
           ));
 
       await writeAct(site.run(() => llm.instance('s1')), 'prompt', 'hello');
 
+      final deadline = DateTime.now().add(const Duration(seconds: 10));
+      while (site.run(() => llm.deliveries({pattern})).isEmpty &&
+          DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+      }
+
+      final line = site.run(() => llm.deliveries({pattern})).single;
       expect(
-        witness.existsSync(),
-        isFalse,
-        reason: 'waking is the shim\'s, at the ref transaction — never the API\'s',
+        line.exitCode,
+        0,
+        reason: 'the wake reached the shim and ran, detached from the act '
+            'that landed it — never a call the API made itself',
       );
+      expect(witness.existsSync(), isTrue,
+          reason: 'the delivery record and the body\'s own effect agree');
     });
 
     test('there is no verb that asks an entity to do something', () {

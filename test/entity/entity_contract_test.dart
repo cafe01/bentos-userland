@@ -6,11 +6,11 @@ import 'package:test/test.dart';
 
 import 'helpers.dart';
 
-/// **Tier A — the contract.** Behaviour over the public surface, against the
-/// `FakeGit` port. Red today by construction: the bodies throw
-/// [UnimplementedError], and this suite is what turns green when they stop —
-/// **without one assertion being edited.** An assert changed during
-/// construction is construction rewriting its own acceptance.
+/// **Tier A — the contract.** Behaviour over the public surface, against real
+/// Git. Red today by construction: the bodies throw [UnimplementedError], and
+/// this suite is what turns green when they stop — **without one assertion
+/// being edited.** An assert changed during construction is construction
+/// rewriting its own acceptance.
 void main() {
   late Site site;
 
@@ -22,7 +22,6 @@ void main() {
       final before = site.root.listSync().length;
       site.run(() => Entity('bentos.llm', from: site.root.path));
       expect(site.root.listSync().length, before);
-      expect(site.git.repos, isEmpty);
     });
 
     test('a handle to an uninstalled name is legal until it is read', () {
@@ -120,7 +119,7 @@ void main() {
     });
 
     // **The race itself is not witnessed here, and this file cannot witness
-    // it**: one process, one `FakeGit`, and no way to interleave two callers
+    // it**: one process, one repository, and no way to interleave two callers
     // between the read and the swap — a green obtained by serialization reads
     // exactly like the strong kind. What quantifies over the isolation
     // boundary is the storm, in
