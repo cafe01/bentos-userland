@@ -471,12 +471,29 @@ final class Entity {
   /// away a tree someone may be looking at is not what *bring this up to date*
   /// means. A directory that stands here and is no worktree of ours is not ours
   /// to delete, and the substrate's refusal travels.
+  ///
+  /// **Ours is not enough — it must also be a face.** A class's own tree is
+  /// always born detached (no `branch` is ever passed to [Git.worktreeAdd]
+  /// here), so a tree at [path] that *follows* a branch cannot be this verb's
+  /// own residue — it can only be an [Instance]'s attached worktree, standing
+  /// exactly where [Instance.materialize]'s convention address puts it. That
+  /// tree is where a person edits and where an act commits: discarding it
+  /// silently would not just delete a directory, it would sever the object
+  /// from the ground truth of where it stands. The next [Instance.act] would
+  /// find nowhere attached, stand a second tree elsewhere, and commit there —
+  /// forking the object in two with nothing to say so. So this refuses
+  /// instead, the same way a directory that is no worktree of ours is
+  /// refused: named, not silently stepped around.
   Materialization materialize(Commit at, {required String path}) {
     final gitDir = _gitDir;
     // Ours and not merely *somebody's*: the question is whether this repository
     // holds a tree here, and a directory that answers with another repository —
     // or with none — is not this verb's to discard.
     if (ambientGit.worktreeRepository(path) == gitDir) {
+      final follows = ambientGit.currentBranch(path);
+      if (follows != null) {
+        throw WorktreeAttached(path, follows: follows, gitDir: gitDir);
+      }
       ambientGit.worktreeRemove(gitDir, path: path);
     }
     ambientGit.worktreeAdd(gitDir, path: path, at: at);
@@ -795,6 +812,43 @@ final class EntityAlreadyInstalled implements Exception {
         'Install will not resume it and will not overwrite it. '
         '${state.missing.length == 1 && (state.missing.single == 'arming' || state.missing.single == 'class tree') ? 'Run `entity refit $name` — it rewrites the shim and re-stages the class, with no network.' : 'Nothing repairs a missing registration or pin: remove the plot directory and the `.gitmodules` entry for $name, then install again.'}';
   }
+}
+
+/// [Entity.materialize] found a tree that follows a branch at the address it
+/// was asked to stand the class at.
+///
+/// **The refusal that closes a data-loss path.** A class's own tree is always
+/// born detached; a tree that follows a branch there can only be an
+/// [Instance]'s attached worktree, standing at the convention address
+/// [Instance.materialize] uses. That tree is where an act commits — silently
+/// discarding it would sever the object from where it actually stands, and
+/// the next act would stand a second tree elsewhere and commit there,
+/// forking the object with nothing to say so. Named and refused instead, the
+/// same way a directory that is no worktree of ours is refused rather than
+/// stepped around.
+final class WorktreeAttached implements Exception {
+  const WorktreeAttached(this.path, {required this.follows, required this.gitDir});
+
+  /// The address `materialize` was asked to stand the class at.
+  final String path;
+
+  /// The branch the tree there follows — the substrate's own answer, and the
+  /// name of whichever instance actually stands there.
+  final String follows;
+
+  /// The repository asked, so the sentence names what tried to do this.
+  final String gitDir;
+
+  @override
+  String toString() => [
+        'refusing to materialize the class at $path: '
+            "a tree following '$follows' already stands there",
+        '  a class\'s own tree is always detached — a tree that follows a '
+            "branch here can only be an instance's attached worktree, and "
+            'materializing over it would silently sever the object from '
+            'where it stands',
+        '  release it or materialize the class somewhere else',
+      ].join('\n');
 }
 
 /// The place's own repository already tracks files where the installation's

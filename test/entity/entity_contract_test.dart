@@ -235,4 +235,37 @@ void main() {
       });
     });
   });
+
+  group('materialize refuses to discard an attached instance tree', () {
+    test('the class-level verb does not stand over a live instance address', () {
+      site.run(() {
+        final e = Entity('bentos.mem', from: site.root.path).create(actor: testActor);
+        final instance = e.instance('main')..create();
+        final where = p.join(site.root.path, e.name);
+        instance.materialize(at: where);
+
+        expect(
+          () => e.materialize(e.genesis, path: where),
+          throwsA(isA<WorktreeAttached>()),
+          reason: 'a tree that follows a branch at this address can only be '
+              "an instance's attached worktree, and re-materializing the "
+              'class here would silently detach and destroy it — the next '
+              'act would then stand a second tree elsewhere and commit '
+              'there, forking the object with nothing to say so',
+        );
+
+        expect(instance.standingAt, where,
+            reason: 'the instance must still stand exactly where it stood — '
+                'a refusal that throws after already removing the worktree '
+                'is not a fix');
+        expect(Directory(where).existsSync(), isTrue);
+        expect(
+          File(p.join(where, '.git')).existsSync() ||
+              Directory(p.join(where, '.git')).existsSync(),
+          isTrue,
+          reason: 'still a real, attached worktree, not a husk',
+        );
+      });
+    });
+  });
 }
