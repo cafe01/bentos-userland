@@ -477,23 +477,22 @@ final class ProcessGit implements Git {
   }
 
   @override
-  void worktreeRemove(String gitDir, {required String path}) {
+  void worktreeRemove(String gitDir, {required String path, bool force = false}) {
     // Possession before deletion — necessary, never sufficient. This settles
     // only whether the repository's own register claims [path]; it says
     // nothing about what kind of tree stands there or what it is presently
     // holding. A registered tree can be a live instance's attached worktree,
-    // carrying uncommitted work — this port no longer forces past Git's own
-    // refusal to discard it (below), but that refusal is a fault surfaced
-    // late and named by Git's own error text, not this API's. The kind
-    // question belongs to the caller that knows what [path] is meant to be:
-    // [Materialization.release] asks it before ever reaching here.
+    // carrying uncommitted work — and [force], passed by a caller, would
+    // remove it anyway. The kind question belongs to that caller, never to
+    // this port: [Materialization.release] asks it and passes false;
+    // [Entity.materialize] already knows a class's own detached face is
+    // disposable by construction and passes true.
     if (!_linkedWorktrees(gitDir).contains(_canonical(path))) {
       throw WorktreeNotOurs(path, repository: gitDir);
     }
     // `_git` and not `_run`: a refusal from the substrate is a fault of ours and
-    // must travel. Read and discarded, it became an instruction to delete by
-    // hand whatever Git had just declined to touch.
-    _git(gitDir, ['worktree', 'remove', path]);
+    // must travel — unless [force] says there is nothing here worth a refusal.
+    _git(gitDir, ['worktree', 'remove', if (force) '--force', path]);
     // Deregistering is the half that matters: a directory deleted behind Git's
     // back leaves the entry standing, which is precisely the leak the API
     // exists to prevent. The residue below is reached only after Git removed a

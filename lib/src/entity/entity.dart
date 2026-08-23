@@ -494,7 +494,14 @@ final class Entity {
       if (follows != null) {
         throw WorktreeAttached(path, follows: follows, gitDir: gitDir);
       }
-      ambientGit.worktreeRemove(gitDir, path: path);
+      // Forced: a detached class face is disposable by construction — the
+      // one thing [WorktreeAttached] above already exists to tell apart from
+      // an instance's own attached tree. Whatever accumulated inside it since
+      // the last stand-up (a stray build artifact, editor state) was never
+      // precious, and refusing to re-materialize over it would fail the
+      // ordinary, unremarkable case: a face nobody has touched by hand but
+      // that a real directory grows content in anyway.
+      ambientGit.worktreeRemove(gitDir, path: path, force: true);
     }
     ambientGit.worktreeAdd(gitDir, path: path, at: at);
     return Materialization(

@@ -1112,9 +1112,9 @@ final class _WatchedGit implements Git {
   }
 
   @override
-  void worktreeRemove(String gitDir, {required String path}) {
+  void worktreeRemove(String gitDir, {required String path, bool force = false}) {
     calls.add('worktreeRemove');
-    _inner.worktreeRemove(gitDir, path: path);
+    _inner.worktreeRemove(gitDir, path: path, force: force);
   }
 
   // ------------------------------------------------------- plain forwarding
@@ -1374,8 +1374,8 @@ final class NetworkRecordingGit implements Git {
       _inner.worktreesOn(gitDir, branch);
 
   @override
-  void worktreeRemove(String gitDir, {required String path}) =>
-      _inner.worktreeRemove(gitDir, path: path);
+  void worktreeRemove(String gitDir, {required String path, bool force = false}) =>
+      _inner.worktreeRemove(gitDir, path: path, force: force);
 
   @override
   WorktreeCheckout worktreeCheckout(String path, {required Commit to}) =>

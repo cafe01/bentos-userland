@@ -269,6 +269,31 @@ void main() {
     });
   });
 
+  group('class-level materialize forces past a disposable face\'s own junk', () {
+    test('an untracked file left in a detached face does not block '
+        're-materializing over it — the ordinary rebuild', () {
+      site.run(() {
+        final e = Entity('bentos.mem', from: site.root.path).create(actor: testActor);
+        final where = p.join(site.root.path, e.name);
+        e.materialize(e.genesis, path: where);
+        File(p.join(where, 'build_artifact.tmp')).writeAsStringSync('junk');
+
+        // Must not throw: a class face carries no instance's uncommitted
+        // work by definition — WorktreeAttached above is what tells a live
+        // instance tree apart from this one, and this address never
+        // followed a branch. Discarding whatever a disposable face
+        // accumulated is the ordinary, unremarkable case, not a data-loss
+        // path. Regression coverage for the finding that removing --force
+        // from Git.worktreeRemove wholesale (65cb40d) would have made
+        // `place materialize -r` fail on any face ever built in or opened
+        // in an editor.
+        e.materialize(e.genesis, path: where);
+
+        expect(File(p.join(where, 'build_artifact.tmp')).existsSync(), isFalse);
+      });
+    });
+  });
+
   group('release refuses to discard uncommitted work', () {
     test('release stays legal on a clean attached tree — the ordinary '
         'materialize-then-release lifecycle', () {

@@ -289,8 +289,16 @@ abstract interface class Git {
   /// [path] must stand among the linked worktrees this repository has
   /// registered, or [WorktreeNotOurs] is raised and nothing is touched. The
   /// substrate's refusal is the last word — a directory Git declined to remove
-  /// is never removed by us afterwards.
-  void worktreeRemove(String gitDir, {required String path});
+  /// is never removed by us afterwards, unless [force] says the content was
+  /// never precious to begin with.
+  ///
+  /// [force] defaults to false: content Git would refuse to discard is left
+  /// standing, and the refusal travels. Pass true only for a tree whose
+  /// caller already knows, by construction, that whatever accumulated inside
+  /// it — a stray build artifact, editor state, anything a real directory
+  /// grows without anyone deciding to — was never meant to survive: a class's
+  /// own disposable face, never an instance's attached tree.
+  void worktreeRemove(String gitDir, {required String path, bool force = false});
 
   /// Moves the worktree at [path] to [to] — an **unforced** `git checkout`.
   ///
@@ -300,8 +308,9 @@ abstract interface class Git {
   /// stash, never a clean — content Git declines to touch is content this
   /// leaves standing. [worktreeRemove] is a different verb for a different
   /// caller: releasing a tree nobody is reading from any longer, not
-  /// catching one up — and it asks the same way this does, refusing rather
-  /// than forcing past what Git declines.
+  /// catching one up — and asks the same way this does by default, forcing
+  /// past what Git declines only when the caller already knows the tree is
+  /// disposable.
   ///
   /// Returns a [WorktreeCheckout]: moved, or refused with the substrate's own
   /// account of why. A fault that is not the ordinary refusal — [path] no
