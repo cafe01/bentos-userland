@@ -1006,4 +1006,67 @@ void main() {
       });
     });
   });
+
+  group('survey — pagination', () {
+    Directory seed(int count) {
+      final root = materialize('alfred.mem');
+      for (var i = 0; i < count; i++) {
+        File(p.join(root.path, 'topic$i.md')).writeAsStringSync(Page(
+          topic: 'topic$i',
+          fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
+          body: 'body',
+        ).serialize());
+      }
+      return root;
+    }
+
+    test('unscoped survey returns everything, and says so honestly — never '
+        'silently truncated', () async {
+      await site.runAsync(() async {
+        seed(5);
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call(['survey']);
+        expect(code, 0);
+        for (var i = 0; i < 5; i++) {
+          expect(out.text, contains('topic$i'));
+        }
+        // No pagination cue at all — the honest shape for "everything asked
+        // for, everything given", not a silent cap nobody was told about.
+        expect(out.text, isNot(contains('showing')));
+        expect(diag.text, contains('5 pages'));
+      });
+    });
+
+    test('--limit narrows the page and names what was left out', () async {
+      await site.runAsync(() async {
+        seed(5);
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call(['survey', '--limit', '2']);
+        expect(code, 0);
+        expect(out.text, contains('showing 1–2 of 5'));
+        // The continuation cue names the exact next call, never leaves the
+        // caller to compose their own offset.
+        expect(out.text, contains('mem survey --offset 2'));
+        expect(diag.text, contains('2 pages'));
+      });
+    });
+
+    test('--limit and --offset together reach the last page, no further cue',
+        () async {
+      await site.runAsync(() async {
+        seed(5);
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call(['survey', '--limit', '2', '--offset', '4']);
+        expect(code, 0);
+        expect(out.text, contains('showing 5–5 of 5'));
+        // At the end, the message names the range and stops — no
+        // `--offset` cue pointing past the total.
+        expect(out.text, isNot(contains('mem survey --offset')));
+        expect(diag.text, contains('1 pages'));
+      });
+    });
+  });
 }
