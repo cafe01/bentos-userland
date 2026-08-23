@@ -369,6 +369,34 @@ void main() {
         expect(diag.text, contains('-t <type>'));
       });
     });
+
+    // The scale is eleven fixed notches, deliberately — not a defect an
+    // off-notch value trips over, but a contract: `remember -A` refuses one
+    // as a usage fault, cleanly, rather than crashing on the parse.
+    test('remember -A off-notch is a clean usage refusal, exit 2', () async {
+      await site.runAsync(() async {
+        materialize('alfred.mem');
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call([...memSigned, 'remember', 'domain/x', '-t', 'semantic',
+          '-A', '0.75']);
+        expect(code, 2);
+        expect(diag.text, contains('off-notch'));
+        expect(diag.text, contains('0.75'));
+      });
+    });
+
+    test('--min-attention off-notch is the same clean refusal, exit 2',
+        () async {
+      await site.runAsync(() async {
+        materialize('alfred.mem');
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call(['survey', '--min-attention', '0.75']);
+        expect(code, 2);
+        expect(diag.text, contains('off-notch'));
+      });
+    });
   });
 
   group('empty reach', () {
