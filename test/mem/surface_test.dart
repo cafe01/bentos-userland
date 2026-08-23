@@ -370,6 +370,39 @@ void main() {
       });
     });
 
+    test('-A alone missing is a usage fault naming -A', () async {
+      await site.runAsync(() async {
+        materialize('alfred.mem');
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call([...memSigned, 'remember', 'domain/x', '-t', 'semantic']);
+        expect(code, 2);
+        expect(diag.text, contains('-A <attention>'));
+      });
+    });
+
+    // --actor is required on every act, but it is a platform-wide law
+    // (statedActor/NoActor), not a mem-specific one — a caller scripting
+    // across entity, chat and mem reads one exit code for "you did not say
+    // who you are", distinct from an ordinary usage fault (2).
+    test('a missing --actor refuses at 64, the platform-wide code, not 2',
+        () async {
+      await site.runAsync(() async {
+        materialize('alfred.mem');
+        final out = _Out(), diag = _Out();
+        final code = await mem(
+          bankEnv: 'alfred.mem',
+          out: out,
+          diagnostics: diag,
+          stdinReader: () async => 'a body',
+        ).call(['remember', 'domain/x', '-t', 'semantic', '-A', '0.5']);
+        expect(code, 64);
+        expect(code, isNot(2));
+        expect(diag.text, contains('say who is writing'));
+        expect(diag.text, contains('--actor'));
+      });
+    });
+
     // The scale is eleven fixed notches, deliberately — not a defect an
     // off-notch value trips over, but a contract: `remember -A` refuses one
     // as a usage fault, cleanly, rather than crashing on the parse.
