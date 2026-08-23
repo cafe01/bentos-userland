@@ -304,6 +304,45 @@ void main() {
           expect(diag.text, isNot(contains('dead')));
         });
       });
+
+      // refocus/tag/gist all select against `bank.pages()` before landing —
+      // the same lie f620787 killed for survey/recall/health/walk, alive
+      // here because none of the three called the guard.
+      test('refocus', () async {
+        await site.runAsync(() async {
+          installOnly(site.root);
+          final out = _Out(), diag = _Out();
+          final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+              .call([...memSigned, 'refocus', 'domain/hello', '--to', '0.5']);
+          expect(code, Mem.materializationLagCode);
+          expect(diag.text, contains('NO TREE'));
+          expect(diag.text, isNot(contains('no pages under')));
+        });
+      });
+
+      test('tag', () async {
+        await site.runAsync(() async {
+          installOnly(site.root);
+          final out = _Out(), diag = _Out();
+          final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+              .call([...memSigned, 'tag', 'domain/hello', '--add', 'x']);
+          expect(code, Mem.materializationLagCode);
+          expect(diag.text, contains('NO TREE'));
+          expect(diag.text, isNot(contains('no pages under')));
+        });
+      });
+
+      test('gist', () async {
+        await site.runAsync(() async {
+          installOnly(site.root);
+          final out = _Out(), diag = _Out();
+          final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+              .call([...memSigned, 'gist', 'domain/hello']);
+          expect(code, Mem.materializationLagCode);
+          expect(diag.text, contains('NO TREE'));
+          expect(diag.text, isNot(contains('no pages under')));
+        });
+      });
     });
 
     test(

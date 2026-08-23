@@ -754,6 +754,8 @@ final class RefocusCommand extends MemCommand with SelectorArgs {
     final bank = resolveBank();
     if (bank == null) return;
 
+    if (_reportIfNoTree(cli, bank)) return;
+
     final toOpt = argResults!['to'] as String?;
     final byOpt = argResults!['by'] as String?;
     if ((toOpt == null) == (byOpt == null)) {
@@ -813,6 +815,8 @@ final class TagCommand extends MemCommand with SelectorArgs {
     final bank = resolveBank();
     if (bank == null) return;
 
+    if (_reportIfNoTree(cli, bank)) return;
+
     final add = argResults!['add'] as List<String>;
     final remove = argResults!['remove'] as List<String>;
     if (add.isEmpty && remove.isEmpty) {
@@ -861,6 +865,8 @@ final class GistCommand extends MemCommand with SelectorArgs {
   Future<void> run() async {
     final bank = resolveBank();
     if (bank == null) return;
+
+    if (_reportIfNoTree(cli, bank)) return;
 
     final topic = optionalPositional();
     final selector = buildSelector(topic: topic);
