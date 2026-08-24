@@ -95,7 +95,7 @@ void main() {
       'refocus': 'refocus [<topic>]',
       'tag': 'tag [<topic>]',
       'gist': 'gist [<topic>]',
-      'forget': 'forget <topic>',
+      'forget': 'forget <topic>...',
     };
 
     for (final entry in grammar.entries) {
@@ -279,7 +279,7 @@ void main() {
     });
   });
 
-  group('exact-one verbs — remember, forget', () {
+  group('exact-one verbs — remember', () {
     test('remember with a surplus positional is refused, not silently '
         'dropped', () async {
       final out = _Out();
@@ -308,27 +308,117 @@ void main() {
       expect(code, 2);
       expect(diag.text, contains('unexpected argument(s): surplus'));
     });
+  });
 
-    test('forget with a surplus positional is refused, not silently '
-        'dropped', () async {
-      final root = materialize('alfred.mem');
-      File(p.join(root.path, 'a.md')).writeAsStringSync(Page(
-        topic: 'a',
-        fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
-        body: 'body of a',
-      ).serialize());
-      final out = _Out();
+  group('forget — variadic, min one, checked before it lands', () {
+    // Landed as acts, not planted by hand — a hand-written file is
+    // untracked, and forget is a write: it lands an act, which refuses
+    // outright against a tree already carrying uncommitted work.
+    Future<void> seed(String bank, List<String> topics) async {
+      materialize(bank);
+      for (final topic in topics) {
+        await plant(bank, topic);
+      }
+    }
+
+    test('zero topics is refused as usage — a selector must never delete',
+        () async {
+      materialize('alfred.mem');
       final diag = _Out();
       final cli = Mem(
-        vantage: site.root.path,
-        out: out,
-        diagnostics: diag,
-        environment: const {},
-      );
-      final code =
-          await cli.call(['forget', 'a', 'surplus', '-b', 'alfred.mem', ...signed]);
+          vantage: site.root.path,
+          out: _Out(),
+          diagnostics: diag,
+          environment: const {});
+      final code = await cli.call(['forget', '-b', 'alfred.mem', ...signed]);
       expect(code, 2);
-      expect(diag.text, contains('unexpected argument(s): surplus'));
+      expect(diag.text, contains('<topic> is required'));
+    });
+
+    test('many topics are removed in one call', () async {
+      await seed('alfred.mem', ['a', 'b', 'c']);
+      final diag = _Out();
+      final cli = Mem(
+          vantage: site.root.path,
+          out: _Out(),
+          diagnostics: diag,
+          environment: const {});
+      final code =
+          await cli.call(['forget', 'a', 'b', 'c', '-b', 'alfred.mem', ...signed]);
+      expect(code, 0);
+      expect(diag.text, contains('written a, b, c'));
+
+      final out = _Out();
+      final recallDiag = _Out();
+      await Mem(
+              vantage: site.root.path,
+              out: out,
+              diagnostics: recallDiag,
+              environment: const {})
+          .call(['recall', 'a', 'b', 'c', '-b', 'alfred.mem']);
+      expect(recallDiag.text, contains('no pages under a, b, c'));
+    });
+
+    // The defect this closes: before this change, forgetting a name that
+    // was never a page reported `written ghost` at exit 0 — [Draft.remove]
+    // no-ops on a missing file, so the CLI told the caller a deletion
+    // happened when nothing on disk moved. This is the reproduction: it
+    // would have read `code == 0` and `diag.text` carrying `written ghost`
+    // against the code before this slice.
+    test('a nonexistent topic is refused, never reported written', () async {
+      materialize('alfred.mem');
+      final diag = _Out();
+      final cli = Mem(
+          vantage: site.root.path,
+          out: _Out(),
+          diagnostics: diag,
+          environment: const {});
+      final code =
+          await cli.call(['forget', 'ghost', '-b', 'alfred.mem', ...signed]);
+      expect(code, 1);
+      expect(diag.text, contains('no page found for: ghost'));
+      expect(diag.text, isNot(contains('written')));
+    });
+
+    test('a batch with one typo lands the real topics and names the typo '
+        'in full — not silently green, and not a bare count', () async {
+      await seed('alfred.mem', ['a', 'b']);
+      final diag = _Out();
+      final cli = Mem(
+          vantage: site.root.path,
+          out: _Out(),
+          diagnostics: diag,
+          environment: const {});
+      final code = await cli
+          .call(['forget', 'a', 'ghost', 'b', '-b', 'alfred.mem', ...signed]);
+      expect(code, 1);
+      expect(diag.text, contains('written a, b'));
+      expect(diag.text, contains('no page found for: ghost'));
+
+      final out = _Out();
+      final recallDiag = _Out();
+      await Mem(
+              vantage: site.root.path,
+              out: out,
+              diagnostics: recallDiag,
+              environment: const {})
+          .call(['recall', 'a', 'b', '-b', 'alfred.mem']);
+      expect(recallDiag.text, contains('no pages under a, b'));
+    });
+
+    test('a repeated topic is deduplicated, not landed twice', () async {
+      await seed('alfred.mem', ['a']);
+      final diag = _Out();
+      final cli = Mem(
+          vantage: site.root.path,
+          out: _Out(),
+          diagnostics: diag,
+          environment: const {});
+      final code =
+          await cli.call(['forget', 'a', 'a', '-b', 'alfred.mem', ...signed]);
+      expect(code, 0);
+      expect(diag.text, contains('written a'));
+      expect(diag.text, isNot(contains('written a, a')));
     });
   });
 }

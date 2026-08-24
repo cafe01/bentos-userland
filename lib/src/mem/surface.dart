@@ -883,7 +883,8 @@ final class GistCommand extends MemCommand with SelectorArgs {
   }
 }
 
-/// `mem forget <topic>` — by name only. A selector must never delete.
+/// `mem forget <topic>...` — by name only, many at once. A selector must
+/// never delete.
 final class ForgetCommand extends MemCommand {
   ForgetCommand(super.cli);
 
@@ -897,15 +898,51 @@ final class ForgetCommand extends MemCommand {
   List<String> get positionalLabels => const ['topic'];
 
   @override
+  bool get repeating => true;
+
+  @override
   Future<void> run() async {
     final bank = resolveBank();
     if (bank == null) return;
+    if (_reportIfNoTree(cli, bank)) return;
 
-    final topic = requirePositionals().first;
+    final seen = <String>{};
+    final topics = [
+      for (final t in requirePositionals())
+        if (seen.add(t)) t,
+    ];
+
+    // Checked before landing anything — [Draft.remove] no-ops on a name
+    // that is not a page, so a report built from the act alone could not
+    // tell a real deletion from a typo that changed nothing.
+    final found = <String>[];
+    final missing = <String>[];
+    for (final topic in topics) {
+      (bank.page(topic) == null ? missing : found).add(topic);
+    }
+
+    if (found.isEmpty) {
+      cli.diagnostics.add(
+        'mem: ${bank.name} — no page found for: ${missing.join(', ')}.\n',
+      );
+      cli.exitCode = 1;
+      return;
+    }
 
     final writer = Writer(bank, actor: statedActor());
-    final outcome = await writer.forget(topic);
+    final outcome = await writer.forget(found);
     _reportOutcome(cli, bank.name, outcome);
+
+    // A missing topic is a failure even when the intent was idempotent —
+    // the caller named it and it did not land, whatever else in the same
+    // call did. Named in full, never as a count, so a typo among many
+    // topics is legible rather than hidden behind a tally.
+    if (missing.isNotEmpty) {
+      cli.diagnostics.add(
+        'mem: ${bank.name} — no page found for: ${missing.join(', ')}.\n',
+      );
+      cli.exitCode = 1;
+    }
   }
 }
 

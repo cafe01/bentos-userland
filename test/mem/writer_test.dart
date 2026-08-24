@@ -439,12 +439,54 @@ void main() {
         await writer.remember('a',
             type: MemType.semantic, attention: Attention(0.5), body: 'x');
 
-        final outcome = await writer.forget('a');
+        final outcome = await writer.forget(['a']);
 
         expect(outcome, isA<Written>());
         expect((outcome as Written).topics, ['a']);
         s.bank.advance();
         expect(s.bank.page('a'), isNull);
+      });
+    });
+
+    test('removes many topics in one commit', () async {
+      await site.runAsync(() async {
+        final s = stand();
+        final writer = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'), gist: FixedGist('cue'));
+        await writer.remember('a',
+            type: MemType.semantic, attention: Attention(0.5), body: 'x');
+        await writer.remember('b',
+            type: MemType.semantic, attention: Attention(0.5), body: 'y');
+
+        final outcome = await writer.forget(['a', 'b']);
+
+        expect(outcome, isA<Written>());
+        expect((outcome as Written).topics, ['a', 'b']);
+        s.bank.advance();
+        expect(s.bank.page('a'), isNull);
+        expect(s.bank.page('b'), isNull);
+      });
+    });
+
+    // The defect this closes: a topic that was never a page still landed a
+    // commit and reported [Written] for it — [Draft.remove] no-ops on a
+    // missing file, so the act changed nothing while the outcome claimed it
+    // did. The cure lives at the CLI seam (`ForgetCommand` checks existence
+    // before calling this), never here — [Writer.forget] is deliberately
+    // trusting of the list it is handed, so this test pins what it actually
+    // does with a name that is not a page: lands anyway, reports [Written]
+    // anyway. Read together with `cli_grammar_test.dart`'s forget group,
+    // which proves the CLI never lets that outcome reach a caller.
+    test('a nonexistent topic still lands and reports Written — the lie '
+        "this primitive tells on its own, which is why the CLI checks "
+        'existence before calling it', () async {
+      await site.runAsync(() async {
+        final s = stand();
+        final writer = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'));
+
+        final outcome = await writer.forget(['ghost']);
+
+        expect(outcome, isA<Written>());
+        expect((outcome as Written).topics, ['ghost']);
       });
     });
   });

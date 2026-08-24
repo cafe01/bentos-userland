@@ -187,11 +187,20 @@ final class Writer {
     );
   }
 
-  /// By topic name only. A selector must never delete.
-  Future<Outcome> forget(String topic) => _land(
-        topics: [topic],
-        say: 'forget $topic',
-        build: (draft) => draft.remove(topic),
+  /// By topic name only, many at once, one commit. A selector must never
+  /// delete. [topics] is the caller's job to have already proven exist —
+  /// [Draft.remove] no-ops on a topic it does not find, so a name that was
+  /// never a page would otherwise land a commit that changed nothing while
+  /// reporting [Written] for it, the same lie in miniature this front keeps
+  /// meeting elsewhere.
+  Future<Outcome> forget(List<String> topics) => _land(
+        topics: topics,
+        say: 'forget ${topics.join(', ')}',
+        build: (draft) {
+          for (final topic in topics) {
+            draft.remove(topic);
+          }
+        },
       );
 
   Page? _firstAssumed(List<Page> pages) {
