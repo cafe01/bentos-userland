@@ -1087,6 +1087,26 @@ void main() {
   });
 
   group('health', () {
+    test('the single-topic view still carries the unjudged caveat — it '
+        'lists edges but resolves none of them', () async {
+      await site.runAsync(() async {
+        materialize('other.mem');
+        final root = materialize('alfred.mem');
+        File(p.join(root.path, 'a.md')).writeAsStringSync(Page(
+          topic: 'a',
+          fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
+          body: 'names [[mem://other.mem/x]]',
+        ).serialize());
+
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call(['health', 'a']);
+        expect(code, 0);
+        expect(out.text, contains('other.mem/x'));
+        expect(diag.text, contains('external links unjudged'));
+      });
+    });
+
     test('a page with no inbound edge is an orphan', () async {
       await site.runAsync(() async {
         final root = materialize('alfred.mem');

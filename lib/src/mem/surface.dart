@@ -628,6 +628,13 @@ final class HealthCommand extends MemCommand with SelectorArgs {
     final topic = optionalPositional();
 
     if (topic != null) {
+      // This view lists edges; it never resolves a `bank`-qualified one
+      // against anything, sibling installed or not — the caveat that named
+      // that limitation belongs here regardless of what the full-health
+      // path below can now do.
+      cli.diagnostics.add(
+        'mem: ${bank.name} — health, this bank alone; external links unjudged.\n',
+      );
       final out = index.outbound(topic);
       final inb = index.inbound(topic);
       final buf = StringBuffer()
