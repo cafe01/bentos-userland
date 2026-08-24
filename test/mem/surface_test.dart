@@ -862,7 +862,7 @@ void main() {
 
         final out = _Out(), diag = _Out();
         final code = await mem(out: out, diagnostics: diag)
-            .call(['walk', 'mem://alfred.mem/a']);
+            .call(['walk', 'mem://alfred.mem/a', '--cross-bank']);
         expect(code, 0);
         expect(out.text, contains('┌─ a\n'));
         expect(out.text, contains('┌─ mem://other.mem/b\n'));
@@ -1038,8 +1038,8 @@ void main() {
         write(a, 'root', 'names [[ghost]] and [[mem://nowhere.mem/x]]');
 
         final out = _Out(), diag = _Out();
-        final code = await mem(out: out, diagnostics: diag)
-            .call(['walk', 'mem://alfred.mem/root', '--dry-run']);
+        final code = await mem(out: out, diagnostics: diag).call(
+            ['walk', 'mem://alfred.mem/root', '--cross-bank', '--dry-run']);
         expect(code, 0);
         expect(out.text, contains('not entered'));
         expect(out.text, contains('mem://alfred.mem/ghost  ← root  — dead'));
@@ -1047,6 +1047,21 @@ void main() {
             contains('mem://nowhere.mem/x  ← root  — bankNotFound'));
         // Said once, on the channel it belongs to.
         expect(diag.text, isNot(contains('skipped')));
+      });
+    });
+
+    test('a cross-bank link is not entered by default, and says so', () async {
+      await site.runAsync(() async {
+        final a = materialize('alfred.mem');
+        write(a, 'root', 'names [[mem://nowhere.mem/x]]');
+
+        final out = _Out(), diag = _Out();
+        final code = await mem(out: out, diagnostics: diag)
+            .call(['walk', 'mem://alfred.mem/root', '--dry-run']);
+        expect(code, 0);
+        expect(out.text, contains('not entered'));
+        expect(out.text,
+            contains('mem://nowhere.mem/x  ← root  — crossBank'));
       });
     });
 

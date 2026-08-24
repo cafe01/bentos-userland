@@ -496,6 +496,14 @@ final class WalkCommand extends MemCommand with SelectorArgs {
     argParser
       ..addOption('depth', valueHelp: 'n')
       ..addFlag(
+        'cross-bank',
+        negatable: false,
+        help: 'Follow a link out of the bank that wrote it. Off by default: '
+            'a citation into another bank stands in the prose but is not '
+            'traversed, so the author who cites freely never sets the '
+            'composer\'s cost.',
+      )
+      ..addFlag(
         'dry-run',
         negatable: false,
         help: 'The set, not the composition: which pages enter, at what ring, '
@@ -536,6 +544,7 @@ final class WalkCommand extends MemCommand with SelectorArgs {
       vantage: vantage,
       filter: hasSelector ? buildSelector() : null,
       depth: depthOpt == null ? null : int.parse(depthOpt),
+      crossBank: argResults!['cross-bank'] as bool,
     );
     final walked = await walk.from(entries);
 

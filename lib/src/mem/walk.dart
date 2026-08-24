@@ -47,6 +47,7 @@ final class Walk {
     Index Function(Bank) open = Index.of,
     this.filter,
     this.depth,
+    this.crossBank = false,
   }) : _open = open;
 
   /// The vantage of the whole command. A bank met mid-walk resolves from
@@ -62,6 +63,13 @@ final class Walk {
 
   /// How far the walk goes, in links followed. Null is unbounded.
   final int? depth;
+
+  /// Whether a link out of the bank that wrote it is followed. Off by
+  /// default: a citation is the author's business and a foreign bank's cost
+  /// is the composer's, so an edge crossing banks is reported and not taken
+  /// unless this says otherwise. Never touches an entry point — naming a
+  /// bank is the caller's own act and always stands.
+  final bool crossBank;
 
   Future<Walked> from(List<Address> entries) async {
     final reached = <Reached>[];
@@ -170,6 +178,14 @@ final class Walk {
         ));
 
         for (final edge in index.outbound(item.topic)) {
+          if (edge.bank != null && edge.bank != bankName && !crossBank) {
+            skipped.add(Skipped(
+              address: Address(bank: edge.bank!, topic: edge.topic),
+              from: item.topic,
+              reason: SkipReason.crossBank,
+            ));
+            continue;
+          }
           linksFollowed++;
           enqueue(
             edge.bank ?? bankName,
@@ -275,4 +291,10 @@ enum SkipReason {
   /// entries is misreported [dead], indistinguishable from a topic that
   /// genuinely does not exist.
   noTree,
+
+  /// Named a different bank than the page that wrote it, and
+  /// [Walk.crossBank] is off. The citation stands in the prose; the
+  /// traversal simply did not pay for the bank it points at. Never applies
+  /// to a caller-named entry point — only to a link this walk read.
+  crossBank,
 }

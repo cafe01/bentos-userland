@@ -216,7 +216,7 @@ void main() {
   });
 
   group('cross-bank', () {
-    test('the current bank finishes before a foreign bank begins, no interleaving', () async {
+    test('a cross-bank link is not followed by default, and is reported why', () async {
       await site.runAsync(() async {
         final rootA = materialize('alfred.mem');
         writePage(rootA, 'a', body: 'first [[mem://john.mem/x|x]], then [[b]]');
@@ -229,9 +229,33 @@ void main() {
         final walk = Walk(vantage: site.root.path);
         final walked = await walk.from([const Address(bank: 'alfred.mem', topic: 'a')]);
 
+        // alfred.mem's own reach (a, b) is untouched; john.mem is never opened.
+        expect(walked.pages.map((p) => p.topic), ['a', 'b']);
+        final skip = walked.skipped.single;
+        expect(skip.address, const Address(bank: 'john.mem', topic: 'x'));
+        expect(skip.from, 'a');
+        expect(skip.reason, SkipReason.crossBank);
+        expect(walked.weight.links, 1); // only [[b]] — the crossing edge was not followed
+      });
+    });
+
+    test('--cross-bank on follows the edge, level by level, same as any other', () async {
+      await site.runAsync(() async {
+        final rootA = materialize('alfred.mem');
+        writePage(rootA, 'a', body: 'first [[mem://john.mem/x|x]], then [[b]]');
+        writePage(rootA, 'b');
+
+        final rootB = materialize('john.mem');
+        writePage(rootB, 'x', body: '[[y]]');
+        writePage(rootB, 'y');
+
+        final walk = Walk(vantage: site.root.path, crossBank: true);
+        final walked = await walk.from([const Address(bank: 'alfred.mem', topic: 'a')]);
+
         // alfred.mem's own reachable set (a, b) completes before john.mem
         // (x, then its own child y) begins, even though x was named first.
         expect(walked.pages.map((p) => p.topic), ['a', 'b', 'x', 'y']);
+        expect(walked.skipped, isEmpty);
       });
     });
 
@@ -241,7 +265,7 @@ void main() {
         writePage(root, 'a', body: '[[mem://ghost.mem/x]] then [[b]]');
         writePage(root, 'b');
 
-        final walk = Walk(vantage: site.root.path);
+        final walk = Walk(vantage: site.root.path, crossBank: true);
         final walked = await walk.from([const Address(bank: 'alfred.mem', topic: 'a')]);
 
         expect(walked.pages.map((p) => p.topic), ['a', 'b']);
@@ -252,7 +276,7 @@ void main() {
       });
     });
 
-    test('entry points across two banks each walk their own bank fully', () async {
+    test('entry points across two banks each walk their own bank fully, option off', () async {
       await site.runAsync(() async {
         final rootA = materialize('alfred.mem');
         writePage(rootA, 'a', body: '[[a2]]');
