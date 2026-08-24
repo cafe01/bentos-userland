@@ -180,51 +180,16 @@ final class Walk {
       pending.remove(bankName);
     }
 
-    final ordered = _byStability(reached);
-
-    final words = ordered.fold(0, (sum, r) => sum + _wordCount(r.page.body));
+    final words = reached.fold(0, (sum, r) => sum + _wordCount(r.page.body));
     return Walked(
-      reached: ordered,
+      reached: reached,
       skipped: skipped,
-      weight: Weight(pages: ordered.length, words: words, links: linksFollowed),
+      weight: Weight(pages: reached.length, words: words, links: linksFollowed),
     );
   }
 
   static int _wordCount(String body) =>
       body.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
-
-  /// The finished reach, kind-bucketed: every stable-kind page first, every
-  /// volatile-kind page after — each bucket in exactly the order BFS produced
-  /// it. The queue and the traversal above never see this; it is a stable
-  /// partition over the completed list, spent once, after the walk is done.
-  ///
-  /// This is the cache discipline the composer needs and the traversal
-  /// cannot supply on its own: the walk's output is the system-prompt prefix
-  /// of every turn of every thread it stages, so a volatile page emitted
-  /// early invalidates everything the cache holds behind it. A page that
-  /// changes often belongs at the tail, where its churn is cheap, and one
-  /// that does not belongs wherever BFS already put it.
-  ///
-  /// [Walked.reached] is no longer a pure traversal report once this runs —
-  /// a caller that wants the raw ring order (`--dry-run`'s reader, chiefly)
-  /// pays that cost too. Accepted deliberately: band composition is the
-  /// dominant consumer and it is billed on every turn, `--dry-run` on demand.
-  static List<Reached> _byStability(List<Reached> reached) {
-    final stable = <Reached>[];
-    final volatilePages = <Reached>[];
-    for (final r in reached) {
-      switch (r.page.fields.type) {
-        case MemType.semantic:
-        case MemType.procedural:
-        case MemType.autobiographical:
-          stable.add(r);
-        case MemType.prospective:
-        case MemType.episodic:
-          volatilePages.add(r);
-      }
-    }
-    return [...stable, ...volatilePages];
-  }
 }
 
 final class _Pending {
