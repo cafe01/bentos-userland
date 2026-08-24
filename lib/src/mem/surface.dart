@@ -627,10 +627,6 @@ final class HealthCommand extends MemCommand with SelectorArgs {
     final index = Index.of(bank);
     final topic = optionalPositional();
 
-    cli.diagnostics.add(
-      'mem: ${bank.name} — health, this bank alone; external links unjudged.\n',
-    );
-
     if (topic != null) {
       final out = index.outbound(topic);
       final inb = index.inbound(topic);
@@ -647,21 +643,65 @@ final class HealthCommand extends MemCommand with SelectorArgs {
       return;
     }
 
+    // The banks this bank's own pages actually name, resolved from the same
+    // vantage `bank` itself was — not gone looking for, not `materializedAt`
+    // reached around, the same `Bank.resolve` / `hasTree` pair [walk] already
+    // uses to open a sibling mid-drain. A name that does not resolve, or
+    // resolves with no tree standing, is simply absent from the map: that is
+    // "not installed here", and it is what keeps a link to a bank nobody has
+    // honestly unjudged rather than a false accusation.
+    final named = <String>{
+      for (final page in index.pages)
+        for (final edge in index.outbound(page.topic))
+          if (edge.bank != null) edge.bank!,
+    };
+    final siblingTopics = <String, Set<String>>{
+      for (final name in named)
+        if (Bank.resolve(name, vantage: bank.vantage) case Found(bank: final sibling)
+            when sibling.hasTree)
+          name: {for (final p in sibling.pages()) p.topic},
+    };
+
+    cli.diagnostics.add(siblingTopics.isEmpty
+        ? 'mem: ${bank.name} — health, this bank alone; external links '
+            'unjudged.\n'
+        : 'mem: ${bank.name} — health, resolved against '
+            '${(siblingTopics.keys.toList()..sort()).join(', ')}; other '
+            'external links unjudged.\n');
+
     final hasSelector = ['hot', 'warm', 'cool', 'cold', 'min-attention',
             'max-attention', 'type', 'tag']
         .any((f) => argResults!.wasParsed(f));
-    final health = index.health(within: hasSelector ? buildSelector() : null);
+    final health = index.health(
+      within: hasSelector ? buildSelector() : null,
+      siblingTopics: siblingTopics,
+    );
+
+    final judged = [
+      for (final d in health.dead)
+        if (d.kind != DeadKind.bankNotFound) d,
+    ];
+    final unjudged = [
+      for (final d in health.dead)
+        if (d.kind == DeadKind.bankNotFound) d,
+    ];
 
     final buf = StringBuffer()
       ..writeln('orphans (${health.orphans.length}):');
     for (final t in health.orphans) {
       buf.writeln('  $t');
     }
-    buf.writeln('dead links (${health.dead.length}):');
-    for (final d in health.dead) {
+    buf.writeln('dead links (${judged.length}):');
+    for (final d in judged) {
       final target = d.bank == null ? d.topic : '${d.bank}/${d.topic}';
       final note = d.foundIn == null ? '' : ' (found in ${d.foundIn})';
       buf.writeln('  ${d.from} (${d.fromType.name}) -> $target [${d.kind.name}]$note');
+    }
+    if (unjudged.isNotEmpty) {
+      buf.writeln('external, unjudged (${unjudged.length}):');
+      for (final d in unjudged) {
+        buf.writeln('  ${d.from} (${d.fromType.name}) -> ${d.bank}/${d.topic}');
+      }
     }
     cli.out.add(buf.toString());
   }

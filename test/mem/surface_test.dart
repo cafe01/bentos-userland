@@ -1105,6 +1105,77 @@ void main() {
         expect(diag.text, contains('external links unjudged'));
       });
     });
+
+    test('a cross-bank link to an installed sibling is judged: dead when '
+        'the topic is absent there', () async {
+      await site.runAsync(() async {
+        materialize('other.mem');
+        final root = materialize('alfred.mem');
+        File(p.join(root.path, 'a.md')).writeAsStringSync(Page(
+          topic: 'a',
+          fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
+          body: 'names [[mem://other.mem/nowhere]]',
+        ).serialize());
+
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call(['health']);
+        expect(code, 0);
+        expect(out.text, contains('dead links (1)'));
+        expect(out.text, contains('a (semantic) -> other.mem/nowhere [missing]'));
+        expect(diag.text, contains('resolved against other.mem'));
+      });
+    });
+
+    test('a cross-bank link to an installed sibling is not dead when the '
+        'topic exists there', () async {
+      await site.runAsync(() async {
+        final sibling = materialize('other.mem');
+        File(p.join(sibling.path, 'x.md')).writeAsStringSync(Page(
+          topic: 'x',
+          fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
+          body: 'here',
+        ).serialize());
+        final root = materialize('alfred.mem');
+        File(p.join(root.path, 'a.md')).writeAsStringSync(Page(
+          topic: 'a',
+          fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
+          body: 'names [[mem://other.mem/x]]',
+        ).serialize());
+
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call(['health']);
+        expect(code, 0);
+        expect(out.text, contains('dead links (0)'));
+      });
+    });
+
+    // The falsification that can silently invert: a link to a bank nobody
+    // has installed here must read unjudged, never a false dead-link
+    // accusation. `ghost.mem` is never materialized, never even created —
+    // `Bank.resolve` must return `NotFound` for it, exactly as it would for
+    // any bank genuinely absent from this machine.
+    test('a link to a bank that is not installed here is unjudged, never '
+        'counted dead', () async {
+      await site.runAsync(() async {
+        final root = materialize('alfred.mem');
+        File(p.join(root.path, 'a.md')).writeAsStringSync(Page(
+          topic: 'a',
+          fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
+          body: 'names [[mem://ghost.mem/x]]',
+        ).serialize());
+
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call(['health']);
+        expect(code, 0);
+        expect(out.text, contains('dead links (0)'));
+        expect(out.text, contains('external, unjudged (1)'));
+        expect(out.text, contains('a (semantic) -> ghost.mem/x'));
+        expect(diag.text, contains('external links unjudged'));
+      });
+    });
   });
 
   group('survey — pagination', () {
