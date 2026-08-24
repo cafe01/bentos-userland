@@ -293,6 +293,69 @@ void main() {
     });
   });
 
+  group('kind-bucketing — the cache discipline', () {
+    test('stable-kind pages emit before volatile-kind ones, each bucket in '
+        'its own BFS order — the queue never sees this, only the finished '
+        'list', () async {
+      await site.runAsync(() async {
+        final root = materialize('alfred.mem');
+        writePage(root, 'a', body: '[[b]] [[c]] [[d]] [[e]]',
+            type: MemType.semantic);
+        writePage(root, 'b', type: MemType.prospective);
+        writePage(root, 'c', type: MemType.procedural);
+        writePage(root, 'd', type: MemType.episodic);
+        writePage(root, 'e', type: MemType.autobiographical);
+
+        final walk = Walk(vantage: site.root.path);
+        final walked =
+            await walk.from([const Address(bank: 'alfred.mem', topic: 'a')]);
+
+        // BFS reached a, b, c, d, e (prose order). Bucketed: stable kinds
+        // (semantic, procedural, autobiographical) keep their BFS relative
+        // order first — a, c, e — then volatile kinds (prospective,
+        // episodic) keep theirs — b, d.
+        expect(walked.pages.map((p) => p.topic), ['a', 'c', 'e', 'b', 'd']);
+      });
+    });
+
+    test('a walk of one stable kind alone is untouched — BFS order survives '
+        'the partition when there is nothing to move', () async {
+      await site.runAsync(() async {
+        final root = materialize('alfred.mem');
+        writePage(root, 'a', body: 'first [[c]], then [[b]]');
+        writePage(root, 'b', body: '[[d]]');
+        writePage(root, 'c', body: '[[e]]');
+        writePage(root, 'd');
+        writePage(root, 'e');
+
+        final walk = Walk(vantage: site.root.path);
+        final walked = await walk.from([const Address(bank: 'alfred.mem', topic: 'a')]);
+
+        expect(walked.pages.map((p) => p.topic), ['a', 'c', 'b', 'e', 'd']);
+      });
+    });
+
+    test('rings are preserved on the reordered entries — the ring still '
+        'names how far out a page was actually reached, even though it no '
+        'longer decides emission order', () async {
+      await site.runAsync(() async {
+        final root = materialize('alfred.mem');
+        writePage(root, 'a', body: '[[b]]', type: MemType.prospective);
+        writePage(root, 'b', body: '[[c]]', type: MemType.semantic);
+        writePage(root, 'c', type: MemType.semantic);
+
+        final walk = Walk(vantage: site.root.path);
+        final walked = await walk.from([const Address(bank: 'alfred.mem', topic: 'a')]);
+
+        expect(walked.pages.map((p) => p.topic), ['b', 'c', 'a']);
+        final byTopic = {for (final r in walked.reached) r.address.topic: r};
+        expect(byTopic['a']!.depth, 0);
+        expect(byTopic['b']!.depth, 1);
+        expect(byTopic['c']!.depth, 2);
+      });
+    });
+  });
+
   group('Address', () {
     test('parses and renders the mem:// form', () {
       final address = Address.parse('mem://alfred.mem/domain/x');
