@@ -375,13 +375,25 @@ final class _Range {
 /// The reach axis, shared by every read: band selectors, memory type, tag and
 /// topic narrowing compose as one predicate.
 final class Selector {
-  const Selector({this.minAttention, this.maxAttention, this.type, this.tag, this.topic});
+  const Selector({
+    this.minAttention,
+    this.maxAttention,
+    this.type,
+    this.tag,
+    this.topic,
+    this.topics,
+  });
 
   final Attention? minAttention;
   final Attention? maxAttention;
   final MemType? type;
   final String? tag;
   final String? topic;
+
+  /// Many topics, matched by membership rather than equality — `refocus`'s
+  /// arity, mirroring [topic] for the single-topic callers rather than
+  /// replacing it. A caller states one or the other, never both.
+  final Set<String>? topics;
 
   bool matches(Page page) {
     if (type != null && page.fields.type != type) return false;
@@ -390,6 +402,7 @@ final class Selector {
     if (maxAttention != null && t > maxAttention!.tenths) return false;
     if (tag != null && !page.fields.tags.contains(tag)) return false;
     if (topic != null && page.topic != topic) return false;
+    if (topics != null && !topics!.contains(page.topic)) return false;
     return true;
   }
 

@@ -266,7 +266,7 @@ base mixin SelectorArgs on MemCommand {
     'cold': (0.1, 0.3),
   };
 
-  Selector buildSelector({String? topic}) {
+  Selector buildSelector({String? topic, Set<String>? topics}) {
     final chosen = [
       for (final band in _bands.keys)
         if (argResults!.wasParsed(band) && argResults![band] as bool) band,
@@ -310,6 +310,7 @@ base mixin SelectorArgs on MemCommand {
       type: type,
       tag: argResults!['tag'] as String?,
       topic: topic,
+      topics: topics,
     );
   }
 
@@ -323,8 +324,9 @@ base mixin SelectorArgs on MemCommand {
 
   /// What was asked, in the caller's own words — echoed back on an empty
   /// reach (R5.3) so the caller can see what it actually asked for.
-  String reachDescription({String? topic}) {
+  String reachDescription({String? topic, Set<String>? topics}) {
     if (topic != null) return topic;
+    if (topics != null && topics.isNotEmpty) return topics.join(', ');
     final parts = <String>[
       for (final band in _bands.keys)
         if (argResults!.wasParsed(band) && argResults![band] as bool) '--$band',
@@ -432,10 +434,26 @@ final class RecallCommand extends MemCommand with SelectorArgs {
 
     final index = Index.of(bank);
     final seenTopics = <String>{};
-    final topics = [
-      for (final t in requirePositionals())
-        if (seenTopics.add(t)) t,
-    ];
+    final topics = <String>[];
+    for (final raw in requirePositionals()) {
+      // `mem://<bank>/<topic>` is accepted alongside a bare topic — the same
+      // form `walk` prints back on every skip line and dry-run entry point,
+      // so a citation copied out of that output must resolve rather than be
+      // read as a literal topic that happens to contain slashes and colons.
+      // Naming a foreign bank here is not a miss to report as "no pages": it
+      // is the caller asking recall to do what only `walk` does, and it is
+      // said plainly rather than folded into the empty-reach path below.
+      final address = Address.parse(raw);
+      if (address != null && address.bank != bank.name) {
+        usageException(
+          '$name: $raw names bank ${address.bank}, not the addressed bank '
+          '${bank.name} — recall reaches one bank per call, use walk to cross '
+          'banks',
+        );
+      }
+      final topic = address?.topic ?? raw;
+      if (seenTopics.add(topic)) topics.add(topic);
+    }
 
     if (topics.isEmpty) {
       final selector = buildSelector();
@@ -790,6 +808,13 @@ final class RefocusCommand extends MemCommand with SelectorArgs {
     declareSelectorFlags();
     argParser
       ..addOption('to', valueHelp: 'A')
+      ..addOption(
+        'attention',
+        abbr: 'A',
+        valueHelp: 'A',
+        help: 'Alias for --to — remember\'s own flag, so a hand that just '
+            'wrote a page does not have to switch vocabulary to move it.',
+      )
       ..addOption('by', valueHelp: '±D');
   }
 
@@ -806,23 +831,37 @@ final class RefocusCommand extends MemCommand with SelectorArgs {
   int get minPositionals => 0;
 
   @override
+  bool get repeating => true;
+
+  @override
   Future<void> run() async {
     final bank = resolveBank();
     if (bank == null) return;
 
     if (_reportIfNoTree(cli, bank)) return;
 
-    final toOpt = argResults!['to'] as String?;
+    if (argResults!.wasParsed('to') && argResults!.wasParsed('attention')) {
+      usageException('$name: --to and --attention/-A are the same flag — pass one');
+    }
+    final toOpt = (argResults!['to'] as String?) ?? (argResults!['attention'] as String?);
     final byOpt = argResults!['by'] as String?;
     if ((toOpt == null) == (byOpt == null)) {
-      usageException('$name: exactly one of --to <A> or --by <±D> is required');
+      usageException(
+        '$name: exactly one of --to <A>/--attention <A> or --by <±D> is required',
+      );
     }
 
-    final topic = optionalPositional();
-    final selector = buildSelector(topic: topic);
+    final seenTopics = <String>{};
+    final topics = [
+      for (final t in requirePositionals())
+        if (seenTopics.add(t)) t,
+    ];
+    final selector =
+        topics.isEmpty ? buildSelector() : buildSelector(topics: topics.toSet());
     if (selector.select(bank.pages()).isEmpty) {
       cli.diagnostics.add(
-        'mem: ${bank.name} — no pages under ${reachDescription(topic: topic)}.\n',
+        'mem: ${bank.name} — no pages under '
+        '${reachDescription(topics: topics.isEmpty ? null : topics.toSet())}.\n',
       );
       return;
     }
@@ -1219,9 +1258,24 @@ String _renderDryWalk(Walked walked, {required String home}) {
 
   if (walked.skipped.isNotEmpty) {
     buf..writeln()..writeln('not entered');
+    // One line per page: a page reached by several inbound links skips once
+    // per edge in [walked.skipped], and a dry walk answers what did not
+    // enter and why — not how many citations it had. Grouped by address and
+    // reason (not address alone) since the same page can genuinely skip for
+    // different reasons on different paths — e.g. within depth on one edge,
+    // past it on another — and folding those together would misreport why.
+    final grouped = <String, (Address address, String reason, List<String> vias)>{};
     for (final skip in walked.skipped) {
       final via = skip.from == null ? 'entry' : skip.from!;
-      buf.writeln('       ${skip.address}  ← $via  — ${skip.reason.name}');
+      final key = '${skip.address} ${skip.reason.name}';
+      final entry = grouped.putIfAbsent(
+        key,
+        () => (skip.address, skip.reason.name, <String>[]),
+      );
+      if (!entry.$3.contains(via)) entry.$3.add(via);
+    }
+    for (final MapEntry(value: (address, reason, vias)) in grouped.entries) {
+      buf.writeln('       $address  ← ${vias.join(', ')}  — $reason');
     }
   }
   return buf.toString();

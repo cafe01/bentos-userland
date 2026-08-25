@@ -92,7 +92,7 @@ void main() {
       'walk': 'walk <entry>...',
       'health': 'health [<topic>]',
       'remember': 'remember <topic>',
-      'refocus': 'refocus [<topic>]',
+      'refocus': 'refocus [<topic>...]',
       'tag': 'tag [<topic>]',
       'gist': 'gist [<topic>]',
       'forget': 'forget <topic>...',

@@ -512,6 +512,55 @@ void main() {
       });
     });
 
+    test('refocus --attention/-A is an alias for --to', () async {
+      await site.runAsync(() async {
+        materialize('alfred.mem');
+        await writeOne('alfred.mem');
+
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call([...memSigned, 'refocus', 't', '--attention', '0.8']);
+        expect(code, 0);
+        expect(diag.text, contains('written t'));
+      });
+    });
+
+    test('refocus refuses when both --to and --attention are given', () async {
+      await site.runAsync(() async {
+        materialize('alfred.mem');
+        await writeOne('alfred.mem');
+
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call([...memSigned, 'refocus', 't', '--to', '0.8', '-A', '0.9']);
+        expect(code, 2);
+        expect(diag.text, contains('--to and --attention'));
+      });
+    });
+
+    test('refocus takes many topics in one call', () async {
+      await site.runAsync(() async {
+        materialize('alfred.mem');
+        for (final topic in ['a', 'b', 'c', 'd']) {
+          final out = _Out(), diag = _Out();
+          final code = await mem(
+            bankEnv: 'alfred.mem',
+            out: out,
+            diagnostics: diag,
+            stdinReader: () async => 'body of $topic',
+            gistSource: const _FixedGist(),
+          ).call([...memSigned, 'remember', topic, '-t', 'semantic', '-A', '0.5']);
+          expect(code, 0);
+        }
+
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call([...memSigned, 'refocus', 'a', 'b', 'c', 'd', '--to', '0.9']);
+        expect(code, 0);
+        expect(diag.text, contains('written a, b, c, d'));
+      });
+    });
+
     test('refocus refuses when neither or both of --to/--by are given',
         () async {
       await site.runAsync(() async {
@@ -716,6 +765,45 @@ void main() {
         expect(out.text, contains('body of a'));
         expect(out.text, contains('body of b'));
         expect(diag.text, contains('2 pages'));
+      });
+    });
+
+    test('a mem:// address naming the addressed bank resolves the same as '
+        'its bare topic', () async {
+      await site.runAsync(() async {
+        seed('alfred.mem', ['a']);
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call(['recall', 'mem://alfred.mem/a']);
+        expect(code, 0);
+        expect(out.text, contains('body of a'));
+        expect(diag.text, contains('1 pages'));
+      });
+    });
+
+    test('a mem:// address naming a foreign bank is a stated error, never '
+        '"no pages"', () async {
+      await site.runAsync(() async {
+        seed('alfred.mem', ['a']);
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call(['recall', 'mem://software.bentos.mem/whatever']);
+        expect(code, 2);
+        expect(diag.text, contains('names bank software.bentos.mem'));
+        expect(diag.text, contains('not the addressed bank alfred.mem'));
+        expect(diag.text, isNot(contains('no pages')));
+      });
+    });
+
+    test('a bare topic and its mem:// address dedupe to one page', () async {
+      await site.runAsync(() async {
+        seed('alfred.mem', ['a']);
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call(['recall', 'a', 'mem://alfred.mem/a']);
+        expect(code, 0);
+        expect('body of a'.allMatches(out.text).length, 1);
+        expect(diag.text, contains('1 pages'));
       });
     });
   });
@@ -1082,6 +1170,28 @@ void main() {
         expect(code, 0);
         expect(out.text, contains('   0      2  root  ← entry'));
         expect(out.text, contains('cold  ← root  — filtered'));
+      });
+    });
+
+    test('a page skipped from several inbound links prints once, vias folded '
+        'into that line', () async {
+      await site.runAsync(() async {
+        final a = materialize('alfred.mem');
+        write(a, 'root', 'names [[cold]] and [[near]]');
+        write(a, 'near', 'names [[cold]]');
+        File(p.join(a.path, 'cold.md')).writeAsStringSync(Page(
+          topic: 'cold',
+          fields: Fields(type: MemType.semantic, attention: Attention(0.2)),
+          body: 'chilly',
+        ).serialize());
+
+        final out = _Out(), diag = _Out();
+        final code = await mem(out: out, diagnostics: diag)
+            .call(['walk', 'mem://alfred.mem/root', '--hot', '--dry-run']);
+        expect(code, 0);
+        // One line, not one per inbound edge.
+        expect('cold  ←'.allMatches(out.text).length, 1);
+        expect(out.text, contains('cold  ← root, near  — filtered'));
       });
     });
 
