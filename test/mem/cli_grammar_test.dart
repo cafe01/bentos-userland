@@ -356,7 +356,7 @@ void main() {
               diagnostics: recallDiag,
               environment: const {})
           .call(['recall', 'a', 'b', 'c', '-b', 'alfred.mem']);
-      expect(recallDiag.text, contains('no pages under a, b, c'));
+      expect(recallDiag.text, contains('no page at a in alfred.mem'));
     });
 
     // The defect this closes: before this change, forgetting a name that
@@ -403,7 +403,7 @@ void main() {
               diagnostics: recallDiag,
               environment: const {})
           .call(['recall', 'a', 'b', '-b', 'alfred.mem']);
-      expect(recallDiag.text, contains('no pages under a, b'));
+      expect(recallDiag.text, contains('no page at a in alfred.mem'));
     });
 
     test('a repeated topic is deduplicated, not landed twice', () async {

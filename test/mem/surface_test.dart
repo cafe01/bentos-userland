@@ -479,7 +479,7 @@ void main() {
         final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
             .call(['survey', '--hot']);
         expect(code, 0);
-        expect(diag.text, contains('no pages under --hot'));
+        expect(diag.text, contains('0 of 0 shown (filter: --hot)'));
         expect(out.text, equals('bank: alfred.mem\n\n'));
       });
     });
@@ -629,7 +629,7 @@ void main() {
         code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
             .call(['recall', 't']);
         expect(code, 0);
-        expect(diag.text, contains('no pages under t'));
+        expect(diag.text, contains('no page at t in alfred.mem'));
       });
     });
   });
@@ -726,7 +726,7 @@ void main() {
         expect(out.text, contains('body of a'));
         expect(out.text, contains('body of b'));
         expect(diag.text, contains('2 pages'));
-        expect(diag.text, contains('no page found for: ghost'));
+        expect(diag.text, contains('no page at ghost in alfred.mem'));
       });
     });
 
@@ -737,7 +737,7 @@ void main() {
         final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
             .call(['recall', 'ghost1', 'ghost2']);
         expect(code, 0);
-        expect(diag.text, contains('no pages under ghost1, ghost2'));
+        expect(diag.text, contains('no page at ghost1 in alfred.mem'));
         expect(out.text, equals('bank: alfred.mem\n\n'));
       });
     });
@@ -835,8 +835,8 @@ void main() {
         final code = await mem(out: out, diagnostics: diag)
             .call(['walk', 'mem://ghost.mem/a']);
         expect(code, 0);
-        expect(diag.text, contains('skipped mem://ghost.mem/a'));
-        expect(diag.text, contains('bankNotFound'));
+        expect(diag.text, contains('walk mem://ghost.mem/a'));
+        expect(diag.text, contains('1 not entered — 1 bank not found'));
       });
     });
   });
@@ -966,7 +966,7 @@ void main() {
             .call(['walk', 'mem://ghost.mem/a']);
         expect(code, 0);
         expect(out.text, isEmpty);
-        expect(diag.text, contains('skipped mem://ghost.mem/a'));
+        expect(diag.text, contains('1 not entered — 1 bank not found'));
       });
     });
 
@@ -1088,7 +1088,7 @@ void main() {
     });
   });
 
-  group('the dry walk — the set, not the composition', () {
+  group('the shaped walk — the set, not the composition (R7: --dry-run renamed)', () {
     void write(Directory bank, String topic, String body) {
       File(p.join(bank.path, '$topic.md')).writeAsStringSync(Page(
         topic: topic,
@@ -1107,15 +1107,17 @@ void main() {
 
         final out = _Out(), diag = _Out();
         final code = await mem(out: out, diagnostics: diag)
-            .call(['walk', 'mem://alfred.mem/root', '--dry-run']);
+            .call(['walk', 'mem://alfred.mem/root', '--shape']);
         expect(code, 0);
         expect(out.text, contains('   0      2  root  ← entry'));
         expect(out.text, contains('   1      2  near  ← root'));
         expect(out.text, contains('   2      3  far  ← near'));
-        // No body reaches the answer — that is the whole point of dry.
+        // No body reaches the answer — that is the whole point of the shape.
         expect(out.text, isNot(contains('the leaf body')));
         expect(out.text, isNot(contains('┌─')));
-        expect(out.text, contains('3 pages, 7 words, 2 links followed'));
+        // The weight line moved off stdout onto the frame (R7.3).
+        expect(out.text, isNot(contains('links followed')));
+        expect(diag.text, contains('3 pages, 7 words, 2 links followed'));
       });
     });
 
@@ -1127,14 +1129,15 @@ void main() {
 
         final out = _Out(), diag = _Out();
         final code = await mem(out: out, diagnostics: diag).call(
-            ['walk', 'mem://alfred.mem/root', '--cross-bank', '--dry-run']);
+            ['walk', 'mem://alfred.mem/root', '--cross-bank', '--shape']);
         expect(code, 0);
         expect(out.text, contains('not entered'));
         expect(out.text, contains('mem://alfred.mem/ghost  ← root  — dead'));
         expect(out.text,
             contains('mem://nowhere.mem/x  ← root  — bankNotFound'));
-        // Said once, on the channel it belongs to.
-        expect(diag.text, isNot(contains('skipped')));
+        // The not-entered detail lives once, as artifact under --shape
+        // (R3.2) — the frame states only the count and reason breakdown.
+        expect(diag.text, isNot(contains('← root')));
       });
     });
 
@@ -1145,7 +1148,7 @@ void main() {
 
         final out = _Out(), diag = _Out();
         final code = await mem(out: out, diagnostics: diag)
-            .call(['walk', 'mem://alfred.mem/root', '--dry-run']);
+            .call(['walk', 'mem://alfred.mem/root', '--shape']);
         expect(code, 0);
         expect(out.text, contains('not entered'));
         expect(out.text,
@@ -1153,8 +1156,8 @@ void main() {
       });
     });
 
-    test('a selector excludes a page, and the dry walk says so rather than '
-        'passing over it in silence', () async {
+    test('a selector excludes a page, and the shaped walk says so rather '
+        'than passing over it in silence', () async {
       await site.runAsync(() async {
         final a = materialize('alfred.mem');
         write(a, 'root', 'names [[cold]]');
@@ -1166,7 +1169,7 @@ void main() {
 
         final out = _Out(), diag = _Out();
         final code = await mem(out: out, diagnostics: diag)
-            .call(['walk', 'mem://alfred.mem/root', '--hot', '--dry-run']);
+            .call(['walk', 'mem://alfred.mem/root', '--hot', '--shape']);
         expect(code, 0);
         expect(out.text, contains('   0      2  root  ← entry'));
         expect(out.text, contains('cold  ← root  — filtered'));
@@ -1187,7 +1190,7 @@ void main() {
 
         final out = _Out(), diag = _Out();
         final code = await mem(out: out, diagnostics: diag)
-            .call(['walk', 'mem://alfred.mem/root', '--hot', '--dry-run']);
+            .call(['walk', 'mem://alfred.mem/root', '--hot', '--shape']);
         expect(code, 0);
         // One line, not one per inbound edge.
         expect('cold  ←'.allMatches(out.text).length, 1);
@@ -1195,7 +1198,19 @@ void main() {
       });
     });
 
-    test('an ordinary walk keeps the skip on the diagnostic channel',
+    test('a retired --dry-run names its replacement, never a bare parse error',
+        () async {
+      await site.runAsync(() async {
+        materialize('alfred.mem');
+        final out = _Out(), diag = _Out();
+        final code = await mem(out: out, diagnostics: diag)
+            .call(['walk', 'mem://alfred.mem/root', '--dry-run']);
+        expect(code, 2);
+        expect(diag.text, contains('no option --dry-run. Did you mean --shape?'));
+      });
+    });
+
+    test('an ordinary walk keeps the skip off stdout, folded into the frame',
         () async {
       await site.runAsync(() async {
         final a = materialize('alfred.mem');
@@ -1205,7 +1220,9 @@ void main() {
         final code = await mem(out: out, diagnostics: diag)
             .call(['walk', 'mem://alfred.mem/root']);
         expect(code, 0);
-        expect(diag.text, contains('skipped mem://alfred.mem/ghost'));
+        expect(diag.text, contains('1 not entered — 1 dead'));
+        expect(diag.text,
+            contains('1 link point at pages that do not exist: root → ghost'));
         expect(out.text, isNot(contains('not entered')));
       });
     });
@@ -1350,7 +1367,7 @@ void main() {
         // No pagination cue at all — the honest shape for "everything asked
         // for, everything given", not a silent cap nobody was told about.
         expect(out.text, isNot(contains('showing')));
-        expect(diag.text, contains('5 pages'));
+        expect(diag.text, contains('5 of 5 shown'));
       });
     });
 
@@ -1365,7 +1382,7 @@ void main() {
         // The continuation cue names the exact next call, never leaves the
         // caller to compose their own offset.
         expect(out.text, contains('mem survey --offset 2'));
-        expect(diag.text, contains('2 pages'));
+        expect(diag.text, contains('2 of 5 shown'));
       });
     });
 
@@ -1381,7 +1398,7 @@ void main() {
         // At the end, the message names the range and stops — no
         // `--offset` cue pointing past the total.
         expect(out.text, isNot(contains('mem survey --offset')));
-        expect(diag.text, contains('1 pages'));
+        expect(diag.text, contains('1 of 5 shown'));
       });
     });
   });

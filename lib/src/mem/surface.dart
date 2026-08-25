@@ -1,11 +1,14 @@
+import 'package:args/args.dart';
 import 'package:args/command_runner.dart';
 import 'package:path/path.dart' as p;
 
 import '../cli/positional_grammar.dart';
 import '../git/model/actor.dart';
+import 'account.dart';
 import 'attention.dart';
 import 'bank.dart';
 import 'index.dart';
+import 'nearest.dart';
 import 'page.dart';
 import 'walk.dart';
 import 'writer.dart';
@@ -124,11 +127,49 @@ final class Mem {
       diagnostics.add('$e\n');
       exitCode = 64;
     } on UsageException catch (e) {
-      diagnostics.add('${e.message}\n');
+      diagnostics.add('${_annotateUsage(e.message)}\n');
       exitCode = 2;
     }
     return exitCode;
   }
+
+  /// `unknown-option` (§6): fires in the argument-parsing failure path, not
+  /// over a computed [Account] — no verb has run yet when the parser itself
+  /// rejects a flag it does not know. A retired name answers exactly, from
+  /// the one place a dead flag name is allowed to survive; anything else is
+  /// answered by the same nearest-name search a mistyped topic gets.
+  /// Every other [UsageException] — arity, wrong-bank citations, and the
+  /// rest a verb throws itself via `usageException` — passes through
+  /// unchanged; only the args package's own "no such option" wears this
+  /// voice.
+  static final _unknownLongOption =
+      RegExp(r'^Could not find an option named "--([^"]+)"\.$');
+
+  /// `--dry-run` → `--shape` (§7), and the only place a retired name lives:
+  /// no alias, no hidden flag — the caller who types it is told the live one.
+  static const _retiredOptions = {'dry-run': 'shape'};
+
+  String _annotateUsage(String message) {
+    final match = _unknownLongOption.firstMatch(message);
+    if (match == null) return message;
+    final typed = match.group(1)!;
+    final retired = _retiredOptions[typed];
+    if (retired != null) return 'mem: no option --$typed. Did you mean --$retired?';
+    final nearest = nearestNames(typed, _allOptionNames, cap: 1);
+    if (nearest.isEmpty) return 'mem: no option --$typed.';
+    return 'mem: no option --$typed. Did you mean --${nearest.first}?';
+  }
+
+  /// Every long option this tool declares, global and per-verb — the
+  /// candidate pool `unknown-option`'s nearest-name search ranks against.
+  /// Coarser than "the options the failing verb declares": the parser's own
+  /// error does not say which command it was resolving against once it has
+  /// walked up to the parent, and a slightly wider pool costs nothing a
+  /// caller would notice.
+  late final Set<String> _allOptionNames = {
+    ..._runner.argParser.options.keys,
+    for (final command in _runner.commands.values) ...command.argParser.options.keys,
+  };
 }
 
 /// How a page states its age — **a rendering register of the whole tool, not
@@ -370,11 +411,17 @@ final class SurveyCommand extends MemCommand with SelectorArgs {
     final selector = buildSelector();
     final index = Index.of(bank);
     final matched = index.select(selector);
+    final desc = reachDescription();
+    final filterDescription = desc == '(everything)' ? '' : desc;
 
     if (matched.isEmpty) {
-      cli.diagnostics.add(
-        'mem: ${bank.name} — no pages under ${reachDescription()}.\n',
-      );
+      cli.diagnostics.add(renderSurveyFrame(SurveyAccount(
+        bank: bank.name,
+        shown: 0,
+        totalInBank: index.pages.length,
+        filterDescription: filterDescription,
+        words: 0,
+      )));
       return;
     }
 
@@ -398,9 +445,13 @@ final class SurveyCommand extends MemCommand with SelectorArgs {
     ));
 
     final words = sliced.fold(0, (sum, p) => sum + _wordCount(p.body));
-    cli.diagnostics.add(
-      'mem: ${bank.name} — ${sliced.length} pages, $words words\n',
-    );
+    cli.diagnostics.add(renderSurveyFrame(SurveyAccount(
+      bank: bank.name,
+      shown: sliced.length,
+      totalInBank: index.pages.length,
+      filterDescription: filterDescription,
+      words: words,
+    )));
   }
 }
 
@@ -455,20 +506,24 @@ final class RecallCommand extends MemCommand with SelectorArgs {
       if (seenTopics.add(topic)) topics.add(topic);
     }
 
+    final bankTopics = [for (final page in index.pages) page.topic];
+
     if (topics.isEmpty) {
       final selector = buildSelector();
       final matched = index.select(selector);
-      if (matched.isEmpty) {
-        cli.diagnostics.add(
-          'mem: ${bank.name} — no pages under ${reachDescription()}.\n',
-        );
-        return;
-      }
-      cli.out.add(_renderRecall(matched, age: ageRender()));
+      final desc = reachDescription();
+      if (matched.isNotEmpty) cli.out.add(_renderRecall(matched, age: ageRender()));
       final words = matched.fold(0, (sum, p) => sum + _wordCount(p.body));
-      cli.diagnostics.add(
-        'mem: ${bank.name} — ${matched.length} pages, $words words\n',
-      );
+      cli.diagnostics.add(renderRecallFrame(RecallAccount(
+        bank: bank.name,
+        requestedTopics: const [],
+        foundCount: matched.length,
+        missingTopics: const [],
+        totalInBank: index.pages.length,
+        filterDescription: desc == '(everything)' ? '' : desc,
+        words: words,
+        bankTopics: bankTopics,
+      )));
       return;
     }
 
@@ -487,23 +542,18 @@ final class RecallCommand extends MemCommand with SelectorArgs {
       }
     }
 
-    if (found.isEmpty) {
-      cli.diagnostics.add(
-        'mem: ${bank.name} — no pages under ${topics.join(', ')}.\n',
-      );
-      return;
-    }
-
-    cli.out.add(_renderRecall(found, age: ageRender()));
+    if (found.isNotEmpty) cli.out.add(_renderRecall(found, age: ageRender()));
     final words = found.fold(0, (sum, p) => sum + _wordCount(p.body));
-    cli.diagnostics.add(
-      'mem: ${bank.name} — ${found.length} pages, $words words\n',
-    );
-    if (missing.isNotEmpty) {
-      cli.diagnostics.add(
-        'mem: ${bank.name} — no page found for: ${missing.join(', ')}.\n',
-      );
-    }
+    cli.diagnostics.add(renderRecallFrame(RecallAccount(
+      bank: bank.name,
+      requestedTopics: topics,
+      foundCount: found.length,
+      missingTopics: missing,
+      totalInBank: index.pages.length,
+      filterDescription: '',
+      words: words,
+      bankTopics: bankTopics,
+    )));
   }
 }
 
@@ -522,10 +572,10 @@ final class WalkCommand extends MemCommand with SelectorArgs {
             'composer\'s cost.',
       )
       ..addFlag(
-        'dry-run',
+        'shape',
         negatable: false,
-        help: 'The set, not the composition: which pages enter, at what ring, '
-            'at what weight — and which do not, and why.',
+        help: 'The set, not the composition: which pages enter, at what '
+            'ring, and which do not, and why. --dry-run retired to this name.',
       );
   }
 
@@ -557,10 +607,11 @@ final class WalkCommand extends MemCommand with SelectorArgs {
             'max-attention', 'type', 'tag']
         .any((f) => argResults!.wasParsed(f));
     final depthOpt = argResults!['depth'] as String?;
+    final filter = hasSelector ? buildSelector() : null;
 
     final walk = Walk(
       vantage: vantage,
-      filter: hasSelector ? buildSelector() : null,
+      filter: filter,
       depth: depthOpt == null ? null : int.parse(depthOpt),
       crossBank: argResults!['cross-bank'] as bool,
     );
@@ -571,7 +622,8 @@ final class WalkCommand extends MemCommand with SelectorArgs {
     // and each one would have shown up as an ordinary dead link. Same voice
     // and exit code as [_reportIfNoTree], one bank at a time — walk cannot
     // share that helper directly, since it opens banks itself mid-drain
-    // rather than through [resolveBank].
+    // rather than through [resolveBank]. Left exactly as it was (§6: the
+    // rule that does not change).
     final noTreeBanks = <String>{
       for (final skip in walked.skipped)
         if (skip.reason == SkipReason.noTree) skip.address.bank,
@@ -588,37 +640,33 @@ final class WalkCommand extends MemCommand with SelectorArgs {
       cli.exitCode = Mem.materializationLagCode;
     }
 
-    final dry = argResults!['dry-run'] as bool;
+    final shape = argResults!['shape'] as bool;
+    final home = entries.first.bank;
 
-    if (walked.reached.isEmpty) {
-      cli.diagnostics.add(
-        'mem: no pages reached from ${entries.map((e) => e.toString()).join(', ')}.\n',
-      );
-    } else if (dry) {
-      cli.out.add(_renderDryWalk(walked, home: entries.first.bank));
+    // No branch here prints: an empty reach is not a special case to say
+    // early, it is a fact the frame below already carries — the command
+    // echo names the entry points, and the weight line reads 0 pages, 0
+    // words, 0 links followed. A second sentence here would restate it from
+    // a second home (R1.1, R2.4).
+    if (shape) {
+      cli.out.add(_renderShape(walked, home: home));
     } else {
       cli.out.add(_renderComposition(
         walked.reached,
-        home: entries.first.bank,
+        home: home,
         age: ageRender(),
       ));
     }
 
-    cli.diagnostics.add(
-      'mem: ${walked.weight.pages} pages, ${walked.weight.words} words, '
-      '${walked.weight.links} links followed\n',
+    final account = WalkAccount(
+      bank: home,
+      commandEcho: _walkCommandEcho(entries, argResults!, shape: shape),
+      reached: walked.reached,
+      skipped: walked.skipped,
+      weight: walked.weight,
+      hotUnreachable: _hotUnreachable(vantage, entries, filter, walked),
     );
-
-    // A skip is a diagnostic in an ordinary walk and **the answer** in a dry
-    // one: what did not enter the band is exactly what the caller opened this
-    // for. It is stated once, on the channel it belongs to.
-    if (dry) return;
-    for (final skip in walked.skipped) {
-      final origin = skip.from == null ? 'entry point' : 'from ${skip.from}';
-      cli.diagnostics.add(
-        'mem: skipped ${skip.address} ($origin) — ${skip.reason.name}\n',
-      );
-    }
+    cli.diagnostics.add(renderWalkFrame(account));
   }
 }
 
@@ -634,9 +682,9 @@ final class HealthCommand extends MemCommand with SelectorArgs {
   @override
   String get description =>
       'What links here, what this links to, what is orphaned, what is dead. '
-      'Bare, this counts every type together, journals included — the '
-      'naive number. Pass --type to read one type at a time; summed over '
-      'every type but autobiographical, that is the real defect count.';
+      'Bare, this counts every type together, journals included. Pass '
+      '--type to read one type at a time; summed over every type but '
+      'autobiographical, that is the real defect count.';
 
   @override
   List<String> get positionalLabels => const ['topic'];
@@ -696,13 +744,6 @@ final class HealthCommand extends MemCommand with SelectorArgs {
           name: {for (final p in sibling.pages()) p.topic},
     };
 
-    cli.diagnostics.add(siblingTopics.isEmpty
-        ? 'mem: ${bank.name} — health, this bank alone; external links '
-            'unjudged.\n'
-        : 'mem: ${bank.name} — health, resolved against '
-            '${(siblingTopics.keys.toList()..sort()).join(', ')}; other '
-            'external links unjudged.\n');
-
     final hasSelector = ['hot', 'warm', 'cool', 'cold', 'min-attention',
             'max-attention', 'type', 'tag']
         .any((f) => argResults!.wasParsed(f));
@@ -738,6 +779,18 @@ final class HealthCommand extends MemCommand with SelectorArgs {
       }
     }
     cli.out.add(buf.toString());
+
+    // R4.2: the frame states the counts help used to apologise for
+    // ("the naive number") — deleted from `description` above, restated
+    // here as the fact it was standing in for.
+    final resolvedAgainst = siblingTopics.isEmpty
+        ? 'external links unjudged'
+        : 'resolved against ${(siblingTopics.keys.toList()..sort()).join(', ')}';
+    cli.diagnostics.add(
+      'mem: health ${bank.name} — ${index.pages.length} pages, '
+      '${health.orphans.length} orphans, ${judged.length} dead links, '
+      '${unjudged.length} external unjudged; $resolvedAgainst\n',
+    );
   }
 }
 
@@ -1157,6 +1210,132 @@ void _reportOutcome(Mem cli, String bankName, Outcome outcome) {
   }
 }
 
+/// The account §2: one contiguous block, emitted after the artifact
+/// (R2.4), every line prefixed `mem: ` (R2.5). Each render function below is
+/// the one renderer over its verb's [Account] — R1.1's spine: the verb
+/// computed the value, this reads it, nothing prints from inside the verb's
+/// own logic.
+String renderWalkFrame(WalkAccount a) {
+  final buf = StringBuffer()
+    ..writeln('mem: ${a.commandEcho} — ${a.weight.pages} pages, '
+        '${a.weight.words} words, ${a.weight.links} links followed');
+
+  if (a.notEntered > 0) {
+    final byReason = a.notEnteredByReason;
+    final parts = <String>[];
+    void add(SkipReason reason, String label) {
+      final n = byReason[reason];
+      if (n != null && n > 0) parts.add('$n $label');
+    }
+
+    add(SkipReason.filtered, 'filtered (attention)');
+    add(SkipReason.tooDeep, 'too deep');
+    add(SkipReason.dead, 'dead');
+    add(SkipReason.crossBank, 'cross-bank');
+    add(SkipReason.bankNotFound, 'bank not found');
+    buf.writeln('mem: ${a.notEntered} not entered — ${parts.join(', ')}');
+  }
+
+  for (final hint in evaluateHints(a, 'walk')) {
+    buf.writeln('mem: $hint');
+  }
+  return buf.toString();
+}
+
+String renderSurveyFrame(SurveyAccount a) {
+  final buf = StringBuffer();
+  if (a.shown > 0) {
+    buf.writeln('mem: survey ${a.bank} — ${a.shown} of ${a.totalInBank} '
+        'shown, hottest first, ${a.words} words');
+  } else {
+    final suffix =
+        a.filterDescription.isEmpty ? '' : ' (filter: ${a.filterDescription})';
+    buf.writeln('mem: survey ${a.bank} — 0 of ${a.totalInBank} shown$suffix');
+  }
+  for (final hint in evaluateHints(a, 'survey')) {
+    buf.writeln('mem: $hint');
+  }
+  return buf.toString();
+}
+
+String renderRecallFrame(RecallAccount a) {
+  final buf = StringBuffer();
+  if (a.requestedTopics.isNotEmpty) {
+    if (a.foundCount == 0) {
+      buf.writeln('mem: recall ${a.bank}/${a.requestedTopics.join(', ')} — no page.');
+    } else {
+      buf.writeln('mem: ${a.bank} — ${a.foundCount} pages, ${a.words} words');
+    }
+  } else if (a.foundCount == 0) {
+    buf.writeln('mem: recall ${a.bank} — 0 of ${a.totalInBank} pages matched');
+  } else {
+    buf.writeln('mem: ${a.bank} — ${a.foundCount} pages, ${a.words} words');
+  }
+  for (final hint in evaluateHints(a, 'recall')) {
+    buf.writeln('mem: $hint');
+  }
+  return buf.toString();
+}
+
+/// The call as understood, echoed back — entries in the order given, then
+/// this verb's own flags as typed. Never the globals (`-b`, `-p`, `--age`,
+/// `--actor`): the frame states what the walk did, not the whole argv.
+String _walkCommandEcho(List<Address> entries, ArgResults args, {required bool shape}) {
+  final parts = <String>['walk', for (final e in entries) e.toString()];
+
+  const bands = ['hot', 'warm', 'cool', 'cold'];
+  for (final band in bands) {
+    if (args.wasParsed(band) && args[band] as bool) parts.add('--$band');
+  }
+  void addOpt(String flag) {
+    final v = args[flag] as String?;
+    if (v != null) parts.addAll(['--$flag', v]);
+  }
+
+  addOpt('min-attention');
+  addOpt('max-attention');
+  addOpt('type');
+  addOpt('tag');
+  addOpt('depth');
+  if (args['cross-bank'] as bool) parts.add('--cross-bank');
+  if (shape) parts.add('--shape');
+  return parts.join(' ');
+}
+
+/// §6 `unreachable-hot`: computed only when [filter] admits attention 1.0 —
+/// a filter that already excludes the hot band makes an unreached hot page
+/// unremarkable, not a defect to name. Scoped to the entry banks' own hot
+/// pages, since those are the ones an author who wrote this entry point
+/// could actually have linked.
+List<String> _hotUnreachable(
+  String vantage,
+  List<Address> entries,
+  Selector? filter,
+  Walked walked,
+) {
+  final max = filter?.maxAttention;
+  if (max != null && max.tenths != Attention.maxTenths) return const [];
+
+  final reachedByBank = <String, Set<String>>{};
+  for (final r in walked.reached) {
+    reachedByBank.putIfAbsent(r.address.bank, () => {}).add(r.address.topic);
+  }
+
+  final unreachable = <String>[];
+  for (final bankName in {for (final e in entries) e.bank}) {
+    final resolution = Bank.resolve(bankName, vantage: vantage);
+    if (resolution is! Found || !resolution.bank.hasTree) continue;
+    final reachedHere = reachedByBank[bankName] ?? const {};
+    for (final page in Index.of(resolution.bank).pages) {
+      if (page.fields.attention.tenths == Attention.maxTenths &&
+          !reachedHere.contains(page.topic)) {
+        unreachable.add(page.topic);
+      }
+    }
+  }
+  return unreachable;
+}
+
 /// R5.7: every response opens by naming the bank it answered from — the one
 /// seam telling the kind's own book from a waking's when several are staged
 /// at once. [SurveyCommand], [RecallCommand] and [HealthCommand] each answer
@@ -1233,14 +1412,20 @@ String _renderRecall(List<Page> pages, {required AgeRender age}) {
   return buf.toString();
 }
 
-/// The dry form: the set a walk reaches, and the set it does not — one line
-/// each, no bodies. What a composition spends thousands of tokens saying,
-/// said in a page's worth, so the band can be judged without being paid for.
+/// The shaped form (R7.1, formerly `--dry-run`): the set a walk reaches, and
+/// the set it does not — one line each, no bodies. What a composition spends
+/// thousands of tokens saying, said in a page's worth, so the band can be
+/// judged without being paid for.
 ///
 /// The ring leads every line because the ring is the decision: a page enters
 /// a waking mind by being linked from one already in the band, so *how far
 /// out* it sits is the thing an author moves.
-String _renderDryWalk(Walked walked, {required String home}) {
+///
+/// Carries no weight line and no not-entered count — both moved to the frame
+/// (R7.3) — but the not-entered table itself stays: under `--shape` the
+/// caller asked for the traversal, so the table is artifact, not account
+/// (R3.2).
+String _renderShape(Walked walked, {required String home}) {
   String label(Address address) =>
       address.bank == home ? address.topic : address.toString();
 
@@ -1251,21 +1436,23 @@ String _renderDryWalk(Walked walked, {required String home}) {
     final via = reached.from == null ? 'entry' : reached.from!;
     buf.writeln('$ring $words  ${label(reached.address)}  ← $via');
   }
-  buf
-    ..writeln()
-    ..writeln('${walked.weight.pages} pages, ${walked.weight.words} words, '
-        '${walked.weight.links} links followed');
 
-  if (walked.skipped.isNotEmpty) {
+  // A bank's own NO TREE is said once, per bank, on the diagnostic channel —
+  // repeating those entries here would answer the same fact from two homes.
+  final shown = [
+    for (final skip in walked.skipped)
+      if (skip.reason != SkipReason.noTree) skip,
+  ];
+  if (shown.isNotEmpty) {
     buf..writeln()..writeln('not entered');
     // One line per page: a page reached by several inbound links skips once
-    // per edge in [walked.skipped], and a dry walk answers what did not
+    // per edge in [walked.skipped], and a shaped walk answers what did not
     // enter and why — not how many citations it had. Grouped by address and
     // reason (not address alone) since the same page can genuinely skip for
     // different reasons on different paths — e.g. within depth on one edge,
     // past it on another — and folding those together would misreport why.
     final grouped = <String, (Address address, String reason, List<String> vias)>{};
-    for (final skip in walked.skipped) {
+    for (final skip in shown) {
       final via = skip.from == null ? 'entry' : skip.from!;
       final key = '${skip.address} ${skip.reason.name}';
       final entry = grouped.putIfAbsent(
