@@ -100,14 +100,20 @@ final class Mem {
 
   late final CommandRunner<void> _runner;
 
-  /// **0** — did what was asked, including an empty reach and a degraded
-  /// read. **1** — a decided refusal, or a bank not found from the vantage.
-  /// **2** — the call itself was invalid. **3** — the act landed and the
-  /// line carries it, but the local working tree did not follow (TREE STALE,
-  /// NO TREE): distinct from **1** on purpose, because a caller that greps
-  /// for one exit code to mean *nothing happened* must not be lied to twice
-  /// — first by a clean-looking `written` line, then by a refusal code on a
-  /// write that in fact landed. **64** — nobody said who is writing.
+  /// **0** — did what was asked, including an empty reach on a browsing
+  /// verb (`survey`, `walk`) and a degraded read. **1** — a decided refusal,
+  /// a bank not found from the vantage, or a verb aimed at a named target
+  /// (`recall`, `refocus`, `tag`, `gist`) that found none of it: a total
+  /// miss on a directed lookup is a failure the caller must be able to
+  /// branch on, distinct from an empty reach while browsing. A *partial*
+  /// miss — some named targets found, some not — stays **0**, with the
+  /// misses named in the frame. **2** — the call itself was invalid. **3**
+  /// — the act landed and the line carries it, but the local working tree
+  /// did not follow (TREE STALE, NO TREE): distinct from **1** on purpose,
+  /// because a caller that greps for one exit code to mean *nothing
+  /// happened* must not be lied to twice — first by a clean-looking
+  /// `written` line, then by a refusal code on a write that in fact landed.
+  /// **64** — nobody said who is writing.
   int exitCode = 0;
 
   /// The act landed; only the local tree's own materialization lagged. See
@@ -524,6 +530,7 @@ final class RecallCommand extends MemCommand with SelectorArgs {
         words: words,
         bankTopics: bankTopics,
       )));
+      if (matched.isEmpty) cli.exitCode = 1;
       return;
     }
 
@@ -554,6 +561,11 @@ final class RecallCommand extends MemCommand with SelectorArgs {
       words: words,
       bankTopics: bankTopics,
     )));
+    // A total miss (every named topic absent) is a failed lookup and must
+    // be tellable from a success — exit 1. A partial miss (some found)
+    // stays 0: the frame above already names what's missing, and the
+    // caller got real pages back.
+    if (found.isEmpty) cli.exitCode = 1;
   }
 }
 
@@ -916,6 +928,7 @@ final class RefocusCommand extends MemCommand with SelectorArgs {
         'mem: ${bank.name} — no pages under '
         '${reachDescription(topics: topics.isEmpty ? null : topics.toSet())}.\n',
       );
+      cli.exitCode = 1;
       return;
     }
 
@@ -981,6 +994,7 @@ final class TagCommand extends MemCommand with SelectorArgs {
       cli.diagnostics.add(
         'mem: ${bank.name} — no pages under ${reachDescription(topic: topic)}.\n',
       );
+      cli.exitCode = 1;
       return;
     }
 
@@ -1022,6 +1036,7 @@ final class GistCommand extends MemCommand with SelectorArgs {
       cli.diagnostics.add(
         'mem: ${bank.name} — no pages under ${reachDescription(topic: topic)}.\n',
       );
+      cli.exitCode = 1;
       return;
     }
 
@@ -1081,15 +1096,14 @@ final class ForgetCommand extends MemCommand {
     final outcome = await writer.forget(found);
     _reportOutcome(cli, bank.name, outcome);
 
-    // A missing topic is a failure even when the intent was idempotent —
-    // the caller named it and it did not land, whatever else in the same
-    // call did. Named in full, never as a count, so a typo among many
-    // topics is legible rather than hidden behind a tally.
+    // A missing topic among a batch that landed something real is a
+    // partial miss, not a failed call: named in full so a typo among many
+    // topics is legible, but exit stays 0 — the caller asked for several
+    // things and got some of them, same as `recall`'s partial miss.
     if (missing.isNotEmpty) {
       cli.diagnostics.add(
         'mem: ${bank.name} — no page found for: ${missing.join(', ')}.\n',
       );
-      cli.exitCode = 1;
     }
   }
 }

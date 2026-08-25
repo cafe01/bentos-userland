@@ -381,7 +381,7 @@ void main() {
     });
 
     test('a batch with one typo lands the real topics and names the typo '
-        'in full — not silently green, and not a bare count', () async {
+        'in full, exit 0 — a partial miss, not a failed call', () async {
       await seed('alfred.mem', ['a', 'b']);
       final diag = _Out();
       final cli = Mem(
@@ -391,7 +391,7 @@ void main() {
           environment: const {});
       final code = await cli
           .call(['forget', 'a', 'ghost', 'b', '-b', 'alfred.mem', ...signed]);
-      expect(code, 1);
+      expect(code, 0);
       expect(diag.text, contains('written a, b'));
       expect(diag.text, contains('no page found for: ghost'));
 

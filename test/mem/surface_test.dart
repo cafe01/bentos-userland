@@ -574,41 +574,43 @@ void main() {
       });
     });
 
-    test('refocus on a topic matching nothing names the miss, exit 0, and lands nothing',
-        () async {
+    test('refocus on a topic matching nothing names the miss and exits 1 — '
+        'a failed lookup, and lands nothing', () async {
       await site.runAsync(() async {
         materialize('alfred.mem');
         await writeOne('alfred.mem');
         final out = _Out(), diag = _Out();
         final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
             .call([...memSigned, 'refocus', 'nope', '--to', '0.9']);
-        expect(code, 0);
+        expect(code, 1);
         expect(diag.text, contains('no pages under nope'));
         expect(diag.text, isNot(contains('written')));
       });
     });
 
-    test('gist on a selector matching nothing names the miss, exit 0', () async {
+    test('gist on a selector matching nothing names the miss and exits 1',
+        () async {
       await site.runAsync(() async {
         materialize('alfred.mem');
         await writeOne('alfred.mem');
         final out = _Out(), diag = _Out();
         final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
             .call([...memSigned, 'gist', '--tag', 'no-such-tag']);
-        expect(code, 0);
+        expect(code, 1);
         expect(diag.text, contains('no pages under --tag no-such-tag'));
         expect(diag.text, isNot(contains('written')));
       });
     });
 
-    test('tag on a topic matching nothing names the miss, exit 0', () async {
+    test('tag on a topic matching nothing names the miss and exits 1',
+        () async {
       await site.runAsync(() async {
         materialize('alfred.mem');
         await writeOne('alfred.mem');
         final out = _Out(), diag = _Out();
         final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
             .call([...memSigned, 'tag', 'nope', '--add', 'x']);
-        expect(code, 0);
+        expect(code, 1);
         expect(diag.text, contains('no pages under nope'));
         expect(diag.text, isNot(contains('written')));
       });
@@ -628,7 +630,7 @@ void main() {
         diag = _Out();
         code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
             .call(['recall', 't']);
-        expect(code, 0);
+        expect(code, 1);
         expect(diag.text, contains('no page at t in alfred.mem'));
       });
     });
@@ -730,13 +732,14 @@ void main() {
       });
     });
 
-    test('total miss names every topic asked for, exits as today', () async {
+    test('total miss names every topic asked for and exits 1 — a failed lookup',
+        () async {
       await site.runAsync(() async {
         materialize('alfred.mem');
         final out = _Out(), diag = _Out();
         final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
             .call(['recall', 'ghost1', 'ghost2']);
-        expect(code, 0);
+        expect(code, 1);
         expect(diag.text, contains('no page at ghost1 in alfred.mem'));
         expect(out.text, equals('bank: alfred.mem\n\n'));
       });
