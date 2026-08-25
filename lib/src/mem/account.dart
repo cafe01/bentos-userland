@@ -124,6 +124,57 @@ final class RecallAccount extends Account {
   final List<String> bankTopics;
 }
 
+/// The account for the four verbs with a selection step before they write —
+/// `refocus`, `tag`, `gist`, `forget`. Mirrors [RecallAccount]'s found/missing
+/// split so `unresolved-topic` and `no-match` answer them without a new rule
+/// shape (§6). [changed] and [unchanged] split what matched further: a page
+/// whose new value is the value it already held never reaches the writer
+/// (§1 — this fires in ordinary use, so it is frame, not a hint, R2.3).
+final class WriteAccount extends Account {
+  const WriteAccount({
+    required this.bank,
+    required this.verb,
+    required this.requestedTopics,
+    required this.missingTopics,
+    required this.changed,
+    required this.unchanged,
+    required this.totalInBank,
+    required this.filterDescription,
+    required this.bankTopics,
+  });
+
+  @override
+  final String bank;
+
+  /// `refocus`, `tag`, `gist` or `forget` — one [Account] shape, one renderer
+  /// (`_reportWrite` in `surface.dart`), named per call so the same shape
+  /// answers for all four.
+  final String verb;
+
+  /// Topics named on the command line, in order. Empty when the verb was
+  /// called with selectors instead.
+  final List<String> requestedTopics;
+
+  final List<String> missingTopics;
+
+  /// Topics actually landed — a value that differed from what the page
+  /// already held.
+  final List<String> changed;
+
+  /// Topics matched and asked for, but already holding the value asked —
+  /// no write was attempted for these.
+  final List<String> unchanged;
+
+  final int totalInBank;
+  final String filterDescription;
+
+  /// Every topic this bank holds — the candidate pool `unresolved-topic`
+  /// ranks against.
+  final List<String> bankTopics;
+
+  int get foundCount => changed.length + unchanged.length;
+}
+
 /// A rule, evaluated over an [Account] a verb already computed. `fires` is
 /// pure — no file reads, no clock, no ambient state (R5.1). Registry order
 /// is priority (R5.2); a caller stops at the first two matches (R2.2).
@@ -145,32 +196,46 @@ final class HintRule {
 /// not here: the first fires before any verb computes an [Account] at all
 /// (in the argument-parsing failure path, per §6's own note), and the
 /// second is the existing NO TREE message, left unchanged by name (§6).
-/// `unresolved-topic` and `no-match` are wired for the verbs that compute an
-/// [Account] today — `recall` and `survey`; `refocus`/`tag`/`gist`/`forget`
-/// keep their plainer existing diagnostic until they too compute one.
+/// `unresolved-topic` and `no-match` answer both [RecallAccount] and
+/// [WriteAccount] — one rule, not one per verb (§6's own note: this is the
+/// rule that does not get cut, or duplicated). `no-match` leaves `forget`
+/// out: it has no selector, so its only miss shape is a named topic absent,
+/// already `unresolved-topic`'s.
 final List<HintRule> hintRules = <HintRule>[
   HintRule(
     id: 'unresolved-topic',
-    verbs: {'recall'},
-    fires: (o) => o is RecallAccount && o.missingTopics.isNotEmpty,
+    verbs: {'recall', 'refocus', 'tag', 'gist', 'forget'},
+    fires: (o) => switch (o) {
+      RecallAccount(:final missingTopics) => missingTopics.isNotEmpty,
+      WriteAccount(:final missingTopics) => missingTopics.isNotEmpty,
+      _ => false,
+    },
     render: (o) {
-      final r = o as RecallAccount;
+      final (missingTopics, bank, bankTopics) = switch (o) {
+        RecallAccount(:final missingTopics, :final bank, :final bankTopics) =>
+          (missingTopics, bank, bankTopics),
+        WriteAccount(:final missingTopics, :final bank, :final bankTopics) =>
+          (missingTopics, bank, bankTopics),
+        _ => const (<String>[], '', <String>[]),
+      };
       // One topic named: the common case, and the one the contract's own
       // worked example states. Several named and only some missing: the
       // first missing one carries the hint — a second hint slot is spent
       // elsewhere before a second missing topic would get its own line.
-      final topic = r.missingTopics.first;
-      final nearest = nearestNames(topic, r.bankTopics);
+      final topic = missingTopics.first;
+      final nearest = nearestNames(topic, bankTopics);
       final suggestion = nearest.isEmpty ? '' : ' Nearest by name: ${nearest.join(', ')}.';
-      return 'no page at $topic in ${r.bank}.$suggestion `mem survey` for the index.';
+      return 'no page at $topic in $bank.$suggestion `mem survey` for the index.';
     },
   ),
   HintRule(
     id: 'no-match',
-    verbs: {'survey', 'recall'},
+    verbs: {'survey', 'recall', 'refocus', 'tag', 'gist'},
     fires: (o) => switch (o) {
       SurveyAccount(:final shown, :final totalInBank) => shown == 0 && totalInBank > 0,
       RecallAccount(:final requestedTopics, :final foundCount, :final totalInBank) =>
+        requestedTopics.isEmpty && foundCount == 0 && totalInBank > 0,
+      WriteAccount(:final requestedTopics, :final foundCount, :final totalInBank) =>
         requestedTopics.isEmpty && foundCount == 0 && totalInBank > 0,
       _ => false,
     },
@@ -178,6 +243,7 @@ final List<HintRule> hintRules = <HintRule>[
       final total = switch (o) {
         SurveyAccount(:final totalInBank) => totalInBank,
         RecallAccount(:final totalInBank) => totalInBank,
+        WriteAccount(:final totalInBank) => totalInBank,
         _ => 0,
       };
       return 'no page matches. ${o.bank} has $total pages; `mem survey` lists them, hottest first.';

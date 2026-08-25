@@ -96,7 +96,7 @@ final class Writer {
         Page(
           topic: page.topic,
           fields: page.fields.copyWith(
-            attention: _resolve(page.fields.attention, to, byTenths),
+            attention: resolveAttention(page.fields.attention, to, byTenths),
           ),
           body: page.body,
         ),
@@ -219,7 +219,11 @@ final class Writer {
     return null;
   }
 
-  Attention _resolve(Attention current, Attention? to, int? byTenths) {
+  /// The value [refocus] would land, before anything is written — the same
+  /// arithmetic the caller needs to tell a real move from a no-op (§1, the
+  /// `mem refocus X --to 0.9` twice case): a `static` so the CLI surface can
+  /// preview it without a [Writer] of its own.
+  static Attention resolveAttention(Attention current, Attention? to, int? byTenths) {
     if (to != null) return to;
     final tenths = (current.tenths + (byTenths ?? 0))
         .clamp(Attention.minTenths, Attention.maxTenths);

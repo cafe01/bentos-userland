@@ -376,7 +376,7 @@ void main() {
       final code =
           await cli.call(['forget', 'ghost', '-b', 'alfred.mem', ...signed]);
       expect(code, 1);
-      expect(diag.text, contains('no page found for: ghost'));
+      expect(diag.text, contains('no page at ghost in alfred.mem'));
       expect(diag.text, isNot(contains('written')));
     });
 
@@ -393,7 +393,7 @@ void main() {
           .call(['forget', 'a', 'ghost', 'b', '-b', 'alfred.mem', ...signed]);
       expect(code, 0);
       expect(diag.text, contains('written a, b'));
-      expect(diag.text, contains('no page found for: ghost'));
+      expect(diag.text, contains('no page at ghost in alfred.mem'));
 
       final out = _Out();
       final recallDiag = _Out();

@@ -656,7 +656,7 @@ void main() {
         final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
             .call([...memSigned, 'refocus', 'nope', '--to', '0.9']);
         expect(code, 1);
-        expect(diag.text, contains('no pages under nope'));
+        expect(diag.text, contains('no page at nope in alfred.mem'));
         expect(diag.text, isNot(contains('written')));
       });
     });
@@ -670,7 +670,7 @@ void main() {
         final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
             .call([...memSigned, 'gist', '--tag', 'no-such-tag']);
         expect(code, 1);
-        expect(diag.text, contains('no pages under --tag no-such-tag'));
+        expect(diag.text, contains('no page matches'));
         expect(diag.text, isNot(contains('written')));
       });
     });
@@ -684,7 +684,7 @@ void main() {
         final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
             .call([...memSigned, 'tag', 'nope', '--add', 'x']);
         expect(code, 1);
-        expect(diag.text, contains('no pages under nope'));
+        expect(diag.text, contains('no page at nope in alfred.mem'));
         expect(diag.text, isNot(contains('written')));
       });
     });

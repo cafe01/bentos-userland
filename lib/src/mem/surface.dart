@@ -931,22 +931,65 @@ final class RefocusCommand extends MemCommand with SelectorArgs {
     ];
     final selector =
         topics.isEmpty ? buildSelector() : buildSelector(topics: topics.toSet());
-    if (selector.select(bank.pages()).isEmpty) {
-      cli.diagnostics.add(
-        'mem: ${bank.name} — no pages under '
-        '${reachDescription(topics: topics.isEmpty ? null : topics.toSet())}.\n',
+    final matched = selector.select(bank.pages());
+    final missing = [for (final t in topics) if (!matched.any((p) => p.topic == t)) t];
+    final bankTopics = [for (final p in bank.pages()) p.topic];
+    final filterDescription =
+        reachDescription(topics: topics.isEmpty ? null : topics.toSet());
+
+    if (matched.isEmpty) {
+      _reportWrite(
+        cli,
+        WriteAccount(
+          bank: bank.name,
+          verb: 'refocus',
+          requestedTopics: topics,
+          missingTopics: topics.isEmpty ? const [] : missing,
+          changed: const [],
+          unchanged: const [],
+          totalInBank: bankTopics.length,
+          filterDescription: filterDescription,
+          bankTopics: bankTopics,
+        ),
+        null,
       );
-      cli.exitCode = 1;
+      return;
+    }
+
+    final to = toOpt == null ? null : _parseAttention(toOpt);
+    final byTenths = byOpt == null ? null : _parseSignedTenths(byOpt);
+
+    // A page whose resolved value is the value it already holds never
+    // reaches the writer (§1) — the smoketest case: `refocus X --to 0.9`
+    // twice is a no-op the second time, not a second write.
+    final changed = <String>[];
+    final unchanged = <String>[];
+    for (final page in matched) {
+      final resolved = Writer.resolveAttention(page.fields.attention, to, byTenths);
+      (resolved.tenths == page.fields.attention.tenths ? unchanged : changed)
+          .add(page.topic);
+    }
+
+    final account = WriteAccount(
+      bank: bank.name,
+      verb: 'refocus',
+      requestedTopics: topics,
+      missingTopics: missing,
+      changed: changed,
+      unchanged: unchanged,
+      totalInBank: bankTopics.length,
+      filterDescription: filterDescription,
+      bankTopics: bankTopics,
+    );
+
+    if (changed.isEmpty) {
+      _reportWrite(cli, account, null);
       return;
     }
 
     final writer = Writer(bank, actor: statedActor());
-    final outcome = await writer.refocus(
-      selector,
-      to: toOpt == null ? null : _parseAttention(toOpt),
-      byTenths: byOpt == null ? null : _parseSignedTenths(byOpt),
-    );
-    _reportOutcome(cli, bank.name, outcome);
+    final outcome = await writer.refocus(selector, to: to, byTenths: byTenths);
+    _reportWrite(cli, account, outcome);
   }
 
   int _parseSignedTenths(String source) {
@@ -998,17 +1041,29 @@ final class TagCommand extends MemCommand with SelectorArgs {
 
     final topic = optionalPositional();
     final selector = buildSelector(topic: topic);
-    if (selector.select(bank.pages()).isEmpty) {
-      cli.diagnostics.add(
-        'mem: ${bank.name} — no pages under ${reachDescription(topic: topic)}.\n',
-      );
-      cli.exitCode = 1;
+    final matched = selector.select(bank.pages());
+    final bankTopics = [for (final p in bank.pages()) p.topic];
+
+    final account = WriteAccount(
+      bank: bank.name,
+      verb: 'tag',
+      requestedTopics: topic == null ? const [] : [topic],
+      missingTopics: topic == null || matched.isNotEmpty ? const [] : [topic],
+      changed: [for (final p in matched) p.topic],
+      unchanged: const [],
+      totalInBank: bankTopics.length,
+      filterDescription: reachDescription(topic: topic),
+      bankTopics: bankTopics,
+    );
+
+    if (matched.isEmpty) {
+      _reportWrite(cli, account, null);
       return;
     }
 
     final writer = Writer(bank, actor: statedActor());
     final outcome = await writer.tag(selector, add: add, remove: remove);
-    _reportOutcome(cli, bank.name, outcome);
+    _reportWrite(cli, account, outcome);
   }
 }
 
@@ -1040,17 +1095,29 @@ final class GistCommand extends MemCommand with SelectorArgs {
 
     final topic = optionalPositional();
     final selector = buildSelector(topic: topic);
-    if (selector.select(bank.pages()).isEmpty) {
-      cli.diagnostics.add(
-        'mem: ${bank.name} — no pages under ${reachDescription(topic: topic)}.\n',
-      );
-      cli.exitCode = 1;
+    final matched = selector.select(bank.pages());
+    final bankTopics = [for (final p in bank.pages()) p.topic];
+
+    final account = WriteAccount(
+      bank: bank.name,
+      verb: 'gist',
+      requestedTopics: topic == null ? const [] : [topic],
+      missingTopics: topic == null || matched.isNotEmpty ? const [] : [topic],
+      changed: [for (final p in matched) p.topic],
+      unchanged: const [],
+      totalInBank: bankTopics.length,
+      filterDescription: reachDescription(topic: topic),
+      bankTopics: bankTopics,
+    );
+
+    if (matched.isEmpty) {
+      _reportWrite(cli, account, null);
       return;
     }
 
     final writer = Writer(bank, actor: statedActor(), gist: cli.gistSource);
     final outcome = await writer.regist(selector, set: argResults!['set'] as String?);
-    _reportOutcome(cli, bank.name, outcome);
+    _reportWrite(cli, account, outcome);
   }
 }
 
@@ -1092,27 +1159,32 @@ final class ForgetCommand extends MemCommand {
       (bank.page(topic) == null ? missing : found).add(topic);
     }
 
+    final bankTopics = [for (final p in bank.pages()) p.topic];
+    final account = WriteAccount(
+      bank: bank.name,
+      verb: 'forget',
+      requestedTopics: topics,
+      missingTopics: missing,
+      changed: found,
+      unchanged: const [],
+      totalInBank: bankTopics.length,
+      filterDescription: '',
+      bankTopics: bankTopics,
+    );
+
     if (found.isEmpty) {
-      cli.diagnostics.add(
-        'mem: ${bank.name} — no page found for: ${missing.join(', ')}.\n',
-      );
-      cli.exitCode = 1;
+      _reportWrite(cli, account, null);
       return;
     }
 
     final writer = Writer(bank, actor: statedActor());
     final outcome = await writer.forget(found);
-    _reportOutcome(cli, bank.name, outcome);
-
     // A missing topic among a batch that landed something real is a
-    // partial miss, not a failed call: named in full so a typo among many
-    // topics is legible, but exit stays 0 — the caller asked for several
-    // things and got some of them, same as `recall`'s partial miss.
-    if (missing.isNotEmpty) {
-      cli.diagnostics.add(
-        'mem: ${bank.name} — no page found for: ${missing.join(', ')}.\n',
-      );
-    }
+    // partial miss, not a failed call: named by `unresolved-topic` in the
+    // same block `_reportWrite` renders, but exit stays 0 — the caller
+    // asked for several things and got some of them, same as `recall`'s
+    // partial miss.
+    _reportWrite(cli, account, outcome);
   }
 }
 
@@ -1169,10 +1241,16 @@ bool _reportIfNoTree(Mem cli, Bank bank) {
   return true;
 }
 
-void _reportOutcome(Mem cli, String bankName, Outcome outcome) {
+/// What a landed act, a stale tree or a refusal say — the write-outcome
+/// vocabulary, factored out of the plain `\n`-joined form so a caller with
+/// more to say (`_reportWrite`, below) can fold these lines into one
+/// contiguous block instead of a second `diagnostics.add` living beside the
+/// first (R2.4).
+List<String> _outcomeLines(Mem cli, String bankName, Outcome outcome) {
+  final lines = <String>[];
   switch (outcome) {
     case Written(:final topics, :final advance):
-      cli.diagnostics.add('mem: $bankName — written ${topics.join(', ')}\n');
+      lines.add('mem: $bankName — written ${topics.join(', ')}');
       // The act landed either way — the line carries it, and saying so is
       // honest. What must never happen is the *shape* of a clean write when
       // the tree a reader composes from was left behind: the failure that cost
@@ -1183,9 +1261,9 @@ void _reportOutcome(Mem cli, String bankName, Outcome outcome) {
         case Advanced():
           break;
         case Behind(:final blocking, :final report):
-          cli.diagnostics.add(
+          lines.add(
             'mem: $bankName — LANDED, TREE STALE: the line carries the write '
-            'and the working tree does not.\n',
+            'and the working tree does not.',
           );
           // Either the account or the paths, never both. Where the primitive
           // has its own account, the paths are not a person's work standing in
@@ -1193,51 +1271,94 @@ void _reportOutcome(Mem cli, String bankName, Outcome outcome) {
           // the write as staged, and naming those would accuse the reader of
           // blocking a write they never touched.
           if (report != null) {
-            cli.diagnostics.add('mem: $bankName — $report\n');
+            lines.add('mem: $bankName — $report');
           } else if (blocking.isNotEmpty) {
-            cli.diagnostics.add(
-              'mem: $bankName — standing in the way: ${blocking.join(', ')}\n',
-            );
+            lines.add('mem: $bankName — standing in the way: ${blocking.join(', ')}');
           }
           cli.exitCode = Mem.materializationLagCode;
         case NoTree(:final address):
-          cli.diagnostics.add(
+          lines.add(
             'mem: $bankName — LANDED, NO TREE: the line carries the write and '
             'no tree of this bank stands at ${address.path}, so nothing is '
-            'readable there. Materialize it.\n',
+            'readable there. Materialize it.',
           );
           cli.exitCode = Mem.materializationLagCode;
       }
     case RefusedByGate(:final reason):
-      cli.diagnostics.add('mem: refused — $reason\n');
+      lines.add('mem: refused — $reason');
       cli.exitCode = 1;
     case RefusedOnAssumedFields(:final topic, :final assumptions):
-      cli.diagnostics.add(
+      lines.add(
         'mem: refused — $topic carries assumed fields '
         '(${assumptions.map((a) => a.field).join(', ')}); a write would '
-        'canonize the guess\n',
+        'canonize the guess',
       );
       cli.exitCode = 1;
     case RefusedOnHandEdit(:final topics):
-      cli.diagnostics.add(
+      lines.add(
         'mem: refused — $bankName has hand-edited, uncommitted pages: '
         '${topics.join(', ')} — mem never reads them and the next write '
         'would silently overwrite them; commit or discard them with git '
-        'first.\n',
+        'first.',
       );
       cli.exitCode = 1;
     case RefusedOnEmptyBody(:final topic):
-      cli.diagnostics.add(
+      lines.add(
         'mem: refused — $topic would write an empty body; pass --empty to '
-        'write one on purpose.\n',
+        'write one on purpose.',
       );
       cli.exitCode = 1;
     case RefusedWithoutModel(:final topic):
-      cli.diagnostics.add(
+      lines.add(
         'mem: refused — no gist for $topic (no model reachable — pass '
-        '--gist or --set)\n',
+        '--gist or --set)',
       );
       cli.exitCode = 1;
+  }
+  return lines;
+}
+
+void _reportOutcome(Mem cli, String bankName, Outcome outcome) {
+  for (final line in _outcomeLines(cli, bankName, outcome)) {
+    cli.diagnostics.add('$line\n');
+  }
+}
+
+/// The frame for `refocus`, `tag`, `gist` and `forget` — the verbs with a
+/// selection step before they write (§2, over [WriteAccount]). [outcome] is
+/// null when nothing was attempted: every request missed (`unresolved-topic`
+/// or `no-match` carries the whole frame), or every match already held the
+/// value asked — a no-op that fires in ordinary use (running the same
+/// `refocus` twice) and so is frame, not a hint (R2.3). One block, one call
+/// (R2.4): this is the one place these four verbs print.
+void _reportWrite(Mem cli, WriteAccount a, Outcome? outcome) {
+  final buf = StringBuffer();
+  if (outcome != null) {
+    for (final line in _outcomeLines(cli, a.bank, outcome)) {
+      buf.writeln(line);
+    }
+    if (a.unchanged.isNotEmpty) {
+      buf.writeln(
+        'mem: ${a.bank} — ${a.unchanged.join(', ')} already as asked; no change',
+      );
+    }
+  } else if (a.changed.isEmpty && a.unchanged.isNotEmpty) {
+    buf.writeln(
+      'mem: ${a.verb} ${a.bank} — ${a.unchanged.join(', ')} already as asked; no change',
+    );
+  } else if (a.requestedTopics.isNotEmpty) {
+    buf.writeln('mem: ${a.verb} ${a.bank}/${a.requestedTopics.join(', ')} — no page.');
+  } else {
+    final suffix =
+        a.filterDescription.isEmpty ? '' : ' (filter: ${a.filterDescription})';
+    buf.writeln('mem: ${a.verb} ${a.bank} — 0 of ${a.totalInBank} pages matched$suffix');
+  }
+  for (final hint in evaluateHints(a, a.verb)) {
+    buf.writeln('mem: $hint');
+  }
+  cli.diagnostics.add(buf.toString());
+  if (outcome == null && a.changed.isEmpty && a.unchanged.isEmpty) {
+    cli.exitCode = 1;
   }
 }
 
