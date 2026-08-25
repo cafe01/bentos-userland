@@ -814,7 +814,14 @@ final class RememberCommand extends MemCommand {
       ..addOption('attention', abbr: 'A', valueHelp: 'A')
       ..addOption('file', abbr: 'f', valueHelp: 'path')
       ..addOption('gist', valueHelp: 's')
-      ..addMultiOption('tag', valueHelp: 'tag');
+      ..addMultiOption('tag', valueHelp: 'tag')
+      ..addFlag(
+        'empty',
+        negatable: false,
+        help: 'Write a body of nothing. Without this, an empty body refuses '
+            '— this write replaces a page whole, and an empty body on an '
+            'existing topic reads the same as wiping it by accident.',
+      );
   }
 
   @override
@@ -862,6 +869,7 @@ final class RememberCommand extends MemCommand {
       body: body,
       gist: argResults!['gist'] as String?,
       tags: (argResults!['tag'] as List<String>),
+      allowEmpty: argResults!['empty'] as bool,
     );
     _reportOutcome(cli, bank.name, outcome);
   }
@@ -1212,7 +1220,16 @@ void _reportOutcome(Mem cli, String bankName, Outcome outcome) {
       cli.exitCode = 1;
     case RefusedOnHandEdit(:final topics):
       cli.diagnostics.add(
-        'mem: refused — hand-edited and uncommitted: ${topics.join(', ')}\n',
+        'mem: refused — $bankName has hand-edited, uncommitted pages: '
+        '${topics.join(', ')} — mem never reads them and the next write '
+        'would silently overwrite them; commit or discard them with git '
+        'first.\n',
+      );
+      cli.exitCode = 1;
+    case RefusedOnEmptyBody(:final topic):
+      cli.diagnostics.add(
+        'mem: refused — $topic would write an empty body; pass --empty to '
+        'write one on purpose.\n',
       );
       cli.exitCode = 1;
     case RefusedWithoutModel(:final topic):

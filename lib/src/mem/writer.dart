@@ -32,6 +32,12 @@ final class Writer {
 
   /// Creates or replaces a page whole. The gist is derived through the model
   /// seam unless [gist] is given, in which case the seam is never called.
+  ///
+  /// Refuses an empty [body] unless [allowEmpty] says the caller means it
+  /// (R: silent data loss) — this write replaces a page whole, so an empty
+  /// body on an existing topic is indistinguishable from wiping it by
+  /// accident, and a call that meant to create a stub would rather be told
+  /// than land silently as one.
   Future<Outcome> remember(
     String topic, {
     required MemType type,
@@ -39,7 +45,10 @@ final class Writer {
     required String body,
     String? gist,
     List<String>? tags,
+    bool allowEmpty = false,
   }) async {
+    if (body.trim().isEmpty && !allowEmpty) return RefusedOnEmptyBody(topic);
+
     final String cue;
     if (gist != null) {
       cue = gist;
@@ -220,11 +229,22 @@ final class Writer {
   /// Lands one act. [Bank.land] itself can only return [Landed] or [Barred]
   /// — there is no contested tip to absorb here, so there is nothing to
   /// retry.
+  ///
+  /// Refuses outright on any hand-edit anywhere in the bank, not only on the
+  /// topics this act touches (R: silent data loss). [Bank.land] commits from
+  /// a private workspace opened fresh off the branch tip — it never reads
+  /// the working tree — so a page edited in place is invisible to it, and
+  /// the materialization that follows brings the tree to the new line by
+  /// overwriting what stands there. A hand-edit anywhere in the checkout is
+  /// at risk from *any* write, not only one that names the same topic.
   Future<Outcome> _land({
     required List<String> topics,
     required void Function(Draft) build,
     required String say,
   }) async {
+    final dirty = _bank.handEdited;
+    if (dirty.isNotEmpty) return RefusedOnHandEdit(dirty);
+
     final landing = await _bank.land('page', build, actor: _actor, say: say);
     return switch (landing) {
       Landed(:final action) =>
@@ -265,11 +285,20 @@ final class RefusedOnAssumedFields extends Refused {
   final List<FieldAssumption> assumptions;
 }
 
-/// A selected page's file holds uncommitted changes, so a cue derived from
-/// the stored body would describe prose nobody is reading.
+/// Somewhere in the bank's checkout, a file holds uncommitted changes — a
+/// person's hand-edit `mem` never saw. Every write refuses while one stands,
+/// on any topic, because the write that lands is oblivious to it and the
+/// materialization that follows would overwrite it without a word.
 final class RefusedOnHandEdit extends Refused {
   const RefusedOnHandEdit(this.topics);
   final List<String> topics;
+}
+
+/// [Writer.remember] was asked to write a body of nothing, without saying
+/// so on purpose.
+final class RefusedOnEmptyBody extends Refused {
+  const RefusedOnEmptyBody(this.topic);
+  final String topic;
 }
 
 /// No model, and no gist supplied — for a verb whose whole output is the

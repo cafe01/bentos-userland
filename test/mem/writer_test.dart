@@ -163,6 +163,58 @@ void main() {
         expect(s.bank.page('domain/hello')!.fields.tags, isEmpty);
       });
     });
+
+    test('an empty body refuses without landing — a page nobody asked to '
+        'wipe', () async {
+      await site.runAsync(() async {
+        final s = stand();
+        final writer = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'), gist: FixedGist('cue'));
+        await writer.remember('domain/hello',
+            type: MemType.semantic, attention: Attention(0.5), body: 'real content');
+
+        final outcome = await writer.remember('domain/hello',
+            type: MemType.semantic, attention: Attention(0.5), body: '   ');
+
+        expect(outcome, isA<RefusedOnEmptyBody>());
+        expect((outcome as RefusedOnEmptyBody).topic, 'domain/hello');
+        expect(s.bank.page('domain/hello')!.body, 'real content');
+      });
+    });
+
+    test('allowEmpty writes an empty body on purpose', () async {
+      await site.runAsync(() async {
+        final s = stand();
+        final writer = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'), gist: FixedGist('cue'));
+
+        final outcome = await writer.remember('domain/stub',
+            type: MemType.semantic,
+            attention: Attention(0.5),
+            body: '',
+            allowEmpty: true);
+
+        expect(outcome, isA<Written>());
+        expect(s.bank.page('domain/stub')!.body, '');
+      });
+    });
+
+    test('refuses on a hand-edited page anywhere in the bank, not only the '
+        'one being written', () async {
+      await site.runAsync(() async {
+        final s = stand();
+        final writer = Writer(s.bank, actor: Actor('tester', email: 'tester@test.local'), gist: FixedGist('cue'));
+        await writer.remember('a', type: MemType.semantic, attention: Attention(0.5), body: 'a body');
+        final where = p.join(site.root.path, s.entity.name);
+        File(p.join(where, 'a.md')).writeAsStringSync('mine, not landed');
+
+        final outcome = await writer.remember('b',
+            type: MemType.semantic, attention: Attention(0.5), body: 'a new page');
+
+        expect(outcome, isA<RefusedOnHandEdit>());
+        expect((outcome as RefusedOnHandEdit).topics, ['a']);
+        expect(s.bank.page('b'), isNull);
+        expect(File(p.join(where, 'a.md')).readAsStringSync(), 'mine, not landed');
+      });
+    });
   });
 
   group('refocus', () {

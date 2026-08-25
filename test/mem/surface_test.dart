@@ -398,6 +398,79 @@ void main() {
       });
     });
 
+    test('remember with an empty body refuses and teaches --empty',
+        () async {
+      await site.runAsync(() async {
+        materialize('alfred.mem');
+        final out = _Out(), diag = _Out();
+        final code = await mem(
+          bankEnv: 'alfred.mem',
+          out: out,
+          diagnostics: diag,
+          gistSource: const _FixedGist(),
+          stdinReader: () async => '',
+        ).call([...memSigned, 'remember', 'domain/x', '-t', 'semantic', '-A', '0.5']);
+        expect(code, 1);
+        expect(diag.text, contains('refused'));
+        expect(diag.text, contains('domain/x'));
+        expect(diag.text, contains('--empty'));
+      });
+    });
+
+    test('remember with an empty body and --empty lands it on purpose',
+        () async {
+      await site.runAsync(() async {
+        materialize('alfred.mem');
+        final out = _Out(), diag = _Out();
+        final code = await mem(
+          bankEnv: 'alfred.mem',
+          out: out,
+          diagnostics: diag,
+          gistSource: const _FixedGist(),
+          stdinReader: () async => '',
+        ).call([...memSigned, 'remember', 'domain/x', '-t', 'semantic',
+          '-A', '0.5', '--empty']);
+        expect(code, 0);
+        expect(diag.text, contains('written domain/x'));
+      });
+    });
+
+    test('a write against a bank with a hand-edited page refuses and names '
+        'the cure', () async {
+      await site.runAsync(() async {
+        final root = materialize('alfred.mem');
+        var out = _Out(), diag = _Out();
+        var code = await mem(
+          bankEnv: 'alfred.mem',
+          out: out,
+          diagnostics: diag,
+          gistSource: const _FixedGist(),
+          stdinReader: () async => 'a body',
+        ).call([...memSigned, 'remember', 'a', '-t', 'semantic', '-A', '0.5']);
+        expect(code, 0);
+
+        // A hand outside `mem` edits the checkout directly — the exact shape
+        // of the incident this guard exists for.
+        File(p.join(root.path, 'a.md')).writeAsStringSync('mine, not mem\'s');
+
+        out = _Out();
+        diag = _Out();
+        code = await mem(
+          bankEnv: 'alfred.mem',
+          out: out,
+          diagnostics: diag,
+          gistSource: const _FixedGist(),
+          stdinReader: () async => 'a different body',
+        ).call([...memSigned, 'remember', 'b', '-t', 'semantic', '-A', '0.5']);
+        expect(code, 1);
+        expect(diag.text, contains('refused'));
+        expect(diag.text, contains('hand-edited'));
+        expect(diag.text, contains('a'));
+        expect(diag.text, contains('git'));
+        expect(File(p.join(root.path, 'a.md')).readAsStringSync(), 'mine, not mem\'s');
+      });
+    });
+
     test('-t and -A are required', () async {
       await site.runAsync(() async {
         materialize('alfred.mem');
