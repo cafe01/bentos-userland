@@ -93,8 +93,8 @@ void main() {
       'health': 'health [<topic>]',
       'remember': 'remember <topic>',
       'refocus': 'refocus [<topic>...]',
-      'tag': 'tag [<topic>]',
-      'gist': 'gist [<topic>]',
+      'tag': 'tag [<topic>...]',
+      'gist': 'gist [<topic>...]',
       'forget': 'forget <topic>...',
     };
 
@@ -128,16 +128,11 @@ void main() {
       expect(code, 0);
     });
 
-    test('a second, uncounted word is refused rather than silently dropped '
-        '— the bug this closes', () async {
+    test('a second topic is written, and an absent one is named — never '
+        'silently dropped', () async {
       materialize('alfred.mem');
-      File(p.join(site.root.path, 'alfred.mem', 'alice.md')).writeAsStringSync(
-        Page(
-          topic: 'alice',
-          fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
-          body: 'body of alice',
-        ).serialize(),
-      );
+      await plant('alfred.mem', 'alice');
+      await plant('alfred.mem', 'carol');
       final out = _Out();
       final diag = _Out();
       final cli = Mem(
@@ -146,12 +141,27 @@ void main() {
         diagnostics: diag,
         environment: const {},
       );
-      // The exact shape found in use: `mem tag --add foo alice bob` used to
-      // tag `alice` and let `bob` vanish at exit 0.
-      final code = await cli
-          .call(['tag', 'alice', 'bob', '-b', 'alfred.mem', ...signed, '--add', 'foo']);
-      expect(code, 2);
-      expect(diag.text, contains('unexpected argument(s): bob'));
+      // The shape found in use: `mem tag --add foo alice bob` used to tag
+      // `alice` and let `bob` vanish at exit 0. Now both slots are the
+      // caller's, and the one with no page behind it is reported.
+      final code = await cli.call([
+        'tag', 'alice', 'carol', 'bob',
+        '-b', 'alfred.mem', ...signed, '--add', 'foo',
+      ]);
+      expect(code, 0);
+      expect(diag.text, contains('alice'));
+      expect(diag.text, contains('carol'));
+      expect(diag.text, contains('no page at bob'));
+      final alice = Page.parse(
+        'alice',
+        File(p.join(site.root.path, 'alfred.mem', 'alice.md')).readAsStringSync(),
+      );
+      final carol = Page.parse(
+        'carol',
+        File(p.join(site.root.path, 'alfred.mem', 'carol.md')).readAsStringSync(),
+      );
+      expect(alice.fields.tags, contains('foo'));
+      expect(carol.fields.tags, contains('foo'));
     });
   });
 

@@ -9,8 +9,9 @@ import 'package:args/command_runner.dart';
 /// **The generalization.** `entity`'s original contract was `positionalLabels`
 /// alone — every verb's arity fixed at the label count. `mem`'s was that plus
 /// an optional floor (`health`, `refocus`, `tag`, `gist` accept zero) and a
-/// repeating tail (`recall`, `walk` absorb any number of words at the last
-/// label). The second is the strict superset: a fixed-arity verb is simply
+/// repeating tail (`recall`, `walk`, and every write verb but `remember`,
+/// absorb any number of words at the last label). The second is the strict
+/// superset: a fixed-arity verb is simply
 /// `minPositionals == positionalLabels.length` with `repeating == false`,
 /// which is this mixin's default — so every existing `entity` verb states
 /// nothing new to keep its exact grammar. Even `run`, `entity`'s one
@@ -48,8 +49,9 @@ base mixin PositionalGrammar on Command<void> {
   /// one — `recall <topic>...` and `walk <entry>...`. **No upper bound
   /// applies while this is true**; the ceiling [requirePositionals] enforces
   /// on every other verb is exactly the thing a repeating slot exists to
-  /// remove. False by default, which is every `entity` verb and most of
-  /// `mem`'s.
+  /// remove. False by default, which is every `entity` verb and, of `mem`'s,
+  /// only `survey`, `health` and `remember` — the last because a write that
+  /// replaces a page whole can address exactly one.
   bool get repeating => false;
 
   /// Declares that this verb's command line ends in `-- <command>`:
@@ -112,17 +114,22 @@ base mixin PositionalGrammar on Command<void> {
       );
     }
     if (!repeating && !_takesTrailingArgs && words.length > labels.length) {
+      // A verb with labels but no floor reaches its pages the other way when
+      // the slot is bare (§5's selector flags); the refusal has to name that
+      // second reading, or it reads as though the positional were the only
+      // door. Fixed-arity verbs — every `entity` one — keep the bare form.
+      final alternative = min == 0 && labels.isNotEmpty ? ' or a selector' : '';
       usageException(
         '$name: unexpected argument(s): '
         '${words.sublist(labels.length).join(' ')} — expected '
-        '${labels.map((l) => '<$l>').join(' ')}',
+        '${labels.map((l) => '<$l>').join(' ')}$alternative',
       );
     }
     return words;
   }
 
-  /// The single optional positional — `mem`'s `health`, `refocus`, `tag`,
-  /// `gist` — read through [requirePositionals] so a second, uncounted word
+  /// The single optional positional — `mem`'s `health` — read through
+  /// [requirePositionals] so a second, uncounted word
   /// is refused rather than silently dropped, and null when the slot was
   /// left bare.
   String? optionalPositional() {

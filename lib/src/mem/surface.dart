@@ -1061,7 +1061,7 @@ final class RefocusCommand extends MemCommand with SelectorArgs {
   }
 }
 
-/// `mem tag <topic> | <selectors> --add <t> [--add <t> ...] --remove <t> [...]`
+/// `mem tag <topic>... | <selectors> --add <t> [--add <t> ...] --remove <t> [...]`
 final class TagCommand extends MemCommand with SelectorArgs {
   TagCommand(super.cli) {
     declareSelectorFlags();
@@ -1083,6 +1083,9 @@ final class TagCommand extends MemCommand with SelectorArgs {
   int get minPositionals => 0;
 
   @override
+  bool get repeating => true;
+
+  @override
   Future<void> run() async {
     final bank = resolveBank();
     if (bank == null) return;
@@ -1099,20 +1102,27 @@ final class TagCommand extends MemCommand with SelectorArgs {
       usageException('$name: cannot --add and --remove the same tag: ${overlap.join(', ')}');
     }
 
-    final topic = optionalPositional();
-    final selector = buildSelector(topic: topic);
+    final seenTopics = <String>{};
+    final topics = [
+      for (final t in requirePositionals())
+        if (seenTopics.add(t)) t,
+    ];
+    final selector =
+        topics.isEmpty ? buildSelector() : buildSelector(topics: topics.toSet());
     final matched = selector.select(bank.pages());
+    final missing = [for (final t in topics) if (!matched.any((p) => p.topic == t)) t];
     final bankTopics = [for (final p in bank.pages()) p.topic];
 
     final account = WriteAccount(
       bank: bank.name,
       verb: 'tag',
-      requestedTopics: topic == null ? const [] : [topic],
-      missingTopics: topic == null || matched.isNotEmpty ? const [] : [topic],
+      requestedTopics: topics,
+      missingTopics: missing,
       changed: [for (final p in matched) p.topic],
       unchanged: const [],
       totalInBank: bankTopics.length,
-      filterDescription: reachDescription(topic: topic),
+      filterDescription:
+          reachDescription(topics: topics.isEmpty ? null : topics.toSet()),
       bankTopics: bankTopics,
     );
 
@@ -1127,7 +1137,7 @@ final class TagCommand extends MemCommand with SelectorArgs {
   }
 }
 
-/// `mem gist <topic> | <selectors> [--set <s>]`
+/// `mem gist <topic>... | <selectors> [--set <s>]`
 final class GistCommand extends MemCommand with SelectorArgs {
   GistCommand(super.cli) {
     declareSelectorFlags();
@@ -1147,26 +1157,36 @@ final class GistCommand extends MemCommand with SelectorArgs {
   int get minPositionals => 0;
 
   @override
+  bool get repeating => true;
+
+  @override
   Future<void> run() async {
     final bank = resolveBank();
     if (bank == null) return;
 
     if (_reportIfNoTree(cli, bank)) return;
 
-    final topic = optionalPositional();
-    final selector = buildSelector(topic: topic);
+    final seenTopics = <String>{};
+    final topics = [
+      for (final t in requirePositionals())
+        if (seenTopics.add(t)) t,
+    ];
+    final selector =
+        topics.isEmpty ? buildSelector() : buildSelector(topics: topics.toSet());
     final matched = selector.select(bank.pages());
+    final missing = [for (final t in topics) if (!matched.any((p) => p.topic == t)) t];
     final bankTopics = [for (final p in bank.pages()) p.topic];
 
     final account = WriteAccount(
       bank: bank.name,
       verb: 'gist',
-      requestedTopics: topic == null ? const [] : [topic],
-      missingTopics: topic == null || matched.isNotEmpty ? const [] : [topic],
+      requestedTopics: topics,
+      missingTopics: missing,
       changed: [for (final p in matched) p.topic],
       unchanged: const [],
       totalInBank: bankTopics.length,
-      filterDescription: reachDescription(topic: topic),
+      filterDescription:
+          reachDescription(topics: topics.isEmpty ? null : topics.toSet()),
       bankTopics: bankTopics,
     );
 
