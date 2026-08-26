@@ -83,7 +83,9 @@ const hintRules = <HintRule>[ /* §6, in priority order */ ];
 
 **R5.4 — Adding a rule is: one `const` in the registry, one test asserting it fires, one test asserting it stays silent on a healthy outcome.** The silence test is not optional — it is how R2.3 is enforced mechanically.
 
-**R5.5 — The two good examples already shipped set the voice.** `remember` with no `--actor` refuses *and* states the law and why nothing else may answer. The wrong-bank message says "names bank X, not the addressed bank Y — recall reaches one bank per call, use walk to cross banks." One line, teaches on the failure path, no footer. Every hint sounds like these.
+**R5.5 — The two good examples already shipped set the voice.** `remember` with no `--actor` refuses *and* states the law and why nothing else may answer. `NO TREE` says the bank stands but its tree does not, names the path where it would stand, and ends "Materialize it." One line, teaches on the failure path, no footer. Every hint sounds like these.
+
+**R5.5.1 — A message that teaches is only as good as the law it teaches, and it is the harder one to catch.** This rule cited a second example for a day: the wrong-bank refusal, "names bank X, not the addressed bank Y — recall reaches one bank per call, use walk to cross banks." It sounded exactly right, which is why nobody questioned it — and it was false. An address names its bank; honouring it violates nothing about reaching one bank per call, and refusing it broke the first line of the `/sleep` and `/flush` skills. A fluent refusal is *harder* to report as a defect than a bare parse error, because the caller assumes the law and doubts itself. So: **when a refusal states a law, the law is the thing under review, not the sentence.** The address now elects the bank (`RecallCommand._electBank`), and that message survives only where it is true — two addresses naming two banks, which one `Index` over one `Bank` genuinely cannot serve.
 
 ## 6. The first cut: six rules
 

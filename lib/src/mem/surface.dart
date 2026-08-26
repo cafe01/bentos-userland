@@ -227,11 +227,18 @@ abstract base class MemCommand extends Command<void> with PositionalGrammar {
     return p.normalize(abs);
   }
 
+  /// `-b` exactly as typed, or null — **an assertion by a hand**, told apart
+  /// from the ambient default so a verb that can elect its own bank knows
+  /// which of the two it would be overruling. `$BENTOS_AGENT` is not read
+  /// here: a variable exported once at a wake says where the caller usually
+  /// stands, never what this call is about.
+  String? statedBank() => globalResults?['bank'] as String?;
+
   /// `-b`, falling back to `$BENTOS_AGENT` — the kind's own convention, so
   /// every living waking that never names a bank still reaches its own.
   /// Neither present is a usage fault naming both cures.
   String bankName() {
-    final named = globalResults?['bank'] as String?;
+    final named = statedBank();
     final ambient = cli.environment['BENTOS_AGENT'];
     final resolved = named ?? ambient;
     if (resolved == null) {
@@ -274,9 +281,13 @@ abstract base class MemCommand extends Command<void> with PositionalGrammar {
   /// Resolves the named bank from [effectiveVantage]. A miss prints the
   /// refusal on the diagnostic channel (R2.1.1), marks the run refused, and
   /// returns null — the caller's cue to stop.
-  Bank? resolveBank() {
+  ///
+  /// [named] is for the one verb that elects its bank from the call's own
+  /// words rather than from the ambient register: see [RecallCommand]'s
+  /// election. Absent it, the ordinary `-b`/`$BENTOS_AGENT` cascade answers.
+  Bank? resolveBank({String? named}) {
     final vantage = effectiveVantage;
-    final resolution = Bank.resolve(bankName(), vantage: vantage);
+    final resolution = Bank.resolve(named ?? bankName(), vantage: vantage);
     switch (resolution) {
       case Found(:final bank):
         return bank;
@@ -464,7 +475,7 @@ final class SurveyCommand extends MemCommand with SelectorArgs {
   }
 }
 
-/// `mem recall <topic> | <selectors>`
+/// `mem recall <topic> | <mem://bank/topic> | <selectors>`
 final class RecallCommand extends MemCommand with SelectorArgs {
   RecallCommand(super.cli) {
     declareSelectorFlags();
@@ -487,34 +498,31 @@ final class RecallCommand extends MemCommand with SelectorArgs {
 
   @override
   Future<void> run() async {
-    final bank = resolveBank();
+    // **The words come first, because they may name the bank.** The bank
+    // cannot be resolved before the call has said which one it is about, and
+    // nothing may reach stdout — not even the header — before the election
+    // settles: a header printed over a refusal states a bank the call never
+    // read.
+    final seenTopics = <String>{};
+    final topics = <String>[];
+    final addressed = <String>{};
+    for (final raw in requirePositionals()) {
+      // `mem://<bank>/<topic>` is accepted alongside a bare topic — the same
+      // form `walk` prints back on every skip line and every shape entry, so
+      // a citation copied out of that output must resolve rather than be read
+      // as a literal topic that happens to contain slashes and colons.
+      final address = Address.parse(raw);
+      if (address != null) addressed.add(address.bank);
+      final topic = address?.topic ?? raw;
+      if (seenTopics.add(topic)) topics.add(topic);
+    }
+
+    final bank = _electBank(addressed);
     if (bank == null) return;
     cli.out.add(_bankHeader(bank.name));
     if (_reportIfNoTree(cli, bank)) return;
 
     final index = Index.of(bank);
-    final seenTopics = <String>{};
-    final topics = <String>[];
-    for (final raw in requirePositionals()) {
-      // `mem://<bank>/<topic>` is accepted alongside a bare topic — the same
-      // form `walk` prints back on every skip line and dry-run entry point,
-      // so a citation copied out of that output must resolve rather than be
-      // read as a literal topic that happens to contain slashes and colons.
-      // Naming a foreign bank here is not a miss to report as "no pages": it
-      // is the caller asking recall to do what only `walk` does, and it is
-      // said plainly rather than folded into the empty-reach path below.
-      final address = Address.parse(raw);
-      if (address != null && address.bank != bank.name) {
-        usageException(
-          '$name: $raw names bank ${address.bank}, not the addressed bank '
-          '${bank.name} — recall reaches one bank per call, use walk to cross '
-          'banks',
-        );
-      }
-      final topic = address?.topic ?? raw;
-      if (seenTopics.add(topic)) topics.add(topic);
-    }
-
     final bankTopics = [for (final page in index.pages) page.topic];
 
     if (topics.isEmpty) {
@@ -570,6 +578,55 @@ final class RecallCommand extends MemCommand with SelectorArgs {
     // caller got real pages back.
     if (found.isEmpty) cli.exitCode = 1;
   }
+
+  /// **A fully-qualified address sets the bank for its own call.** An address
+  /// names its bank; honouring it violates nothing about reaching one bank
+  /// per call, and refusing it made the most useful form of citation — the
+  /// one `walk` itself prints, the one a skill's first line carries — fail
+  /// against the ambient register of whoever happened to be standing there.
+  ///
+  /// Three ranks, and only one of them can be wrong:
+  /// - **The addresses elect.** They are this call's own words about what it
+  ///   is for.
+  /// - **`$BENTOS_AGENT` yields, silently.** A variable exported once at a
+  ///   wake is a default, not an assertion, and a default that argues with
+  ///   the call in front of it is not a default.
+  /// - **`-b` contradicts, loudly.** A hand that typed both said two things;
+  ///   which one it meant is not this program's to guess.
+  ///
+  /// Two addresses naming two banks keeps the old refusal, which is true
+  /// exactly here and nowhere else: this verb builds one [Index] over one
+  /// [Bank], so a call spanning two of them cannot be served by [recall] at
+  /// all — that is what [walk] is.
+  Bank? _electBank(Set<String> addressed) {
+    if (addressed.length > 1) {
+      final named = addressed.toList()..sort();
+      usageException(
+        '$name: ${named.join(' and ')} — recall reaches one bank per call, '
+        'use walk to cross banks',
+      );
+    }
+    if (addressed.isEmpty) return resolveBank();
+
+    final elected = addressed.first;
+    final stated = statedBank();
+    // Compared as banks, not as strings: `-b agent.bentos` and
+    // `mem://agent.bentos.mem/...` name one bank, and [Bank.resolve] would
+    // land both on it. Accusing a caller of contradicting itself over a
+    // suffix it was never required to type is the fault this guard exists to
+    // prevent, inverted.
+    if (stated != null && _canonical(stated) != _canonical(elected)) {
+      usageException(
+        '$name: -b $stated contradicts the addressed bank $elected — pass one',
+      );
+    }
+    return resolveBank(named: elected);
+  }
+
+  /// A bank name as [Bank.resolve] would land it — the suffix supplied where
+  /// the caller left it off, so two spellings of one bank compare equal.
+  static String _canonical(String name) =>
+      name.endsWith(Bank.suffix) ? name : '$name${Bank.suffix}';
 }
 
 /// `mem walk <mem://bank/topic>... [<selectors>] [--depth <n>]`

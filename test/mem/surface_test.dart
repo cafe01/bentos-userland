@@ -764,7 +764,11 @@ void main() {
     Directory seed(String bank, List<String> topics) {
       final root = materialize(bank);
       for (final topic in topics) {
-        File(p.join(root.path, '$topic.md')).writeAsStringSync(Page(
+        final file = File(p.join(root.path, '$topic.md'));
+        // A topic is a path — `life/sleep` lives one directory down, and the
+        // fixture must stand it up the way a real bank does.
+        file.parent.createSync(recursive: true);
+        file.writeAsStringSync(Page(
           topic: topic,
           fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
           body: 'body of $topic',
@@ -857,17 +861,105 @@ void main() {
       });
     });
 
-    test('a mem:// address naming a foreign bank is a stated error, never '
-        '"no pages"', () async {
+    test('an address elects its own bank over the ambient \$BENTOS_AGENT, '
+        'silently — the exact call the /sleep skill opens with', () async {
+      await site.runAsync(() async {
+        seed('alfred.mem', ['a']);
+        seed('agent.bentos.mem', ['life/sleep']);
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call(['recall', 'mem://agent.bentos.mem/life/sleep']);
+        expect(code, 0);
+        expect(out.text, contains('body of life/sleep'));
+        expect(out.text, contains('bank: agent.bentos.mem'));
+        // The ambient bank yielded, and said nothing about it: a default that
+        // argues with the call in front of it is not a default.
+        expect(out.text, isNot(contains('bank: alfred.mem')));
+        expect(diag.text, isNot(contains('alfred.mem')));
+      });
+    });
+
+    test('an address elects its own bank with no ambient one at all', () async {
+      await site.runAsync(() async {
+        seed('agent.bentos.mem', ['life/sleep']);
+        final out = _Out(), diag = _Out();
+        final code = await mem(out: out, diagnostics: diag)
+            .call(['recall', 'mem://agent.bentos.mem/life/sleep']);
+        expect(code, 0);
+        expect(out.text, contains('body of life/sleep'));
+        // Never the "-b <bank> or \$BENTOS_AGENT" fault: the call named a bank.
+        expect(diag.text, isNot(contains(r'$BENTOS_AGENT')));
+      });
+    });
+
+    test('-b against an address is a stated contradiction, not a silent '
+        'winner', () async {
+      await site.runAsync(() async {
+        seed('alfred.mem', ['a']);
+        seed('agent.bentos.mem', ['life/sleep']);
+        final out = _Out(), diag = _Out();
+        final code = await mem(out: out, diagnostics: diag).call(
+            ['-b', 'alfred.mem', 'recall', 'mem://agent.bentos.mem/life/sleep']);
+        expect(code, 2);
+        expect(diag.text, contains('-b alfred.mem contradicts'));
+        expect(diag.text, contains('agent.bentos.mem'));
+        // Nothing reached stdout: a header over a refusal states a bank the
+        // call never read.
+        expect(out.text, isEmpty);
+      });
+    });
+
+    test('-b agreeing with the address in the suffixless spelling is no '
+        'contradiction — they are one bank', () async {
+      await site.runAsync(() async {
+        seed('agent.bentos.mem', ['life/flush']);
+        final out = _Out(), diag = _Out();
+        final code = await mem(out: out, diagnostics: diag).call(
+            ['-b', 'agent.bentos', 'recall', 'mem://agent.bentos.mem/life/flush']);
+        expect(code, 0);
+        expect(out.text, contains('body of life/flush'));
+        expect(diag.text, isNot(contains('contradicts')));
+      });
+    });
+
+    test('two addresses naming two banks keeps the refusal — where it is true',
+        () async {
+      await site.runAsync(() async {
+        seed('alfred.mem', ['a']);
+        seed('agent.bentos.mem', ['life/sleep']);
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call(['recall', 'mem://alfred.mem/a', 'mem://agent.bentos.mem/life/sleep']);
+        expect(code, 2);
+        expect(diag.text, contains('agent.bentos.mem and alfred.mem'));
+        expect(diag.text, contains('recall reaches one bank per call'));
+        expect(diag.text, contains('use walk to cross banks'));
+        expect(out.text, isEmpty);
+      });
+    });
+
+    test('a bare topic rides the bank its companion address elected', () async {
+      await site.runAsync(() async {
+        seed('agent.bentos.mem', ['life/sleep', 'life/flush']);
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call(['recall', 'mem://agent.bentos.mem/life/sleep', 'life/flush']);
+        expect(code, 0);
+        expect(out.text, contains('body of life/sleep'));
+        expect(out.text, contains('body of life/flush'));
+        expect(diag.text, contains('2 pages'));
+      });
+    });
+
+    test('an address into a bank that does not stand here still fails as a '
+        'bank miss, not as a wrong-bank citation', () async {
       await site.runAsync(() async {
         seed('alfred.mem', ['a']);
         final out = _Out(), diag = _Out();
         final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
             .call(['recall', 'mem://software.bentos.mem/whatever']);
-        expect(code, 2);
-        expect(diag.text, contains('names bank software.bentos.mem'));
-        expect(diag.text, contains('not the addressed bank alfred.mem'));
-        expect(diag.text, isNot(contains('no pages')));
+        expect(code, 1);
+        expect(diag.text, contains('software.bentos.mem not found'));
       });
     });
 
