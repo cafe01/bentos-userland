@@ -396,7 +396,10 @@ final class SurveyCommand extends MemCommand with SelectorArgs {
   SurveyCommand(super.cli) {
     declareSelectorFlags();
     argParser
-      ..addOption('limit', valueHelp: 'n')
+      ..addOption('limit',
+          valueHelp: 'n',
+          defaultsTo: '30',
+          help: 'Cap on cues shown. 0 means unlimited.')
       ..addOption('offset', valueHelp: 'n', defaultsTo: '0')
       ..addOption('size-threshold', valueHelp: 'n', defaultsTo: '120');
   }
@@ -431,8 +434,8 @@ final class SurveyCommand extends MemCommand with SelectorArgs {
       return;
     }
 
-    final limitOpt = argResults!['limit'] as String?;
-    final limit = limitOpt == null ? null : int.parse(limitOpt);
+    final limitOpt = int.parse(argResults!['limit'] as String);
+    final limit = limitOpt == 0 ? null : limitOpt;
     final offset = int.parse(argResults!['offset'] as String);
     final threshold = int.parse(argResults!['size-threshold'] as String);
 

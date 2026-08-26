@@ -1429,8 +1429,8 @@ void main() {
       return root;
     }
 
-    test('unscoped survey returns everything, and says so honestly — never '
-        'silently truncated', () async {
+    test('unscoped survey under the default limit shows everything, and says '
+        'so honestly — never silently truncated', () async {
       await site.runAsync(() async {
         seed(5);
         final out = _Out(), diag = _Out();
@@ -1444,6 +1444,35 @@ void main() {
         // for, everything given", not a silent cap nobody was told about.
         expect(out.text, isNot(contains('showing')));
         expect(diag.text, contains('5 of 5 shown'));
+      });
+    });
+
+    test('unscoped survey over the default limit shows 30 and says so',
+        () async {
+      await site.runAsync(() async {
+        seed(35);
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call(['survey']);
+        expect(code, 0);
+        expect(out.text, contains('showing 1–30 of 35'));
+        expect(out.text, contains('mem survey --offset 30'));
+        expect(diag.text, contains('30 of 35 shown'));
+      });
+    });
+
+    test('--limit 0 lifts the default cap and returns everything', () async {
+      await site.runAsync(() async {
+        seed(35);
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call(['survey', '--limit', '0']);
+        expect(code, 0);
+        for (var i = 0; i < 35; i++) {
+          expect(out.text, contains('topic$i'));
+        }
+        expect(out.text, isNot(contains('showing')));
+        expect(diag.text, contains('35 of 35 shown'));
       });
     });
 
