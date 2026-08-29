@@ -431,4 +431,56 @@ void main() {
       expect(diag.text, isNot(contains('written a, a')));
     });
   });
+
+  group('unknown-option — the pool is this call\'s grammar, not every verb\'s',
+      () {
+    Future<String> refuse(List<String> args) async {
+      final diag = _Out();
+      final cli = Mem(
+          vantage: site.root.path,
+          out: _Out(),
+          diagnostics: diag,
+          environment: const {});
+      expect(await cli.call(args), 2);
+      return diag.text;
+    }
+
+    test('a live flag of another verb is located, never suggested back',
+        () async {
+      // Observed verbatim: `mem survey --limit 200 --shape` answered
+      // "no option --shape. Did you mean --shape?" — walk's real flag,
+      // ranked against a survey call.
+      final text = await refuse(['survey', '--limit', '200', '--shape']);
+      expect(text, contains('no option --shape on survey'));
+      expect(text, contains("--shape is walk's flag"));
+      expect(text, isNot(contains('Did you mean --shape?')));
+    });
+
+    test('a near miss inside the verb\'s own grammar still resolves', () async {
+      final text = await refuse(['walk', 'root', '--shapee']);
+      expect(text, contains('Did you mean --shape?'));
+    });
+
+    test('nothing within two edits answers with the bare fact', () async {
+      // `mem --version` answered "Did you mean --attention?" — refocus's
+      // flag, at a distance no threshold was checking.
+      final text = await refuse(['--version']);
+      expect(text, contains('no option --version.'));
+      expect(text, isNot(contains('Did you mean')));
+    });
+
+    test('a retired name still answers exactly, before any search', () async {
+      final text = await refuse(['walk', 'root', '--dry-run']);
+      expect(text, contains('no option --dry-run. Did you mean --shape?'));
+    });
+
+    test('the verb is the parser\'s, never argv\'s first command-shaped word',
+        () async {
+      // `-b survey` names a bank; the verb is `recall`, and the refusal must
+      // report recall's grammar rather than survey's.
+      final text = await refuse(['-b', 'survey', 'recall', 'a', '--offset', '2']);
+      expect(text, contains('no option --offset on recall'));
+      expect(text, contains("--offset is survey's flag"));
+    });
+  });
 }

@@ -28,7 +28,7 @@ final class Mem {
     this.fileReader,
     this.gistSource,
   }) {
-    _runner = CommandRunner<void>(
+    _runner = _MemRunner(
       'mem',
       'The organ of the brain — the pen that writes it and the recall that '
           'reads it.',
@@ -100,7 +100,7 @@ final class Mem {
   /// crash, and never a default this component invents.
   final GistSource? gistSource;
 
-  late final CommandRunner<void> _runner;
+  late final _MemRunner _runner;
 
   /// **0** — did what was asked, including an empty reach on a browsing
   /// verb (`survey`, `walk`) and a degraded read. **1** — a decided refusal,
@@ -143,9 +143,11 @@ final class Mem {
 
   /// `unknown-option` (§6): fires in the argument-parsing failure path, not
   /// over a computed [Account] — no verb has run yet when the parser itself
-  /// rejects a flag it does not know. A retired name answers exactly, from
-  /// the one place a dead flag name is allowed to survive; anything else is
-  /// answered by the same nearest-name search a mistyped topic gets.
+  /// rejects a flag it does not know. Three readings, in order: a retired
+  /// name answers exactly, from the one place a dead flag name is allowed to
+  /// survive; a live flag of another verb is located rather than guessed at;
+  /// and only then does the nearest-name search a mistyped topic gets run,
+  /// over this verb's grammar alone.
   /// Every other [UsageException] — arity, wrong-bank citations, and the
   /// rest a verb throws itself via `usageException` — passes through
   /// unchanged; only the args package's own "no such option" wears this
@@ -163,21 +165,77 @@ final class Mem {
     final typed = match.group(1)!;
     final retired = _retiredOptions[typed];
     if (retired != null) return 'mem: no option --$typed. Did you mean --$retired?';
-    final nearest = nearestNames(typed, _allOptionNames, cap: 1);
-    if (nearest.isEmpty) return 'mem: no option --$typed.';
-    return 'mem: no option --$typed. Did you mean --${nearest.first}?';
+
+    // The pool is this call's own grammar and nothing else. Ranked against
+    // every option of every verb, `mem survey --shape` answered *did you mean
+    // --shape?* — `walk`'s real flag, scored against a call `walk` was never
+    // part of. What the caller needs there is not a near name but the fact
+    // that the flag exists somewhere else, so that case is answered first and
+    // exactly.
+    final verb = _runner.failingVerb;
+    final elsewhere = verb == null ? null : _verbOwning(typed, besides: verb);
+    if (elsewhere != null) {
+      return 'mem: no option --$typed on $verb. --$typed is $elsewhere\'s flag.';
+    }
+    final nearest = nearestNames(typed, _optionsInScope(verb), cap: 1);
+    final where = verb == null ? '' : ' on $verb';
+    if (nearest.isEmpty) return 'mem: no option --$typed$where.';
+    return 'mem: no option --$typed$where. Did you mean --${nearest.first}?';
   }
 
-  /// Every long option this tool declares, global and per-verb — the
-  /// candidate pool `unknown-option`'s nearest-name search ranks against.
-  /// Coarser than "the options the failing verb declares": the parser's own
-  /// error does not say which command it was resolving against once it has
-  /// walked up to the parent, and a slightly wider pool costs nothing a
-  /// caller would notice.
-  late final Set<String> _allOptionNames = {
-    ..._runner.argParser.options.keys,
-    for (final command in _runner.commands.values) ...command.argParser.options.keys,
-  };
+  /// The long options a call to [verb] can actually pass — the runner's own
+  /// globals plus that verb's declarations. Null [verb] is a failure before
+  /// any verb was resolved (`mem --version`), where the globals are the whole
+  /// grammar.
+  Iterable<String> _optionsInScope(String? verb) => {
+        ..._runner.argParser.options.keys,
+        if (_runner.commands[verb] case final command?)
+          ...command.argParser.options.keys,
+      };
+
+  /// The one verb that declares [typed], when exactly one does and it is not
+  /// [besides]. Null when the name is nobody's, or several verbs share it —
+  /// a shared name teaches nothing by being located.
+  String? _verbOwning(String typed, {required String besides}) {
+    final owners = [
+      for (final command in _runner.commands.values)
+        if (command.name != besides && command.argParser.options.containsKey(typed))
+          command.name,
+    ];
+    return owners.length == 1 ? owners.first : null;
+  }
+}
+
+/// The runner, subclassed for one fact the args package throws away: which
+/// command the parser was inside when it rejected a word. [UsageException]
+/// carries only a message and a rendered usage block, while
+/// [ArgParserException] names the command chain outright — so the conversion
+/// is intercepted one level down, where the fact is still structured.
+///
+/// **Not by scanning argv for the first word that looks like a verb.**
+/// `mem -b survey recall a` is a legal call in which `survey` is `-b`'s value
+/// and names a bank; a scan would report `survey`'s flags with total
+/// confidence. Only the parser knows.
+final class _MemRunner extends CommandRunner<void> {
+  _MemRunner(super.executableName, super.description);
+
+  /// The verb whose grammar rejected the last parse, or null when the parse
+  /// failed before any verb was reached.
+  String? failingVerb;
+
+  @override
+  ArgResults parse(Iterable<String> args) {
+    try {
+      failingVerb = null;
+      return argParser.parse(args);
+    } on ArgParserException catch (e) {
+      failingVerb = e.commands.isEmpty ? null : e.commands.last;
+      // Parsing is pure, so the second pass fails identically — and it fails
+      // through the base class, which owns the [UsageException] conversion
+      // and the usage block that goes with it.
+      return super.parse(args);
+    }
+  }
 }
 
 /// How a page states its age — **a rendering register of the whole tool, not
