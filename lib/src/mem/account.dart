@@ -83,9 +83,10 @@ final class SurveyAccount extends Account {
   /// artifact's own count and not the filter's match count.
   final int shown;
 
-  /// Every page the bank holds, filter or no filter — the number a caller
-  /// budgets an empty result against (§8.4: the bank's size survives a
-  /// filter that matched nothing).
+  /// On a non-empty listing: the match count after omit and selector, before
+  /// `--limit`/`--offset` — the same M the artifact's `showing a–b of M`
+  /// uses. On an empty listing: every page the bank holds, so a filter that
+  /// matched nothing still names the bank's size (§8.4).
   final int totalInBank;
 
   /// The selector as typed (`--tag craft --cold`), or empty for none.

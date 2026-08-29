@@ -419,7 +419,9 @@ final class SurveyCommand extends MemCommand with SelectorArgs {
   String get name => 'survey';
 
   @override
-  String get description => 'The index — one cue line per page, hottest first.';
+  String get description =>
+      'The index — one cue line per page, hottest first. '
+      'Attention 1.0 is omitted unless --hot or --min-attention 1.0.';
 
   @override
   Future<void> run() async {
@@ -479,7 +481,10 @@ final class SurveyCommand extends MemCommand with SelectorArgs {
     cli.diagnostics.add(renderSurveyFrame(SurveyAccount(
       bank: bank.name,
       shown: sliced.length,
-      totalInBank: index.pages.length,
+      // The listing universe — after the 1.0 omit and the selector, before
+      // --limit/--offset — so "N of M shown" names what this survey can
+      // still page through, not the hot pages it already refused to cue.
+      totalInBank: matched.length,
       filterDescription: filterDescription,
       words: words,
     )));

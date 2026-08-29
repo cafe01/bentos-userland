@@ -1623,7 +1623,10 @@ void main() {
         expect(surveyCode, 0);
         expect(surveyOut.text, contains('cool'));
         expect(surveyOut.text, isNot(contains('staged')));
-        expect(surveyDiag.text, contains('1 of 2 shown'));
+        // The frame's denominator is the listing universe (cool only), not
+        // the bank including staged 1.0 that this survey will never cue.
+        expect(surveyDiag.text, contains('1 of 1 shown'));
+        expect(surveyDiag.text, isNot(contains('1 of 2 shown')));
 
         final hotOut = _Out(), hotDiag = _Out();
         final hotCode =
