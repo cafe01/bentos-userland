@@ -430,7 +430,18 @@ final class SurveyCommand extends MemCommand with SelectorArgs {
 
     final selector = buildSelector();
     final index = Index.of(bank);
-    final matched = index.select(selector);
+    // Attention 1.0 is already in the waking mind in full. Survey slots
+    // should not buy it again — unless the caller asked for the hot band
+    // (`--hot` / `--min-attention 1.0`). Recall, walk and health still
+    // receive 1.0 from [Selector.select] itself.
+    final demandsHot =
+        selector.minAttention?.tenths == Attention.maxTenths;
+    final matched = demandsHot
+        ? index.select(selector)
+        : index
+            .select(selector)
+            .where((p) => p.fields.attention.tenths != Attention.maxTenths)
+            .toList();
     final desc = reachDescription();
     final filterDescription = desc == '(everything)' ? '' : desc;
 

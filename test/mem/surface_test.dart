@@ -630,7 +630,8 @@ void main() {
         final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
             .call([...memSigned, 'refocus', 'a', 'b', 'c', 'd', '--to', '0.9']);
         expect(code, 0);
-        expect(diag.text, contains('written a, b, c, d'));
+        // Same-notch select is recency, not argv order: d was remembered last.
+        expect(diag.text, contains('written d, c, b, a'));
       });
     });
 
@@ -1230,7 +1231,7 @@ void main() {
 
         final survey = _Out();
         await mem(bankEnv: 'alfred.mem', out: survey, diagnostics: _Out())
-            .call(['survey']);
+            .call(['survey', '--hot']);
         expect(survey.text, contains('·2020-03-07'));
 
         final recall = _Out();
@@ -1596,6 +1597,72 @@ void main() {
         // `--offset` cue pointing past the total.
         expect(out.text, isNot(contains('mem survey --offset')));
         expect(diag.text, contains('1 of 5 shown'));
+      });
+    });
+  });
+
+  group('survey — staged 1.0 is not an index cue', () {
+    test('unscoped survey omits attention 1.0; --hot still lists it', () async {
+      await site.runAsync(() async {
+        final root = materialize('alfred.mem');
+        File(p.join(root.path, 'staged.md')).writeAsStringSync(Page(
+          topic: 'staged',
+          fields: Fields(type: MemType.semantic, attention: Attention(1.0)),
+          body: 'already in mind',
+        ).serialize());
+        File(p.join(root.path, 'cool.md')).writeAsStringSync(Page(
+          topic: 'cool',
+          fields: Fields(type: MemType.semantic, attention: Attention(0.5)),
+          body: 'cue',
+        ).serialize());
+
+        final surveyOut = _Out(), surveyDiag = _Out();
+        final surveyCode =
+            await mem(bankEnv: 'alfred.mem', out: surveyOut, diagnostics: surveyDiag)
+                .call(['survey']);
+        expect(surveyCode, 0);
+        expect(surveyOut.text, contains('cool'));
+        expect(surveyOut.text, isNot(contains('staged')));
+        expect(surveyDiag.text, contains('1 of 2 shown'));
+
+        final hotOut = _Out(), hotDiag = _Out();
+        final hotCode =
+            await mem(bankEnv: 'alfred.mem', out: hotOut, diagnostics: hotDiag)
+                .call(['survey', '--hot']);
+        expect(hotCode, 0);
+        expect(hotOut.text, contains('staged'));
+        expect(hotOut.text, isNot(contains('cool')));
+      });
+    });
+
+    test('--min-attention 1.0 still lists the hot band', () async {
+      await site.runAsync(() async {
+        final root = materialize('alfred.mem');
+        File(p.join(root.path, 'staged.md')).writeAsStringSync(Page(
+          topic: 'staged',
+          fields: Fields(type: MemType.semantic, attention: Attention(1.0)),
+          body: 'already in mind',
+        ).serialize());
+
+        final out = _Out(), diag = _Out();
+        final code =
+            await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+                .call(['survey', '--min-attention', '1.0']);
+        expect(code, 0);
+        expect(out.text, contains('staged'));
+      });
+    });
+  });
+
+  group('selector bands are exclusive', () {
+    test('--hot --warm refuses, exit 2', () async {
+      await site.runAsync(() async {
+        materialize('alfred.mem');
+        final out = _Out(), diag = _Out();
+        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            .call(['survey', '--hot', '--warm']);
+        expect(code, 2);
+        expect(diag.text, contains('at most one of --hot/--warm/--cool/--cold'));
       });
     });
   });

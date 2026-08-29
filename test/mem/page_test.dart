@@ -222,10 +222,19 @@ void main() {
   });
 
   group('Selector — the shared reach', () {
-    Page page(String topic, {required MemType type, required String attention, List<String> tags = const []}) =>
+    Page page(String topic,
+            {required MemType type,
+            required String attention,
+            List<String> tags = const [],
+            DateTime? modified}) =>
         Page(
           topic: topic,
-          fields: Fields(type: type, attention: Attention.parse(attention), tags: tags),
+          fields: Fields(
+            type: type,
+            attention: Attention.parse(attention),
+            tags: tags,
+            modified: modified,
+          ),
           body: '',
         );
 
@@ -267,16 +276,18 @@ void main() {
       expect(got, ['proc'], reason: 'tag a AND >=0.5');
     });
 
-    test('output is hottest first, ties broken by topic', () {
+    test('output is hottest first, ties broken by modified descending', () {
       expect(const Selector().select(pages).map((p) => p.topic), ['auto', 'proc', 'sem', 'pros']);
     });
 
-    test('a tie in attention breaks by topic', () {
+    test('a tie in attention breaks by modified descending', () {
+      final older = DateTime.utc(2020);
+      final newer = DateTime.utc(2024);
       final tied = [
-        page('zzz', type: MemType.semantic, attention: '0.7'),
-        page('aaa', type: MemType.procedural, attention: '0.7'),
+        page('zzz', type: MemType.semantic, attention: '0.7', modified: newer),
+        page('aaa', type: MemType.procedural, attention: '0.7', modified: older),
       ];
-      expect(const Selector().select(tied).map((p) => p.topic), ['aaa', 'zzz']);
+      expect(const Selector().select(tied).map((p) => p.topic), ['zzz', 'aaa']);
     });
 
     test('empty result is empty, not error', () {

@@ -406,17 +406,21 @@ final class Selector {
     return true;
   }
 
-  /// Matches, hottest first, ties broken by topic.
+  /// Matches, hottest first, ties broken by [Fields.modified] descending.
   ///
-  /// The order is the tool's observable behaviour today and is kept
-  /// deliberately: a reader asking for a band wants it by presence. The
-  /// previous build ordered by memory type instead, which no requirement ever
-  /// asked for.
+  /// Recency is a claim about relevance; alphabetical topic order is not.
+  /// A missing stamp sorts last inside the notch.
   List<Page> select(Iterable<Page> pages) {
     final matched = pages.where(matches).toList()
       ..sort((a, b) {
         final byAttention = b.fields.attention.compareTo(a.fields.attention);
-        return byAttention != 0 ? byAttention : a.topic.compareTo(b.topic);
+        if (byAttention != 0) return byAttention;
+        final aMod = a.fields.modified;
+        final bMod = b.fields.modified;
+        if (aMod == null && bMod == null) return 0;
+        if (aMod == null) return 1;
+        if (bMod == null) return -1;
+        return bMod.compareTo(aMod);
       });
     return matched;
   }
