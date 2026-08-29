@@ -49,22 +49,28 @@ void main() {
     return where;
   }
 
-  Mem mem({
-    String? bankEnv,
+  /// [bank] becomes `-b` unless the argv already names one. [environment]
+  /// is handed through so a test can prove `$BENTOS_AGENT` is not a bank.
+  _Cli mem({
+    String? bank,
+    Map<String, String> environment = const {},
     GistSource? gistSource,
     required _Out out,
     required _Out diagnostics,
     Future<String> Function()? stdinReader,
     Future<String> Function(String)? fileReader,
   }) =>
-      Mem(
-        vantage: site.root.path,
-        out: out,
-        diagnostics: diagnostics,
-        environment: bankEnv == null ? const {} : {'BENTOS_AGENT': bankEnv},
-        gistSource: gistSource,
-        stdinReader: stdinReader,
-        fileReader: fileReader,
+      _Cli(
+        Mem(
+          vantage: site.root.path,
+          out: out,
+          diagnostics: diagnostics,
+          environment: environment,
+          gistSource: gistSource,
+          stdinReader: stdinReader,
+          fileReader: fileReader,
+        ),
+        bank: bank,
       );
 
   group('bank resolution', () {
@@ -80,25 +86,28 @@ void main() {
       });
     });
 
-    test('no -b and no \$BENTOS_AGENT is a usage fault naming both cures',
-        () async {
+    test('no -b is a usage fault naming only that flag', () async {
       await site.runAsync(() async {
         final out = _Out(), diag = _Out();
         final code = await mem(out: out, diagnostics: diag).call(['survey']);
         expect(code, 2);
         expect(diag.text, contains('-b <bank>'));
-        expect(diag.text, contains(r'$BENTOS_AGENT'));
+        expect(diag.text, isNot(contains(r'$BENTOS_AGENT')));
       });
     });
 
-    test('\$BENTOS_AGENT supplies the bank when -b is omitted', () async {
+    test('\$BENTOS_AGENT does not supply the bank when -b is omitted', () async {
       await site.runAsync(() async {
         materialize('alfred.mem');
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
-            .call(['survey']);
-        expect(code, 0);
-        expect(diag.text, contains('alfred.mem'));
+        final code = await mem(
+          environment: const {'BENTOS_AGENT': 'alfred.mem'},
+          out: out,
+          diagnostics: diag,
+        ).call(['survey']);
+        expect(code, 2);
+        expect(diag.text, contains('-b <bank>'));
+        expect(diag.text, isNot(contains(r'$BENTOS_AGENT')));
       });
     });
   });
@@ -108,7 +117,7 @@ void main() {
       await site.runAsync(() async {
         materialize('alfred.mem');
         var out = _Out(), diag = _Out();
-        var code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag).call([...memSigned, 'remember',
+        var code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag).call([...memSigned, 'remember',
           'domain/hello',
           '-t',
           'semantic',
@@ -133,7 +142,7 @@ void main() {
           ..writeAsStringSync('World.');
         var out = _Out(), diag = _Out();
         final code = await mem(
-          bankEnv: 'alfred.mem',
+          bank: 'alfred.mem',
           out: out,
           diagnostics: diag,
           fileReader: (path) => File(path).readAsString(),
@@ -154,7 +163,7 @@ void main() {
         out = _Out();
         diag = _Out();
         final recallCode =
-            await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+            await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
                 .call(['recall', 'domain/hello']);
         expect(recallCode, 0);
         expect(out.text, contains('domain/hello'));
@@ -201,7 +210,7 @@ void main() {
 
         final out = _Out(), diag = _Out();
         final code = await mem(
-          bankEnv: 'alfred.mem',
+          bank: 'alfred.mem',
           out: out,
           diagnostics: diag,
           stdinReader: () async => 'World.',
@@ -228,7 +237,7 @@ void main() {
 
         final out = _Out(), diag = _Out();
         final code = await mem(
-          bankEnv: 'alfred.mem',
+          bank: 'alfred.mem',
           out: out,
           diagnostics: diag,
           stdinReader: () async => 'World.',
@@ -261,7 +270,7 @@ void main() {
         await site.runAsync(() async {
           installOnly(site.root);
           final out = _Out(), diag = _Out();
-          final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+          final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
               .call(['survey']);
           expect(code, Mem.materializationLagCode);
           expect(diag.text, contains('NO TREE'));
@@ -274,7 +283,7 @@ void main() {
         await site.runAsync(() async {
           installOnly(site.root);
           final out = _Out(), diag = _Out();
-          final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+          final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
               .call(['recall', 'domain/hello']);
           expect(code, Mem.materializationLagCode);
           expect(diag.text, contains('NO TREE'));
@@ -286,7 +295,7 @@ void main() {
         await site.runAsync(() async {
           installOnly(site.root);
           final out = _Out(), diag = _Out();
-          final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+          final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
               .call(['health']);
           expect(code, Mem.materializationLagCode);
           expect(diag.text, contains('NO TREE'));
@@ -312,7 +321,7 @@ void main() {
         await site.runAsync(() async {
           installOnly(site.root);
           final out = _Out(), diag = _Out();
-          final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+          final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
               .call([...memSigned, 'refocus', 'domain/hello', '--to', '0.5']);
           expect(code, Mem.materializationLagCode);
           expect(diag.text, contains('NO TREE'));
@@ -324,7 +333,7 @@ void main() {
         await site.runAsync(() async {
           installOnly(site.root);
           final out = _Out(), diag = _Out();
-          final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+          final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
               .call([...memSigned, 'tag', 'domain/hello', '--add', 'x']);
           expect(code, Mem.materializationLagCode);
           expect(diag.text, contains('NO TREE'));
@@ -336,7 +345,7 @@ void main() {
         await site.runAsync(() async {
           installOnly(site.root);
           final out = _Out(), diag = _Out();
-          final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+          final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
               .call([...memSigned, 'gist', 'domain/hello']);
           expect(code, Mem.materializationLagCode);
           expect(diag.text, contains('NO TREE'));
@@ -354,7 +363,7 @@ void main() {
         materialize('alfred.mem');
         final out = _Out(), diag = _Out();
         final refusedCode = await mem(
-          bankEnv: 'alfred.mem',
+          bank: 'alfred.mem',
           out: out,
           diagnostics: diag,
         ).call(['-b', 'nobody.mem', 'survey']);
@@ -370,7 +379,7 @@ void main() {
         materialize('alfred.mem');
         final out = _Out(), diag = _Out();
         final code = await mem(
-          bankEnv: 'alfred.mem',
+          bank: 'alfred.mem',
           out: out,
           diagnostics: diag,
           stdinReader: () async => 'a body',
@@ -387,7 +396,7 @@ void main() {
         materialize('alfred.mem');
         final out = _Out(), diag = _Out();
         final code = await mem(
-          bankEnv: 'alfred.mem',
+          bank: 'alfred.mem',
           out: out,
           diagnostics: diag,
           gistSource: const _FixedGist(),
@@ -404,7 +413,7 @@ void main() {
         materialize('alfred.mem');
         final out = _Out(), diag = _Out();
         final code = await mem(
-          bankEnv: 'alfred.mem',
+          bank: 'alfred.mem',
           out: out,
           diagnostics: diag,
           gistSource: const _FixedGist(),
@@ -423,7 +432,7 @@ void main() {
         materialize('alfred.mem');
         final out = _Out(), diag = _Out();
         final code = await mem(
-          bankEnv: 'alfred.mem',
+          bank: 'alfred.mem',
           out: out,
           diagnostics: diag,
           gistSource: const _FixedGist(),
@@ -441,7 +450,7 @@ void main() {
         final root = materialize('alfred.mem');
         var out = _Out(), diag = _Out();
         var code = await mem(
-          bankEnv: 'alfred.mem',
+          bank: 'alfred.mem',
           out: out,
           diagnostics: diag,
           gistSource: const _FixedGist(),
@@ -456,7 +465,7 @@ void main() {
         out = _Out();
         diag = _Out();
         code = await mem(
-          bankEnv: 'alfred.mem',
+          bank: 'alfred.mem',
           out: out,
           diagnostics: diag,
           gistSource: const _FixedGist(),
@@ -475,7 +484,7 @@ void main() {
       await site.runAsync(() async {
         materialize('alfred.mem');
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call([...memSigned, 'remember', 'domain/x', '-A', '0.5']);
         expect(code, 2);
         expect(diag.text, contains('-t <type>'));
@@ -486,7 +495,7 @@ void main() {
       await site.runAsync(() async {
         materialize('alfred.mem');
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call([...memSigned, 'remember', 'domain/x', '-t', 'semantic']);
         expect(code, 2);
         expect(diag.text, contains('-A <attention>'));
@@ -503,7 +512,7 @@ void main() {
         materialize('alfred.mem');
         final out = _Out(), diag = _Out();
         final code = await mem(
-          bankEnv: 'alfred.mem',
+          bank: 'alfred.mem',
           out: out,
           diagnostics: diag,
           stdinReader: () async => 'a body',
@@ -522,7 +531,7 @@ void main() {
       await site.runAsync(() async {
         materialize('alfred.mem');
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call([...memSigned, 'remember', 'domain/x', '-t', 'semantic',
           '-A', '0.75']);
         expect(code, 2);
@@ -536,7 +545,7 @@ void main() {
       await site.runAsync(() async {
         materialize('alfred.mem');
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call(['survey', '--min-attention', '0.75']);
         expect(code, 2);
         expect(diag.text, contains('off-notch'));
@@ -549,7 +558,7 @@ void main() {
       await site.runAsync(() async {
         materialize('alfred.mem');
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call(['survey', '--hot']);
         expect(code, 0);
         expect(diag.text, contains('0 of 0 shown (filter: --hot)'));
@@ -562,7 +571,7 @@ void main() {
     Future<void> writeOne(String bank) async {
       final out = _Out(), diag = _Out();
       final code = await mem(
-        bankEnv: bank,
+        bank: bank,
         out: out,
         diagnostics: diag,
         stdinReader: () async => 'body text here',
@@ -578,7 +587,7 @@ void main() {
         await writeOne('alfred.mem');
 
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call([...memSigned, 'refocus', 't', '--to', '0.9']);
         expect(code, 0);
         expect(diag.text, contains('written t'));
@@ -591,7 +600,7 @@ void main() {
         await writeOne('alfred.mem');
 
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call([...memSigned, 'refocus', 't', '--attention', '0.8']);
         expect(code, 0);
         expect(diag.text, contains('written t'));
@@ -604,7 +613,7 @@ void main() {
         await writeOne('alfred.mem');
 
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call([...memSigned, 'refocus', 't', '--to', '0.8', '-A', '0.9']);
         expect(code, 2);
         expect(diag.text, contains('--to and --attention'));
@@ -617,7 +626,7 @@ void main() {
         for (final topic in ['a', 'b', 'c', 'd']) {
           final out = _Out(), diag = _Out();
           final code = await mem(
-            bankEnv: 'alfred.mem',
+            bank: 'alfred.mem',
             out: out,
             diagnostics: diag,
             stdinReader: () async => 'body of $topic',
@@ -627,7 +636,7 @@ void main() {
         }
 
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call([...memSigned, 'refocus', 'a', 'b', 'c', 'd', '--to', '0.9']);
         expect(code, 0);
         expect(diag.text, contains('written a, b, c, d'));
@@ -640,7 +649,7 @@ void main() {
         materialize('alfred.mem');
         await writeOne('alfred.mem');
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call([...memSigned, 'refocus', 't']);
         expect(code, 2);
         expect(diag.text, contains('--to'));
@@ -653,7 +662,7 @@ void main() {
         materialize('alfred.mem');
         await writeOne('alfred.mem');
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call([...memSigned, 'refocus', 'nope', '--to', '0.9']);
         expect(code, 1);
         expect(diag.text, contains('no page at nope in alfred.mem'));
@@ -667,7 +676,7 @@ void main() {
         materialize('alfred.mem');
         await writeOne('alfred.mem');
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call([...memSigned, 'gist', '--tag', 'no-such-tag']);
         expect(code, 1);
         expect(diag.text, contains('no page matches'));
@@ -681,7 +690,7 @@ void main() {
         materialize('alfred.mem');
         await writeOne('alfred.mem');
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call([...memSigned, 'tag', 'nope', '--add', 'x']);
         expect(code, 1);
         expect(diag.text, contains('no page at nope in alfred.mem'));
@@ -695,13 +704,13 @@ void main() {
         await writeOne('alfred.mem');
 
         var out = _Out(), diag = _Out();
-        var code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        var code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call([...memSigned, 'forget', 't']);
         expect(code, 0);
 
         out = _Out();
         diag = _Out();
-        code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call(['recall', 't']);
         expect(code, 1);
         expect(diag.text, contains('no page at t in alfred.mem'));
@@ -713,7 +722,7 @@ void main() {
     Future<void> writeOne(String bank) async {
       final out = _Out(), diag = _Out();
       final code = await mem(
-        bankEnv: bank,
+        bank: bank,
         out: out,
         diagnostics: diag,
         stdinReader: () async => 'body text here',
@@ -728,7 +737,7 @@ void main() {
         await writeOne('alfred.mem');
 
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call([...memSigned, 'tag', 't', '--add', 'suspect-stale']);
         expect(code, 0);
         expect(diag.text, contains('written t'));
@@ -740,7 +749,7 @@ void main() {
         materialize('alfred.mem');
         await writeOne('alfred.mem');
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call([...memSigned, 'tag', 't']);
         expect(code, 2);
         expect(diag.text, contains('--add'));
@@ -752,7 +761,7 @@ void main() {
         materialize('alfred.mem');
         await writeOne('alfred.mem');
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call([...memSigned, 'tag', 't', '--add', 'x', '--remove', 'x']);
         expect(code, 2);
         expect(diag.text, contains('x'));
@@ -782,7 +791,7 @@ void main() {
       await site.runAsync(() async {
         seed('alfred.mem', ['a', 'b', 'c']);
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call(['recall', 'c', 'a', 'b']);
         expect(code, 0);
         final ia = out.text.indexOf('body of a');
@@ -799,7 +808,7 @@ void main() {
       await site.runAsync(() async {
         seed('alfred.mem', ['a', 'b']);
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call(['recall', 'a', 'ghost', 'b']);
         expect(code, 0);
         expect(out.text, contains('body of a'));
@@ -814,7 +823,7 @@ void main() {
       await site.runAsync(() async {
         materialize('alfred.mem');
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call(['recall', 'ghost1', 'ghost2']);
         expect(code, 1);
         expect(diag.text, contains('no page at ghost1 in alfred.mem'));
@@ -826,7 +835,7 @@ void main() {
       await site.runAsync(() async {
         seed('alfred.mem', ['a']);
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call(['recall', 'a', 'a']);
         expect(code, 0);
         expect('body of a'.allMatches(out.text).length, 1);
@@ -839,7 +848,7 @@ void main() {
       await site.runAsync(() async {
         seed('alfred.mem', ['a', 'b']);
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call(['recall', '--cool']);
         expect(code, 0);
         expect(out.text, contains('body of a'));
@@ -853,7 +862,7 @@ void main() {
       await site.runAsync(() async {
         seed('alfred.mem', ['a']);
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call(['recall', 'mem://alfred.mem/a']);
         expect(code, 0);
         expect(out.text, contains('body of a'));
@@ -861,19 +870,20 @@ void main() {
       });
     });
 
-    test('an address elects its own bank over the ambient \$BENTOS_AGENT, '
-        'silently — the exact call the /sleep skill opens with', () async {
+    test('an address elects its bank; \$BENTOS_AGENT is not a silent ambient',
+        () async {
       await site.runAsync(() async {
         seed('alfred.mem', ['a']);
         seed('agent.bentos.mem', ['life/sleep']);
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
-            .call(['recall', 'mem://agent.bentos.mem/life/sleep']);
+        final code = await mem(
+          environment: const {'BENTOS_AGENT': 'alfred.mem'},
+          out: out,
+          diagnostics: diag,
+        ).call(['recall', 'mem://agent.bentos.mem/life/sleep']);
         expect(code, 0);
         expect(out.text, contains('body of life/sleep'));
         expect(out.text, contains('bank: agent.bentos.mem'));
-        // The ambient bank yielded, and said nothing about it: a default that
-        // argues with the call in front of it is not a default.
         expect(out.text, isNot(contains('bank: alfred.mem')));
         expect(diag.text, isNot(contains('alfred.mem')));
       });
@@ -887,7 +897,8 @@ void main() {
             .call(['recall', 'mem://agent.bentos.mem/life/sleep']);
         expect(code, 0);
         expect(out.text, contains('body of life/sleep'));
-        // Never the "-b <bank> or \$BENTOS_AGENT" fault: the call named a bank.
+        // Never the unnamed-bank fault: the call named a bank.
+        expect(diag.text, isNot(contains('-b <bank>')));
         expect(diag.text, isNot(contains(r'$BENTOS_AGENT')));
       });
     });
@@ -928,7 +939,7 @@ void main() {
         seed('alfred.mem', ['a']);
         seed('agent.bentos.mem', ['life/sleep']);
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call(['recall', 'mem://alfred.mem/a', 'mem://agent.bentos.mem/life/sleep']);
         expect(code, 2);
         expect(diag.text, contains('agent.bentos.mem and alfred.mem'));
@@ -942,7 +953,7 @@ void main() {
       await site.runAsync(() async {
         seed('agent.bentos.mem', ['life/sleep', 'life/flush']);
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(out: out, diagnostics: diag)
             .call(['recall', 'mem://agent.bentos.mem/life/sleep', 'life/flush']);
         expect(code, 0);
         expect(out.text, contains('body of life/sleep'));
@@ -956,7 +967,7 @@ void main() {
       await site.runAsync(() async {
         seed('alfred.mem', ['a']);
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(out: out, diagnostics: diag)
             .call(['recall', 'mem://software.bentos.mem/whatever']);
         expect(code, 1);
         expect(diag.text, contains('software.bentos.mem not found'));
@@ -967,7 +978,7 @@ void main() {
       await site.runAsync(() async {
         seed('alfred.mem', ['a']);
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call(['recall', 'a', 'mem://alfred.mem/a']);
         expect(code, 0);
         expect('body of a'.allMatches(out.text).length, 1);
@@ -1014,7 +1025,7 @@ void main() {
       await site.runAsync(() async {
         materialize('alfred.mem');
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call(['survey']);
         expect(code, 0);
         expect(out.text, startsWith('bank: alfred.mem\n\n'));
@@ -1030,7 +1041,7 @@ void main() {
           body: 'hello',
         ).serialize());
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call(['recall', 'a']);
         expect(code, 0);
         expect(out.text, startsWith('bank: alfred.mem\n\n'));
@@ -1041,7 +1052,7 @@ void main() {
       await site.runAsync(() async {
         materialize('alfred.mem');
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call(['health']);
         expect(code, 0);
         expect(out.text, startsWith('bank: alfred.mem\n\n'));
@@ -1229,18 +1240,18 @@ void main() {
         writeAged(a, 'a', DateTime.utc(2020, 3, 7));
 
         final survey = _Out();
-        await mem(bankEnv: 'alfred.mem', out: survey, diagnostics: _Out())
+        await mem(bank: 'alfred.mem', out: survey, diagnostics: _Out())
             .call(['survey']);
         expect(survey.text, contains('·2020-03-07'));
 
         final recall = _Out();
-        await mem(bankEnv: 'alfred.mem', out: recall, diagnostics: _Out())
+        await mem(bank: 'alfred.mem', out: recall, diagnostics: _Out())
             .call(['recall', 'a']);
         expect(recall.text, contains('modified 2020-03-07'));
         expect(recall.text, isNot(contains('ago')));
 
         final relative = _Out();
-        await mem(bankEnv: 'alfred.mem', out: relative, diagnostics: _Out())
+        await mem(bank: 'alfred.mem', out: relative, diagnostics: _Out())
             .call(['--age', 'relative', 'recall', 'a']);
         expect(relative.text, contains('ago'));
       });
@@ -1409,7 +1420,7 @@ void main() {
         ).serialize());
 
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call(['health', 'a']);
         expect(code, 0);
         expect(out.text, contains('other.mem/x'));
@@ -1427,7 +1438,7 @@ void main() {
         ).serialize());
 
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call(['health']);
         expect(code, 0);
         expect(out.text, contains('orphans (1)'));
@@ -1448,7 +1459,7 @@ void main() {
         ).serialize());
 
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call(['health']);
         expect(code, 0);
         expect(out.text, contains('dead links (1)'));
@@ -1474,7 +1485,7 @@ void main() {
         ).serialize());
 
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call(['health']);
         expect(code, 0);
         expect(out.text, contains('dead links (0)'));
@@ -1497,7 +1508,7 @@ void main() {
         ).serialize());
 
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call(['health']);
         expect(code, 0);
         expect(out.text, contains('dead links (0)'));
@@ -1526,7 +1537,7 @@ void main() {
       await site.runAsync(() async {
         seed(5);
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call(['survey']);
         expect(code, 0);
         for (var i = 0; i < 5; i++) {
@@ -1544,7 +1555,7 @@ void main() {
       await site.runAsync(() async {
         seed(35);
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call(['survey']);
         expect(code, 0);
         expect(out.text, contains('showing 1–30 of 35'));
@@ -1557,7 +1568,7 @@ void main() {
       await site.runAsync(() async {
         seed(35);
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call(['survey', '--limit', '0']);
         expect(code, 0);
         for (var i = 0; i < 35; i++) {
@@ -1572,7 +1583,7 @@ void main() {
       await site.runAsync(() async {
         seed(5);
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call(['survey', '--limit', '2']);
         expect(code, 0);
         expect(out.text, contains('showing 1–2 of 5'));
@@ -1588,7 +1599,7 @@ void main() {
       await site.runAsync(() async {
         seed(5);
         final out = _Out(), diag = _Out();
-        final code = await mem(bankEnv: 'alfred.mem', out: out, diagnostics: diag)
+        final code = await mem(bank: 'alfred.mem', out: out, diagnostics: diag)
             .call(['survey', '--limit', '2', '--offset', '4']);
         expect(code, 0);
         expect(out.text, contains('showing 5–5 of 5'));
@@ -1599,4 +1610,15 @@ void main() {
       });
     });
   });
+}
+
+/// Prefixes `-b` when the test named a bank and the argv did not.
+final class _Cli {
+  _Cli(this._mem, {this.bank});
+  final Mem _mem;
+  final String? bank;
+  Future<int> call(List<String> args) {
+    final named = args.contains('-b') || args.contains('--bank');
+    return _mem.call(bank == null || named ? args : ['-b', bank!, ...args]);
+  }
 }

@@ -30,21 +30,20 @@ final class Bank {
   static const String mainInstanceId = 'main';
 
   /// The suffix a bank's entity name carries: the ontology's, not the being's.
-  /// `$BENTOS_AGENT` names the being — `alfred` — while the entity installed
-  /// beside it is `alfred.mem`, which is why [resolve] may not take the name
-  /// it is given as the last word.
+  /// A call may name the being — `alfred` — while the entity installed beside
+  /// it is `alfred.mem`, which is why [resolve] may not take the name it is
+  /// given as the last word.
   static const String suffix = '.mem';
 
   /// Resolves a bank through the entity primitive, walking up from [vantage].
   /// The only place a bank name becomes a thing on disk.
   ///
-  /// **Exactly as given first, then with [suffix] appended.** A being's
-  /// ambient bank is named by `$BENTOS_AGENT`, which holds the being's name
-  /// and never the entity's, so a lookup that took the name verbatim and
-  /// stopped left every default unreachable and made `-b alfred.mem` the only
-  /// working form. Exact-first keeps an entity literally named `x.mem` — or
-  /// any entity whose name is its own whole truth — winning its own name
-  /// before the fallback is ever tried.
+  /// **Exactly as given first, then with [suffix] appended.** `-b alfred`
+  /// names the being, never the entity, so a lookup that took the name
+  /// verbatim and stopped left every default unreachable and made
+  /// `-b alfred.mem` the only working form. Exact-first keeps an entity
+  /// literally named `x.mem` — or any entity whose name is its own whole
+  /// truth — winning its own name before the fallback is ever tried.
   ///
   /// Forces the walk by reading the entity's genesis — not, as the design
   /// once said, its manifest: a bank authored by [Entity.create] carries no

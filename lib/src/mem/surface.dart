@@ -36,7 +36,8 @@ final class Mem {
       ..argParser.addOption(
         'bank',
         abbr: 'b',
-        help: 'The bank this command addresses. Falls back to \$BENTOS_AGENT.',
+        help: 'The bank this command addresses. Required unless an '
+            'address elects one (mem://bank/topic).',
         valueHelp: 'bank',
       )
       ..argParser.addOption(
@@ -78,8 +79,9 @@ final class Mem {
   final Sink<String> out;
   final Sink<String> diagnostics;
 
-  /// The process environment, for `$BENTOS_AGENT` — read once by the caller
-  /// and handed in, since `dart:io` is out of reach under `mem/`.
+  /// The process environment, handed in because `dart:io` is out of reach
+  /// under `mem/`. Not a bank: no variable here names which store a call
+  /// addresses.
   final Map<String, String> environment;
 
   /// Reads the body from stdin for a write with no `-f`. Null when the host
@@ -228,25 +230,18 @@ abstract base class MemCommand extends Command<void> with PositionalGrammar {
   }
 
   /// `-b` exactly as typed, or null — **an assertion by a hand**, told apart
-  /// from the ambient default so a verb that can elect its own bank knows
-  /// which of the two it would be overruling. `$BENTOS_AGENT` is not read
-  /// here: a variable exported once at a wake says where the caller usually
-  /// stands, never what this call is about.
+  /// from an address that elects its own bank so a verb knows which of the
+  /// two it would be overruling.
   String? statedBank() => globalResults?['bank'] as String?;
 
-  /// `-b`, falling back to `$BENTOS_AGENT` — the kind's own convention, so
-  /// every living waking that never names a bank still reaches its own.
-  /// Neither present is a usage fault naming both cures.
+  /// `-b` / `--bank`. Unnamed is a usage fault that names that flag. No
+  /// environment variable supplies a bank.
   String bankName() {
     final named = statedBank();
-    final ambient = cli.environment['BENTOS_AGENT'];
-    final resolved = named ?? ambient;
-    if (resolved == null) {
-      usageException(
-        '$name: no bank named — pass -b <bank> or set \$BENTOS_AGENT',
-      );
+    if (named == null) {
+      usageException('$name: no bank named — pass -b <bank>');
     }
-    return resolved;
+    return named;
   }
 
   /// `--actor "Name <addr>"`, or a refusal — **the same law the entity floor
@@ -283,8 +278,7 @@ abstract base class MemCommand extends Command<void> with PositionalGrammar {
   /// returns null — the caller's cue to stop.
   ///
   /// [named] is for the one verb that elects its bank from the call's own
-  /// words rather than from the ambient register: see [RecallCommand]'s
-  /// election. Absent it, the ordinary `-b`/`$BENTOS_AGENT` cascade answers.
+  /// words: see [RecallCommand]'s election. Absent it, `-b` answers.
   Bank? resolveBank({String? named}) {
     final vantage = effectiveVantage;
     final resolution = Bank.resolve(named ?? bankName(), vantage: vantage);
@@ -585,12 +579,9 @@ final class RecallCommand extends MemCommand with SelectorArgs {
   /// one `walk` itself prints, the one a skill's first line carries — fail
   /// against the ambient register of whoever happened to be standing there.
   ///
-  /// Three ranks, and only one of them can be wrong:
+  /// Two ranks, and only one of them can be wrong:
   /// - **The addresses elect.** They are this call's own words about what it
   ///   is for.
-  /// - **`$BENTOS_AGENT` yields, silently.** A variable exported once at a
-  ///   wake is a default, not an assertion, and a default that argues with
-  ///   the call in front of it is not a default.
   /// - **`-b` contradicts, loudly.** A hand that typed both said two things;
   ///   which one it meant is not this program's to guess.
   ///
