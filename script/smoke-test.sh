@@ -152,15 +152,28 @@ assert_executes() {
 # independently hashed. [$3] is the set of names allowed to say "unchanged"
 # and never "installed" or "restored"; every other name in [$4] must say
 # "installed" or "restored" and never "unchanged".
+#
+# Exact membership, not `grep -w`: a whole-word match still fires inside
+# "bentos.chat" when checking "bentos", because `.` counts as a word boundary
+# — a false positive the day a name is another name plus a dotted suffix.
+_report_line_names() {
+  echo "$1" | grep -E "^  $2 *:" | sed -E "s/^  $2 *: *//"
+}
+
 assert_report_matches_bytes() {
   local report="$1" unchanged_expected="$2" moved_expected="$3"
+  local installed_names restored_names
+  installed_names=" $(_report_line_names "$report" installed) "
+  restored_names=" $(_report_line_names "$report" restored) "
   for name in $unchanged_expected; do
-    echo "$report" | grep -E '^  installed' | grep -qw "$name" && fail "report says $name installed — its bytes did not move"
-    echo "$report" | grep -E '^  restored'  | grep -qw "$name" && fail "report says $name restored — its bytes did not move"
+    case "$installed_names" in *" $name "*) fail "report says $name installed — its bytes did not move" ;; esac
+    case "$restored_names" in *" $name "*) fail "report says $name restored — its bytes did not move" ;; esac
   done
   for name in $moved_expected; do
-    moved_ok=$(echo "$report" | grep -E '^  (installed|restored)' | grep -qw "$name" && echo yes || echo no)
-    [ "$moved_ok" = "yes" ] || fail "$name's bytes moved and the report never said installed or restored"
+    case "$installed_names$restored_names" in
+      *" $name "*) : ;;
+      *) fail "$name's bytes moved and the report never said installed or restored" ;;
+    esac
   done
 }
 
