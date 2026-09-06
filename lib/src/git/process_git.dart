@@ -685,7 +685,16 @@ final class ProcessGit implements Git {
     // The question Git answered is *which repository contains this directory*,
     // which every ordinary subdirectory answers. Possession is the second
     // question, and only the register answers it.
-    return _linkedWorktrees(answer).contains(_canonical(path)) ? answer : null;
+    //
+    // Canonicalized before it is handed back: Git prints `--git-common-dir`
+    // with forward slashes even on Windows, while every caller comparing this
+    // against a Dart-built path (`Entity.materializedAt`, `Entity.materialize`)
+    // holds one built with `path.join`'s native separator. A bare-string `==`
+    // between the two would refuse a worktree this call just confirmed is
+    // ours.
+    return _linkedWorktrees(answer).contains(_canonical(path))
+        ? _canonical(answer)
+        : null;
   }
 
   @override
