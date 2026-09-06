@@ -195,7 +195,14 @@ final class Bank {
 
   static String _topicOf(Directory root, File file) {
     final rel = p.relative(file.path, from: root.path);
-    return rel.substring(0, rel.length - '.md'.length);
+    final withoutExtension = rel.substring(0, rel.length - '.md'.length);
+    // A topic is a `/`-separated identifier — the form every wikilink in a
+    // page's own body uses, and the form a `mem://bank/topic` address uses.
+    // `p.relative` answers in the host's own separator, `\` on Windows, and
+    // a topic catalogued that way matches no link a page ever spells: every
+    // cross-reference in every page these tools write is forward-slash, by
+    // convention no Windows checkout gets to opt out of.
+    return p.split(withoutExtension).join('/');
   }
 }
 
