@@ -15,12 +15,21 @@
 #
 # Env:
 #   BENTOS_REPO           which repo to prove   (default: cafe01/bentos-userland)
-#   BENTOS_SMOKE_FLOOR    the pinned floor tag   (default: v0.1.1)
+#   BENTOS_SMOKE_FLOOR    the pinned floor tag   (default: v0.1.7)
+#
+# Why v0.1.7 and not something older (see script/smoke-test.sh for the fuller
+# version of this note): pinning the floor hands every command after `install`
+# to that release's own `bentos` binary. v0.1.1 through v0.1.5 predate the
+# Windows `.exe` convention and the fix scoping self-update to the name it was
+# asked for, so pinning to one of those spends the rest of the run inside an
+# ancient binary that writes bare-named files no reader here agrees to call
+# canonical — already-shipped bytes no fix on `main` can rewrite. v0.1.7 is
+# the oldest tag whose own `bentos` already gets both of those right.
 
 $ErrorActionPreference = 'Stop'
 
 $Repo = if ($env:BENTOS_REPO) { $env:BENTOS_REPO } else { 'cafe01/bentos-userland' }
-$FloorTag = if ($env:BENTOS_SMOKE_FLOOR) { $env:BENTOS_SMOKE_FLOOR } else { 'v0.1.1' }
+$FloorTag = if ($env:BENTOS_SMOKE_FLOOR) { $env:BENTOS_SMOKE_FLOOR } else { 'v0.1.7' }
 
 function Say([string]$msg) { Write-Host "smoke: $msg" }
 function Step([string]$msg) { Write-Host ""; Write-Host "── $msg" }

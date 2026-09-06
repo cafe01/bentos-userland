@@ -19,16 +19,28 @@
 #
 # Env:
 #   BENTOS_REPO          which repo to prove       (default: cafe01/bentos-userland)
-#   BENTOS_SMOKE_FLOOR    the pinned floor tag       (default: v0.1.1)
+#   BENTOS_SMOKE_FLOOR    the pinned floor tag       (default: v0.1.7)
 #
 # The floor is a real release old enough to sit behind the latest one —
 # pinned by name, never "whatever the previous release was". `update` itself
 # still resolves the true latest the one way production ever does; this
 # script never guesses what that is. Caveat named, not solved here: the pin
-# works by tag-prefix startsWith, which today's tags (v0.1.1, v0.1.2, v0.1.3)
-# make exact, but v0.1.10 would also start with "v0.1.1" — the day a tag like
-# that is cut, this floor needs a prefix that cannot collide (or the
-# mechanism it leans on needs an exact-match option).
+# works by tag-prefix startsWith, which today's tags make exact, but v0.1.70
+# would also start with "v0.1.7" — the day a tag like that is cut, this floor
+# needs a prefix that cannot collide (or the mechanism it leans on needs an
+# exact-match option).
+#
+# Why v0.1.7 and not something older: pinning the floor hands every command
+# after `install` to *that release's own* `bentos` binary — self-update,
+# update and rollback all run as whatever the floor shipped, not as whatever
+# bootstrapped this run. v0.1.1 through v0.1.5 predate the Windows `.exe`
+# convention and the fix that scopes self-update to the name it was asked
+# for; pin the floor to one of those and the ancient binary spends the rest
+# of the run writing bare-named files no reader here has ever agreed to call
+# canonical, and mis-reporting what it touched while doing it. That binary
+# already shipped — no fix on `main` rewrites bytes GitHub already published.
+# v0.1.7 is the oldest tag whose own `bentos` already gets both of those
+# right, so it can safely carry the rest of this script forward.
 #
 # What "old enough" does NOT mean: that every name's bytes differ between the
 # floor and the latest. A release that only changed `bentos` leaves every
@@ -42,7 +54,7 @@
 set -euo pipefail
 
 REPO="${BENTOS_REPO:-cafe01/bentos-userland}"
-FLOOR_TAG="${BENTOS_SMOKE_FLOOR:-v0.1.1}"
+FLOOR_TAG="${BENTOS_SMOKE_FLOOR:-v0.1.7}"
 
 # The repo is public, so nothing here strictly needs a token — but this script
 # makes over a dozen API calls in a few seconds, and GitHub's unauthenticated
@@ -165,7 +177,11 @@ assert_executes() {
 # "bentos.chat" when checking "bentos", because `.` counts as a word boundary
 # — a false positive the day a name is another name plus a dotted suffix.
 _report_line_names() {
-  echo "$1" | grep -E "^  $2 *:" | sed -E "s/^  $2 *: *//"
+  # No line for that verb (e.g. a report with no "restored :" at all) is a
+  # valid, empty result — not a failure. Under `set -e -o pipefail`, grep's
+  # own no-match exit status would otherwise propagate out of the pipeline
+  # and kill the whole script the moment a report happens to lack one verb.
+  echo "$1" | grep -E "^  $2 *:" | sed -E "s/^  $2 *: *//" || true
 }
 
 assert_report_matches_bytes() {
