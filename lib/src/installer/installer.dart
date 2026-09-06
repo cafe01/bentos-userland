@@ -25,6 +25,7 @@ final class InstallReport {
     required this.linked,
     this.replaced,
     this.preexisting = const {},
+    this.removed = const [],
   });
 
   final String stream;
@@ -55,6 +56,12 @@ final class InstallReport {
 
   /// The names the prefix already held when this act began.
   final Set<String> preexisting;
+
+  /// Taken off the prefix entirely — a rollback's answer for a name the
+  /// version it returned to never held at all, left behind by whatever put
+  /// it there. Always empty outside of `rollback`: install and update only
+  /// ever add to or overwrite the prefix, never prune it.
+  final List<String> removed;
 
   /// Whether this act rewrote a `bentos` the caller already had. The next one
   /// they type is then a different binary, which nothing else on the terminal
@@ -90,6 +97,7 @@ final class InstallReport {
       // created is already there, and the machine would look like it had it
       // all along.
       preexisting: preexisting,
+      removed: {...removed, ...next.removed}.toList(),
     );
   }
 }
@@ -208,6 +216,10 @@ final class Installer {
   /// own — it was reported in one line naming no name, which is the lighter
   /// report for the heavier act. Nothing is fetched, so `installed` is always
   /// empty and every name that moved is `restored`.
+  ///
+  /// A name the version being restored never held — something a later update
+  /// put on the PATH — cannot be `restored`, since there is nothing of that
+  /// version's to put back; it comes back as `removed` instead.
   InstallReport? rollback(String stream) {
     final back = store.previousVersion(stream);
     final held = back == null ? const <String>[] : store.namesIn(stream, back);
@@ -225,6 +237,7 @@ final class Installer {
       unavailable: const [],
       linked: names,
       preexisting: preexisting,
+      removed: outcome.removed.toList(),
     );
   }
 }

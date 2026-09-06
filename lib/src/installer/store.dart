@@ -213,18 +213,42 @@ final class VersionStore {
   ///
   /// The changed names come back for the same reason [activate]'s do: a report
   /// about this machine may be built from nothing else.
+  ///
+  /// **A name [back] never held is not [back]'s to leave behind.** `update`
+  /// can widen the set on the PATH — a release adds a coreutil that did not
+  /// exist before — and `openVersion` widens it again on the way, carrying
+  /// every name the live version holds into whatever gets installed next.
+  /// Substituting only [back]'s own names would put its binaries in place and
+  /// leave that newer name sitting there untouched: not reported, because no
+  /// version's report ever iterates past its own set, and invisible to
+  /// `drift`, because drift is read against the live version's own names and
+  /// this one now belongs to none. The prefix would hold something [back]
+  /// never shipped, which is a rollback in name only. So every name [from]
+  /// held that [back] does not is removed from the prefix here, and comes
+  /// back as [RollbackOutcome.removed] for the same reason [changed] does —
+  /// a report is built from what happened to the prefix, not from what the
+  /// store's own directories say.
   RollbackOutcome? rollback(String stream) {
     final from = currentVersion(stream);
     final back = previousVersion(stream);
     if (back == null) return null;
+    final backNames = namesIn(stream, back);
     final changed = <String>{};
-    for (final name in namesIn(stream, back)) {
+    for (final name in backNames) {
       if (substitute(stream: stream, version: back, name: name)) {
         changed.add(name);
       }
     }
+    final removed = <String>{};
+    if (from != null) {
+      final backSet = backNames.toSet();
+      for (final name in namesIn(stream, from)) {
+        if (backSet.contains(name)) continue;
+        if (_removeFromPrefix(name)) removed.add(name);
+      }
+    }
     InstallState.read(home).rollback(stream);
-    return RollbackOutcome(version: back, from: from, changed: changed);
+    return RollbackOutcome(version: back, from: from, changed: changed, removed: removed);
   }
 
   /// Write one artifact over its name in the prefix. Returns whether the bytes
@@ -274,6 +298,27 @@ final class VersionStore {
     }
     return sha256.convert(destination.readAsBytesSync()) ==
         sha256.convert(source.readAsBytesSync());
+  }
+
+  /// Take [name] off the prefix entirely — rollback's answer for a name the
+  /// version it is returning to never held. There is no artifact to
+  /// substitute in its place, so the only correct act is removal.
+  ///
+  /// Falls back to the same displacement `substitute` uses when the direct
+  /// delete is refused: a host that will not delete a running executable will
+  /// still let it be renamed out of its own name, which is enough to make the
+  /// PATH resolve to nothing under it.
+  bool _removeFromPrefix(String name) {
+    final path = p.join(prefix, prefixName(name));
+    if (io.FileSystemEntity.typeSync(path, followLinks: false) != io.FileSystemEntityType.file) {
+      return false;
+    }
+    try {
+      io.File(path).deleteSync();
+    } on io.FileSystemException {
+      _displaceRunningExecutable(path);
+    }
+    return true;
   }
 
   /// A host that refuses to rename over a running executable is given the file
@@ -345,6 +390,7 @@ final class RollbackOutcome {
     required this.version,
     required this.from,
     required this.changed,
+    this.removed = const {},
   });
 
   /// The version now live.
@@ -355,6 +401,11 @@ final class RollbackOutcome {
 
   /// The names whose bytes in the prefix changed.
   final Set<String> changed;
+
+  /// Names the version rolled back from held that the version now live never
+  /// did, taken off the prefix entirely rather than left as an orphan no
+  /// version's report or drift reading will ever mention again.
+  final Set<String> removed;
 }
 
 final class IntegrityException implements Exception {

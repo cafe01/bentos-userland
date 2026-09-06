@@ -157,6 +157,12 @@ final class BentosRunner {
     if (report.unchanged.isNotEmpty) {
       out.writeln('  unchanged : ${report.unchanged.join(" ")}');
     }
+    if (report.removed.isNotEmpty) {
+      // A name the version now live never held at all — a later update's
+      // name that a rollback past it takes off the PATH entirely, since
+      // there is nothing of the restored version's to put there instead.
+      out.writeln('  removed   : ${report.removed.join(" ")}');
+    }
     if (report.unavailable.isNotEmpty) {
       err.writeln(
         '  no $host build: ${report.unavailable.join(" ")}',

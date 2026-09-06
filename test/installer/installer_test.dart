@@ -553,6 +553,34 @@ void main() {
         expect(bytesAt(n), before[n]);
       }
     });
+
+    // Found against the real release stream: `update` widened the prefix by
+    // one name a later release introduced, `rollback` put every one of the
+    // floor's own names back and never mentioned the new one — and left its
+    // file sitting in the prefix untouched. The version restored never held
+    // it, `namesIn` on that version does not know it exists, and `drift`
+    // reads only the live version's own names — so once a version report
+    // never claims it, no report or health check will ever mention that name
+    // again, and the person who rolled back still has it on their PATH.
+    test('a name a later release introduced is removed, not left behind', () async {
+      publish('0.2.0', names);
+      await run(['install']);
+      publish('0.3.0', [...names, 'llm']);
+      await run(['install']);
+      expect(File(pathEntry('llm')).existsSync(), isTrue);
+
+      final (code, out, _) = await run(['rollback']);
+
+      expect(code, 0);
+      expect(File(pathEntry('llm')).existsSync(), isFalse,
+          reason: '0.2.0 never held llm — rollback has nothing of its own to leave there');
+      expect(RegExp(r'removed\s+:.*\bllm\b').hasMatch(out), isTrue,
+          reason: 'a name taken off the prefix is said out loud, the same as one restored');
+      // The floor's own names still came back correctly.
+      for (final name in names) {
+        expect(RegExp('restored\\s+:.*\\b$name\\b').hasMatch(out), isTrue);
+      }
+    });
   });
 
   /// A finding is a finding, whichever of the three it is — and it is content
