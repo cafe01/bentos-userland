@@ -138,6 +138,91 @@ void main() {
     expect(File(p.join(prefix, 'bentos.old')).existsSync(), isFalse);
   });
 
+  group('a stray file from a writer that never learned the .exe convention', () {
+    // Found against a real Windows smoke test: pinning the whole userland to
+    // an old-enough floor and installing it hands `bentos` itself an ancient
+    // build — one compiled before this store ever suffixed the prefix with
+    // `.exe` — and every command after that is carried out *by that build*,
+    // since it is now the file Windows resolves `bentos` to. Its own
+    // `substitute()` wrote the bare name and never displaced `<name>.exe` at
+    // all (it never looked for it), so the bare name and the `.exe` one piled
+    // up side by side, each with its own `.old` — the same real machine ended
+    // up holding `mem`, `mem.exe` *and* `mem.old` at once.
+    //
+    // That old binary cannot be fixed after the fact — it already shipped.
+    // What can: the *current* store must never again be the one leaving a
+    // second convention behind, and must clean up whichever stray a past
+    // writer left, the moment it next touches that name — so one bad build's
+    // mess does not outlive every install that comes after it.
+    test('substitute purges a stray bare-name file left at the same name', () {
+      hold('0.2.0', {'mem': script('echo "mem 0.2.0"')});
+      hold('0.3.0', {'mem': script('echo "mem 0.3.0"')});
+
+      final store = VersionStore(home: home, prefix: prefix, windowsSemantics: true);
+      store.activate(stream, '0.2.0');
+      expect(File(p.join(prefix, 'mem.exe')).existsSync(), isTrue);
+
+      // Wreckage from a writer that predates `prefixName` — same bytes, wrong
+      // name, sitting right next to the canonical file.
+      File(p.join(prefix, 'mem')).writeAsStringSync('old-convention garbage');
+
+      store.activate(stream, '0.3.0');
+
+      expect(File(p.join(prefix, 'mem')).existsSync(), isFalse,
+          reason: 'the bare name is not a second install to keep in sync — it is stale');
+      expect(File(p.join(prefix, 'mem.exe')).readAsStringSync(), contains('mem 0.3.0'));
+    });
+
+    test('substitute purges a stray bare .old backup — one backup convention, not two', () {
+      hold('0.2.0', {'mem': script('echo "mem 0.2.0"')});
+      hold('0.3.0', {'mem': script('echo "mem 0.3.0"')});
+
+      final store = VersionStore(home: home, prefix: prefix, windowsSemantics: true);
+      store.activate(stream, '0.2.0');
+
+      File(p.join(prefix, 'mem.old')).writeAsStringSync('old-convention backup');
+
+      store.activate(stream, '0.3.0');
+
+      expect(File(p.join(prefix, 'mem.old')).existsSync(), isFalse);
+      expect(File(p.join(prefix, 'mem.exe.old')).readAsStringSync(), contains('mem 0.2.0'),
+          reason: 'the one backup convention this store writes is still made');
+      expect(File(p.join(prefix, 'mem.exe')).readAsStringSync(), contains('mem 0.3.0'));
+    });
+
+    test('a name already at the right version still sheds a stray bare file', () {
+      // The bytes at the canonical name may already be correct — nothing to
+      // write — but the stray is cleaned up regardless, so it cannot survive
+      // by the new version happening to match what a prior activate() left.
+      hold('0.2.0', {'mem': script('echo "mem 0.2.0"')});
+      final store = VersionStore(home: home, prefix: prefix, windowsSemantics: true);
+      store.activate(stream, '0.2.0');
+
+      File(p.join(prefix, 'mem')).writeAsStringSync('old-convention garbage');
+      expect(store.substitute(stream: stream, version: '0.2.0', name: 'mem'), isFalse,
+          reason: 'the canonical file was already this version — nothing to write');
+      expect(File(p.join(prefix, 'mem')).existsSync(), isFalse);
+    });
+
+    test('rollback\'s removal of an orphaned name also sheds its stray bare file', () {
+      hold('0.2.0', {'mem': script('echo "mem 0.2.0"')});
+      hold('0.3.0', {'mem': script('echo "mem 0.3.0"'), 'llm': script('echo "llm 0.3.0"')});
+
+      final store = VersionStore(home: home, prefix: prefix, windowsSemantics: true);
+      store.activate(stream, '0.2.0');
+      store.activate(stream, '0.3.0');
+      expect(File(p.join(prefix, 'llm.exe')).existsSync(), isTrue);
+
+      File(p.join(prefix, 'llm')).writeAsStringSync('old-convention garbage');
+
+      final outcome = store.rollback(stream)!;
+
+      expect(outcome.removed, contains('llm'));
+      expect(File(p.join(prefix, 'llm')).existsSync(), isFalse);
+      expect(File(p.join(prefix, 'llm.exe')).existsSync(), isFalse);
+    });
+  });
+
   test('under Windows semantics the prefix name carries .exe, and every reader agrees', () {
     // The seam this test exists to prove: namesInPrefix, drift and substitute
     // all resolve the same on-disk name. Broken on purpose once (dropping

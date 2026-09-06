@@ -274,6 +274,7 @@ final class VersionStore {
         '$name: version $version of "$stream" does not hold it',
       );
     }
+    _purgeStaleConvention(name);
     if (_prefixHolds(name, source)) return false;
     io.Directory(stagingDir).createSync(recursive: true);
     io.Directory(prefix).createSync(recursive: true);
@@ -287,6 +288,47 @@ final class VersionStore {
     _displaceRunningExecutable(destination);
     _rename(staged.path, destination);
     return true;
+  }
+
+  /// Reconcile a name to the one file convention this store's own [_windows]
+  /// says is canonical, by removing whatever the *other* convention left
+  /// behind.
+  ///
+  /// **Why this exists at all**: `prefixName` is a property of the code doing
+  /// the writing, not of the bytes being written or the version they came
+  /// from. A binary compiled before this rule existed — or any other bug that
+  /// forgets it — writes the bare name; this store writes `<name>.exe`. If
+  /// that older binary is ever the one running (the machine's own `bentos`
+  /// is, itself, just another name this store substitutes — pin the whole
+  /// userland to an old-enough floor and install it, and the `bentos` that
+  /// carries out every command after that *is* the floor's build), the two
+  /// conventions land side by side and neither writer's own bookkeeping ever
+  /// looks for the other's file, so nothing before this method has ever
+  /// noticed. `namesInPrefix`, `drift` and a shell's own PATHEXT resolution
+  /// only ever agree on one file per name when there is only one file per
+  /// name — so this is called on every touch of [name], not only the first,
+  /// which is what stops a stray file from surviving one substitution just
+  /// because it predates this method.
+  ///
+  /// A no-op on POSIX and for any name `prefixName` does not change — there is
+  /// only one convention there, so there is nothing stale to strand.
+  void _purgeStaleConvention(String name) {
+    final canonical = prefixName(name);
+    if (canonical == name) return;
+    for (final stray in [name, '$name.old']) {
+      final path = p.join(prefix, stray);
+      if (io.FileSystemEntity.typeSync(path, followLinks: false) !=
+          io.FileSystemEntityType.file) {
+        continue;
+      }
+      try {
+        io.File(path).deleteSync();
+      } on io.FileSystemException {
+        // Locked by whatever still has it open. Left for the next call to
+        // this same method to try again — never fatal to the substitution
+        // that is actually being asked for.
+      }
+    }
   }
 
   /// Whether the name in the prefix is already, byte for byte, [source].
@@ -309,6 +351,7 @@ final class VersionStore {
   /// still let it be renamed out of its own name, which is enough to make the
   /// PATH resolve to nothing under it.
   bool _removeFromPrefix(String name) {
+    _purgeStaleConvention(name);
     final path = p.join(prefix, prefixName(name));
     if (io.FileSystemEntity.typeSync(path, followLinks: false) != io.FileSystemEntityType.file) {
       return false;
