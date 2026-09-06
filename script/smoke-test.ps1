@@ -7,10 +7,6 @@
 # never against what `bentos` says about itself. See that file for the shape;
 # this one only carries what Windows makes different.
 #
-# It is expected to fail today, and to fail by naming what is missing: there is
-# no bootstrap.ps1 in the release yet. That red is the seam — this gate turns
-# green by itself the moment the bootstrap lands, with nothing here to edit.
-#
 # Narrower than the POSIX gate on purpose, for now: it proves the mechanism
 # (install, self-update, update, rollback, every name executes) but not yet the
 # report-vs-bytes cross-check (assert_report_matches_bytes) or the manifest
@@ -78,10 +74,14 @@ try {
   Step "iwr bootstrap.ps1 | iex against the published release ($Repo)"
   $bootstrapUrl = "https://github.com/$Repo/releases/latest/download/bootstrap.ps1"
   try {
-    $script = (Invoke-WebRequest -UseBasicParsing -Uri $bootstrapUrl).Content
+    $content = (Invoke-WebRequest -UseBasicParsing -Uri $bootstrapUrl).Content
   } catch {
     Fail "no bootstrap.ps1 published at $bootstrapUrl — script/bootstrap.ps1 does not exist yet, which is the piece this gate is waiting on"
   }
+  # GitHub serves release assets as application/octet-stream, so
+  # Invoke-WebRequest hands back raw bytes rather than a decoded string —
+  # Invoke-Expression needs the text, not the wire encoding.
+  $script = if ($content -is [byte[]]) { [System.Text.Encoding]::UTF8.GetString($content) } else { $content }
   Invoke-Expression $script
   $bentosExe = Join-Path $Bin 'bentos.exe'
   if (-not (Test-Path $bentosExe)) { Fail "bootstrap did not leave an executable bentos.exe at $bentosExe" }

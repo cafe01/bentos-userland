@@ -237,12 +237,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash script/smoke-test.sh
 
-  # The Windows seam, declared red on purpose: this job runs after the release
-  # is published, so its own verdict never gates Linux and macOS, and it fails
-  # today by naming exactly what is missing — there is no bootstrap.ps1 in the
-  # release yet. It turns green by itself, with nothing here to edit, the day
-  # that script lands. Until then it is a standing, honest red rather than a
-  # silent gap the matrix does not mention.
+  # The Windows seam. Runs after the release is published, so its own verdict
+  # never gates Linux and macOS.
   smoke-windows:
     needs: assemble
     runs-on: windows-latest
