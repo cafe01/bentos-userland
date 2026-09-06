@@ -223,8 +223,9 @@ class Program {
 /// Resolves [program] the way the shell would: a bare name through `PATH`,
 /// anything with a separator as a path. Returns the absolute path, or `null`
 /// when nothing executable answers to the name.
-String? resolveProgram(String program, {Map<String, String>? environment}) {
+String? resolveProgram(String program, {Map<String, String>? environment, bool? windows}) {
   if (program.isEmpty) return null;
+  final isWindows = windows ?? io.Platform.isWindows;
 
   if (p.split(program).length > 1 || program.contains('/')) {
     final path = p.absolute(program);
@@ -234,12 +235,36 @@ String? resolveProgram(String program, {Map<String, String>? environment}) {
   final env = environment ?? io.Platform.environment;
   final search = env['PATH'] ?? env['Path'] ?? '';
   if (search.isEmpty) return null;
-  for (final dir in search.split(io.Platform.isWindows ? ';' : ':')) {
+  final names = isWindows ? _windowsCandidateNames(program, env) : [program];
+  for (final dir in search.split(isWindows ? ';' : ':')) {
     if (dir.isEmpty) continue;
-    final candidate = p.join(dir, program);
-    if (_isExecutable(candidate)) return p.absolute(candidate);
+    for (final name in names) {
+      final candidate = p.join(dir, name);
+      if (_isExecutable(candidate)) return p.absolute(candidate);
+    }
   }
   return null;
+}
+
+/// Windows resolves a bare name against `PATHEXT`, trying each suffix in
+/// turn — the same rule `cmd.exe`/`CreateProcess` use, and the reason a shell
+/// can run `mem` when the only file on disk is `mem.exe`. `resolveProgram`'s
+/// own literal `p.join(dir, program)` never carried this: it always looked
+/// for the bare name exactly as given, so a name with only a `.exe` on disk
+/// was invisible to it — true here since this function was written, not a
+/// regression, and only ever masked on a machine that happened to also carry
+/// a bare-named copy alongside the `.exe`. A name that already ends in a
+/// recognized extension is tried as itself first, so `resolveProgram('mem.exe')`
+/// does not also probe for `mem.exe.exe`.
+List<String> _windowsCandidateNames(String program, Map<String, String> env) {
+  final pathext = (env['PATHEXT'] ?? env['Pathext'] ?? '.COM;.EXE;.BAT;.CMD')
+      .split(';')
+      .where((ext) => ext.isNotEmpty);
+  final lower = program.toLowerCase();
+  if (pathext.any((ext) => lower.endsWith(ext.toLowerCase()))) {
+    return [program];
+  }
+  return [program, for (final ext in pathext) '$program$ext'];
 }
 
 /// A `PATH` entry that is not executable is skipped, the way the shell skips

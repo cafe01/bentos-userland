@@ -20,12 +20,61 @@ void main() {
 
       expect(resolved, isNotNull);
       expect(p.isAbsolute(resolved!), isTrue);
-      expect(p.basename(resolved), 'sh');
+      // Not the bare name verbatim: on Windows this may legitimately answer
+      // with an earlier PATH entry's sh.EXE ahead of a later one's bare sh —
+      // the same order a real shell would try them in — so only the name
+      // without whatever extension PATHEXT resolution added is asserted.
+      expect(p.basenameWithoutExtension(resolved), 'sh');
       expect(File(resolved).existsSync(), isTrue);
     });
 
     test('a name nothing answers to resolves to nothing', () {
       expect(resolveProgram('no-such-program-anywhere-at-all'), isNull);
+    });
+
+    test('on Windows, a bare name resolves through PATHEXT to its own .exe',
+        () {
+      // Forced via the injectable flag rather than Platform.isWindows, so this
+      // proves the rule on every host the suite runs on — the exact gap that
+      // let this go unnoticed: nothing exercised PATHEXT resolution on a
+      // machine that only ever had `mem.exe`, never a bare `mem` beside it.
+      final room = Directory.systemTemp.createTempSync('mcp-resolution-pathext-');
+      addTearDown(() => room.deleteSync(recursive: true));
+      final exe = File(p.join(room.path, 'mem.exe'))
+        ..writeAsStringSync('not really a program\n');
+      Process.runSync('chmod', ['755', exe.path]);
+
+      final resolved = resolveProgram(
+        'mem',
+        environment: {'PATH': room.path, 'PATHEXT': '.COM;.EXE;.BAT;.CMD'},
+        windows: true,
+      );
+
+      // Not exact-string equality: real PATHEXT is uppercase by default, so
+      // the candidate this builds is "mem.EXE" — a different string from the
+      // "mem.exe" on disk, and the right file anyway, since Windows resolves
+      // both to the one case-insensitive name a real filesystem there uses.
+      expect(resolved, isNotNull);
+      expect(File(resolved!).existsSync(), isTrue);
+      expect(p.equals(resolved, exe.path), isTrue);
+    });
+
+    test('on Windows, a name already carrying a known extension is not doubled',
+        () {
+      final room = Directory.systemTemp.createTempSync('mcp-resolution-pathext-');
+      addTearDown(() => room.deleteSync(recursive: true));
+      final exe = File(p.join(room.path, 'mem.exe'))
+        ..writeAsStringSync('not really a program\n');
+      Process.runSync('chmod', ['755', exe.path]);
+
+      final resolved = resolveProgram(
+        'mem.exe',
+        environment: {'PATH': room.path, 'PATHEXT': '.COM;.EXE;.BAT;.CMD'},
+        windows: true,
+      );
+
+      expect(resolved, exe.path);
+      expect(File('${exe.path}.exe').existsSync(), isFalse);
     });
 
     test('a file that is not executable is not a program', () {
