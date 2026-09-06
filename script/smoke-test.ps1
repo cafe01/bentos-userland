@@ -43,7 +43,14 @@ try {
   # store's.
   function HashPrefix {
     if (-not (Test-Path $Bin)) { return @() }
-    Get-ChildItem -Path $Bin -File | Sort-Object Name | ForEach-Object {
+    # A `.old` backup is a legitimate, intentional byproduct of substitution
+    # under Windows semantics — one generation, kept until the next
+    # substitution of that name, never cleared just because a later command
+    # ran. A pristine floor install has never substituted anything and so has
+    # none; install->update->rollback always substitutes at least once, so it
+    # always leaves one. Comparing them byte-for-byte would fail on every
+    # cycle regardless of correctness -- the backup is history, not state.
+    Get-ChildItem -Path $Bin -File | Where-Object { $_.Name -notlike '*.old' } | Sort-Object Name | ForEach-Object {
       "$($_.Name) $(Sha256Of $_.FullName)"
     }
   }

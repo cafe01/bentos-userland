@@ -75,6 +75,14 @@ sha256_of() {
 # store's. Declared once so every phase hashes the same way.
 hash_prefix() {
   for f in "$BIN"/*; do
+    # A `.old` backup is a legitimate, intentional byproduct of substitution
+    # under Windows semantics — one generation, kept until the next
+    # substitution of that name, never cleared just because a later command
+    # ran. A pristine floor install has never substituted anything and so has
+    # none; install→update→rollback always substitutes at least once, so it
+    # always leaves one. Comparing them byte-for-byte would fail on every
+    # cycle regardless of correctness — the backup is history, not state.
+    case "$(basename "$f")" in *.old) continue ;; esac
     [ -f "$f" ] && echo "$(basename "$f") $(sha256_of "$f")"
   done | sort
 }
