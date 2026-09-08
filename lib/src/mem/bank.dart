@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import '../entity/action.dart' as ent;
-import '../entity/entity.dart';
 import '../git/git_ambient.dart';
 import '../git/model/actor.dart';
 import 'page.dart';
@@ -12,14 +11,19 @@ import 'page.dart';
 /// name from a vantage, reads the tree in place, lands writes as acts, and
 /// brings the tree to the landed line.
 ///
-/// **No path is composed here or anywhere else** — [resolve] hands the name
-/// and the vantage to [Entity] and takes what comes back. Reads are in place
-/// (`pages()`, `page()`); writes are never in place (`land()`), and
-/// reconciling the tree afterwards is `advance()` and nothing else.
+/// **No Entity, no Place.lookup, no Things CLI.** [resolve] walks up from the
+/// vantage and takes a git work tree whose directory name — or a super-repo
+/// gitlink's path basename — matches the candidate. Reads are in place
+/// (`pages()`, `page()`); writes are never a silent overwrite of a person's
+/// edits (`land()`), and reconciling the tree afterwards is `advance()`.
 final class Bank {
-  Bank._(this._entity, this.vantage);
-
-  final Entity _entity;
+  Bank._({
+    required this.name,
+    required this.vantage,
+    required Directory address,
+    required bool treeStands,
+  })  : _address = address,
+        _treeStands = treeStands;
 
   /// The vantage this bank was resolved from, carried so that a walk opening
   /// a foreign bank opens it from the same one without being told.
@@ -30,27 +34,24 @@ final class Bank {
   static const String mainInstanceId = 'main';
 
   /// The suffix a bank's entity name carries: the ontology's, not the being's.
-  /// A call may name the being — `alfred` — while the entity installed beside
+  /// A call may name the being — `alfred` — while the tree standing beside
   /// it is `alfred.mem`, which is why [resolve] may not take the name it is
   /// given as the last word.
   static const String suffix = '.mem';
 
-  /// Resolves a bank through the entity primitive, walking up from [vantage].
-  /// The only place a bank name becomes a thing on disk.
+  final String name;
+  final Directory _address;
+  final bool _treeStands;
+
+  /// Resolves a bank by walking up from [vantage]. The only place a bank
+  /// name becomes a thing on disk.
   ///
   /// **Exactly as given first, then with [suffix] appended.** `-b alfred`
-  /// names the being, never the entity, so a lookup that took the name
+  /// names the being, never the tree, so a lookup that took the name
   /// verbatim and stopped left every default unreachable and made
-  /// `-b alfred.mem` the only working form. Exact-first keeps an entity
-  /// literally named `x.mem` — or any entity whose name is its own whole
+  /// `-b alfred.mem` the only working form. Exact-first keeps a tree
+  /// literally named `x.mem` — or any tree whose name is its own whole
   /// truth — winning its own name before the fallback is ever tried.
-  ///
-  /// Forces the walk by reading the entity's genesis — not, as the design
-  /// once said, its manifest: a bank authored by [Entity.create] carries no
-  /// manifest at all (`create` leaves genesis empty), so reading one would
-  /// throw on every bank of our own making rather than only on the absent
-  /// ones. Genesis forces the identical walk and exists on every entity that
-  /// [EntityNotInstalled] does not already rule out.
   static Resolution resolve(String name, {required String vantage}) {
     final tried = <String>[
       name,
@@ -63,40 +64,84 @@ final class Bank {
     return NotFound(tried, vantage);
   }
 
-  /// One lookup, or null where no such entity is installed from [vantage].
+  /// One lookup, or null where no work tree and no gitlink answers [name]
+  /// on the walk up from [vantage].
   static Bank? _open(String name, {required String vantage}) {
-    final entity = Entity(name, from: vantage);
-    try {
-      entity.genesis;
-    } on EntityNotInstalled {
-      return null;
+    var dir = Directory(p.normalize(vantage));
+    while (true) {
+      final child = Directory(p.join(dir.path, name));
+      if (_isWorktreeRoot(child.path)) {
+        return Bank._(
+          name: name,
+          vantage: vantage,
+          address: child,
+          treeStands: true,
+        );
+      }
+      if (_isWorktreeRoot(dir.path) && p.basename(dir.path) == name) {
+        return Bank._(
+          name: name,
+          vantage: vantage,
+          address: dir,
+          treeStands: true,
+        );
+      }
+      if (_isWorktreeRoot(dir.path) && _gitlinkNamed(dir.path, name)) {
+        return Bank._(
+          name: name,
+          vantage: vantage,
+          address: Directory(p.join(dir.path, name)),
+          treeStands: false,
+        );
+      }
+      final parent = dir.parent;
+      if (parent.path == dir.path) break;
+      dir = parent;
     }
-    return Bank._(entity, vantage);
+    return null;
   }
 
-  String get name => _entity.name;
+  static bool _isWorktreeRoot(String path) {
+    if (!Directory(path).existsSync()) return false;
+    final top = ambientGit.topLevel(path);
+    if (top == null) return false;
+    return _canonical(top) == _canonical(path);
+  }
+
+  static bool _gitlinkNamed(String workTree, String name) {
+    if (ambientGit.stagedGitlink(workTree, name) != null) return true;
+    for (final entry in ambientGit.stagedEntries(workTree, '')) {
+      if (entry.mode == '160000' && p.basename(entry.path) == name) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static String _canonical(String path) {
+    final dir = Directory(path);
+    return dir.existsSync() ? dir.resolveSymbolicLinksSync() : path;
+  }
 
   /// Whether a tree of this bank stands, so a reader can tell "empty" from
   /// "invisible" before asking [pages] or [page] — both answer `[]`/`null`
   /// either way, which is honest about *what came back* and silent about
   /// *why*. A caller that means to report the difference checks this first.
-  bool get hasTree => _entity.materializedAt != null;
+  bool get hasTree => _treeStands && _isWorktreeRoot(_address.path);
 
   /// The address a tree of this bank would stand at, whether or not one
-  /// does — what a "no tree" reader message names. The one place this path
-  /// is composed for reads, mirroring [advance]'s own use of it for writes.
-  Directory get materializationAddress => _entity.materializationAddress;
+  /// does — what a "no tree" reader message names.
+  Directory get materializationAddress => _address;
+
+  Directory? get _root => hasTree ? _address : null;
 
   /// Every page of the bank, read from the working tree with ordinary file
-  /// IO. **Not `Instance.read`**, which answers at the ref with no worktree
-  /// and would make a hand-edited page invisible.
-  ///
-  /// A bank with no working tree materialized has no pages, and says so with
-  /// an empty list — indistinguishable from a bank that has a tree and
+  /// IO. A bank with no working tree materialized has no pages, and says so
+  /// with an empty list — indistinguishable from a bank that has a tree and
   /// genuinely holds nothing. A caller that must tell the two apart checks
   /// [hasTree] first; this method does not.
   List<Page> pages() {
-    final root = _entity.materializedAt;
+    final root = _root;
     if (root == null) return const [];
     return [
       for (final file in _markdownFiles(root))
@@ -105,7 +150,7 @@ final class Bank {
   }
 
   Page? page(String topic) {
-    final root = _entity.materializedAt;
+    final root = _root;
     if (root == null) return null;
     final file = File(p.join(root.path, '$topic.md'));
     if (!file.existsSync()) return null;
@@ -113,10 +158,9 @@ final class Bank {
   }
 
   /// The topics whose files hold uncommitted changes — a person's
-  /// hand-edits. No entity member answers this; it is Git's own status,
-  /// asked here because this is the one component allowed to ask.
+  /// hand-edits.
   List<String> get handEdited {
-    final root = _entity.materializedAt;
+    final root = _root;
     if (root == null) return const [];
     return [
       for (final path in ambientGit.worktreeDirtyPaths(root.path))
@@ -124,63 +168,113 @@ final class Bank {
     ];
   }
 
-  /// One act: the body writes into a private area the primitive opens, and
-  /// the line moves by an ordinary commit. Nothing is written in the working
-  /// tree.
-  ///
-  /// The floor's four outcomes collapse to two: [ent.Contested] and
-  /// [ent.Diverged] are both fetch outcomes, and `Instance.act`'s commit path
-  /// never fetches — [ent.Landed] or [ent.Barred] is all it can return, so a
-  /// case that cannot fire must not be handed to callers.
+  /// One act: the body writes into the bank's own tree, and the line moves
+  /// by an ordinary commit. The organ writes by moving the line.
   Future<Landing> land(
     String payload,
     void Function(Draft) body, {
     required Actor actor,
     String? say,
   }) async {
-    // An entity created but never given its line is an ordinary condition of
-    // the world, not a fault of ours: the floor answers it by throwing, which
-    // reaches a person as a stack trace where a sentence belongs.
-    if (_entity.instance(mainInstanceId).tip == null) {
+    final root = _root;
+    if (root == null) {
       return Barred(
         'the bank has no line yet — instance "$mainInstanceId" of '
-        '${_entity.name} was never born',
+        '$name was never born',
       );
     }
-    final result = await _entity.instance(mainInstanceId).act(
-      payload,
-      (workspace) => body(Draft._(workspace.directory)),
+    final gitDir = _gitDirOf(root.path);
+    if (ambientGit.revParse(gitDir, 'refs/heads/$mainInstanceId') == null) {
+      return Barred(
+        'the bank has no line yet — instance "$mainInstanceId" of '
+        '$name was never born',
+      );
+    }
+    final following = ambientGit.currentBranch(root.path);
+    if (following == null) {
+      return Barred(
+        'the worktree at ${root.path} follows no branch',
+      );
+    }
+    final standing = ambientGit.revParse(gitDir, 'HEAD');
+    if (standing == null) {
+      return Barred(
+        'the bank has no line yet — instance "$mainInstanceId" of '
+        '$name was never born',
+      );
+    }
+    final carried = ambientGit.worktreeDirtyPaths(root.path);
+    if (carried.isNotEmpty) throw TreeCarriesWork(root.path, carried);
+    try {
+      body(Draft._(root));
+    } catch (cause) {
+      final discarded = ambientGit.worktreeDirtyPaths(root.path);
+      ambientGit.worktreeDiscard(root.path, to: standing);
+      throw ActUnwound(cause, directory: root.path, discarded: discarded);
+    }
+    final outcome = ambientGit.commitInWorktree(
+      root.path,
+      message: ent.Action.messageFor(payload, say: say),
       actor: actor,
-      say: say,
     );
-    return switch (result) {
-      ent.Landed(:final action) => Landed(action),
-      ent.Barred(:final reason) => Barred(reason),
-      ent.Contested() || ent.Diverged() => throw StateError(
-          'unreachable: Instance.act cannot contest or diverge — both are '
-          'fetch outcomes, and land never fetches'),
-    };
+    final landed = outcome.commit;
+    if (landed != null) {
+      return Landed(ent.Action(
+        gitDir: gitDir,
+        ref: 'refs/heads/$following',
+        commit: landed,
+      ));
+    }
+    final discarded = ambientGit.worktreeDirtyPaths(root.path);
+    ambientGit.worktreeDiscard(root.path, to: standing);
+    return Barred(
+      ent.gateRefusalIn(outcome.report) ?? 'refused by a gate',
+    );
   }
 
   /// Brings the working tree to the landed line, or says why it could not.
   ///
   /// **Three outcomes, and none of them is silence.** A bank with no tree of
-  /// ours standing at the uniform address is [NoTree] and never [Advanced]:
-  /// "nothing is materialized" and "the tree is current" are opposite facts,
-  /// and returning success for the first is the same lie the attached-HEAD
-  /// defect told — a write that landed where nobody can read it, reported as a
-  /// clean write.
+  /// ours standing at the uniform address is [NoTree] and never [Advanced].
   Advance advance() {
-    final address = _entity.materializationAddress;
-    final at = _entity.materializedAt;
-    if (at == null) return NoTree(address);
-    final result =
-        _entity.instance(mainInstanceId).materialization(at.path).refresh();
+    final address = _address;
+    if (!hasTree) return NoTree(address);
+    final gitDir = _gitDirOf(address.path);
+    final tip = ambientGit.revParse(gitDir, 'refs/heads/$mainInstanceId');
+    if (tip == null) return NoTree(address);
+    final carried = ambientGit.worktreeDirtyPaths(address.path);
+    if (carried.isNotEmpty) {
+      return Behind(
+        blocking: carried,
+        report: 'the tree at ${address.path} carries uncommitted work, '
+            'and catching it up would overwrite it:\n  '
+            '${carried.join('\n  ')}\n  '
+            'commit it or set it aside first: git -C ${address.path} status',
+      );
+    }
+    final branch = ambientGit.currentBranch(address.path);
+    if (branch == mainInstanceId) return Advanced();
+    final result = ambientGit.worktreeCheckout(address.path, to: tip);
     if (result.moved) return Advanced();
     return Behind(
-      blocking: ambientGit.worktreeDirtyPaths(at.path),
+      blocking: ambientGit.worktreeDirtyPaths(address.path),
       report: result.report,
     );
+  }
+
+  static String _gitDirOf(String workTree) {
+    final asDir = Directory(p.join(workTree, '.git'));
+    if (asDir.existsSync()) return asDir.path;
+    final asFile = File(p.join(workTree, '.git'));
+    if (asFile.existsSync()) {
+      for (final line in asFile.readAsStringSync().split('\n')) {
+        if (line.startsWith('gitdir:')) {
+          final loc = line.substring('gitdir:'.length).trim();
+          return p.isAbsolute(loc) ? loc : p.normalize(p.join(workTree, loc));
+        }
+      }
+    }
+    throw StateError('no git directory at $workTree');
   }
 
   static Iterable<File> _markdownFiles(Directory root) sync* {
@@ -247,10 +341,6 @@ final class Draft {
   }
 }
 
-/// The floor's own outcomes, passed through bar [ent.Contested] and
-/// [ent.Diverged], neither of which ever fires here. Each one remaining is a
-/// different obligation on the caller — proceed or stop — and collapsing
-/// them would produce a false account of what happened.
 sealed class Landing {
   const Landing();
 }
@@ -284,21 +374,44 @@ final class Behind extends Advance {
   final List<String> blocking;
 
   /// The substrate's or the primitive's own account of the decline, where the
-  /// paths alone do not explain it. A tree following a branch is the case
-  /// that needs it: every path in [blocking] then reads as the person's
-  /// staged work, and none of it is.
+  /// paths alone do not explain it.
   final String? report;
 }
 
 /// No tree of this bank stands at the uniform address, so a landed write is
 /// nowhere anybody can read it.
-///
-/// Distinct from [Behind] on purpose: nothing is in the way, and no cure
-/// touching the tree's contents applies. The bank has to be materialized.
 final class NoTree extends Advance {
   const NoTree(this.address);
 
-  /// Where a tree would stand if one did — the instance's own name under the
-  /// thing's anchor, never composed by the caller.
+  /// Where a tree would stand if one did — the gitlink's own path under the
+  /// super-repo, never composed by the caller.
   final Directory address;
+}
+
+/// The tree carries uncommitted work, and an act commits the whole of it.
+final class TreeCarriesWork implements Exception {
+  const TreeCarriesWork(this.directory, this.paths);
+
+  final String directory;
+  final List<String> paths;
+
+  @override
+  String toString() => [
+        'the tree at $directory carries uncommitted work, '
+            'and an act commits the whole of it',
+        ...paths.map((path) => '  $path'),
+        'commit it or set it aside first: git -C $directory status',
+      ].join('\n');
+}
+
+/// The body threw; the tree was restored. Same obligation [Instance.act] had.
+final class ActUnwound implements Exception {
+  const ActUnwound(this.cause, {required this.directory, required this.discarded});
+
+  final Object cause;
+  final String directory;
+  final List<String> discarded;
+
+  @override
+  String toString() => 'act unwound at $directory: $cause';
 }

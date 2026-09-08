@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:bentos_userland/entity.dart';
+import 'package:bentos_userland/src/git/model/actor.dart';
 import 'package:bentos_userland/src/mem/attention.dart';
 import 'package:bentos_userland/src/mem/bank.dart' show Bank, Found;
 import 'package:bentos_userland/src/mem/page.dart';
@@ -10,6 +10,7 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import '../entity/helpers.dart';
+import 'stand.dart';
 
 /// `--help` answers through `print`, not through the sink [Mem.call] hands
 /// the runner — the args package's own `Command.printUsage` calls the global
@@ -41,13 +42,7 @@ void main() {
   setUp(() => site = Site());
   tearDown(() => site.dispose());
 
-  Directory materialize(String name) {
-    final entity = Entity(name, from: site.root.path).create(actor: testActor);
-    entity.instance('main').create();
-    final where = Directory(p.join(site.root.path, entity.name));
-    entity.instance('main').materialize(at: where.path);
-    return where;
-  }
+  Directory materialize(String name) => standBank(site, name);
 
   /// A page the bank genuinely holds — landed as an act and then brought into
   /// the tree, rather than dropped into the worktree by hand.

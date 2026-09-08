@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:bentos_userland/entity.dart';
 import 'package:bentos_userland/src/mem/attention.dart';
 import 'package:bentos_userland/src/mem/page.dart';
 import 'package:bentos_userland/src/mem/walk.dart';
@@ -8,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import '../entity/helpers.dart';
+import 'stand.dart';
 
 void main() {
   late Site site;
@@ -17,13 +17,7 @@ void main() {
 
   /// Materializes an empty bank and returns the directory its pages live in
   /// — no land, no act, exactly the hand-edit shape [Bank.pages] reads.
-  Directory materialize(String name) {
-    final entity = Entity(name, from: site.root.path).create(actor: testActor);
-    entity.instance('main').create();
-    final where = Directory(p.join(site.root.path, entity.name));
-    entity.instance('main').materialize(at: where.path);
-    return where;
-  }
+  Directory materialize(String name) => standBank(site, name);
 
   void writePage(
     Directory root,

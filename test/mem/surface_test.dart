@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:bentos_userland/entity.dart';
 import 'package:bentos_userland/src/mem/attention.dart';
 import 'package:bentos_userland/src/mem/page.dart';
 import 'package:bentos_userland/src/mem/surface.dart';
@@ -9,6 +8,7 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import '../entity/helpers.dart';
+import 'stand.dart';
 
 /// A [GistSource] double: always answers with the body's own length, never
 /// reaches a model. Deterministic, and never null — a surface test that
@@ -41,13 +41,7 @@ void main() {
   setUp(() => site = Site());
   tearDown(() => site.dispose());
 
-  Directory materialize(String name) {
-    final entity = Entity(name, from: site.root.path).create(actor: testActor);
-    entity.instance('main').create();
-    final where = Directory(p.join(site.root.path, entity.name));
-    entity.instance('main').materialize(at: where.path);
-    return where;
-  }
+  Directory materialize(String name) => standBank(site, name);
 
   /// [bank] becomes `-b` unless the argv already names one. [environment]
   /// is handed through so a test can prove `$BENTOS_AGENT` is not a bank.
@@ -191,19 +185,15 @@ void main() {
     // colliding with what the write introduced, Git's own checkout declines,
     // and `Behind` is exactly what carries that decline outward.
     test(
-        'remember on a legacy-detached bank tree lands, but reports TREE '
-        'STALE rather than a clean write', () async {
+        'remember on a detached bank tree is refused — the organ commits '
+        'in this tree, and a detached HEAD holds no line', () async {
       await site.runAsync(() async {
         final where = materialize('alfred.mem');
 
-        // The legacy condition: detach the tree Git itself just attached.
         final detach =
             Process.runSync('git', ['-C', where.path, 'checkout', '--detach']);
         expect(detach.exitCode, 0);
 
-        // Untracked, and colliding with the very file the coming write
-        // introduces — the shape that makes the substrate's own checkout
-        // decline rather than silently fast-forward the stale tree.
         File(p.join(where.path, 'domain/hello.md'))
           ..parent.createSync(recursive: true)
           ..writeAsStringSync('stale local content');
@@ -217,23 +207,21 @@ void main() {
         ).call([...memSigned, 'remember', 'domain/hello', '-t', 'semantic',
           '-A', '0.7', '--gist', 'a greeting']);
 
-        // The act landed — the line carries it — and the exit code and
-        // message say the tree did not follow, never that the write failed.
-        expect(diag.text, contains('written domain/hello'));
-        expect(code, Mem.materializationLagCode);
-        expect(diag.text, contains('LANDED, TREE STALE'));
-        expect(diag.text, isNot(contains('LANDED, NO TREE')));
+        expect(code, isNot(0));
+        expect(diag.text, contains('follows no branch'));
+        expect(
+          File(p.join(where.path, 'domain/hello.md')).readAsStringSync(),
+          'stale local content',
+        );
       });
     });
 
     test('a write landing into a bank with no tree says so, and exits non-zero',
         () async {
       await site.runAsync(() async {
-        // Created and given its line, but never materialized: the write has
-        // nowhere to be read, and this used to report as a clean write.
-        final entity =
-            Entity('alfred.mem', from: site.root.path).create(actor: testActor);
-        entity.instance('main').create();
+        // Registered as a gitlink, never checked out: the write has
+        // nowhere to be read.
+        standGitlinkOnly(site, 'alfred.mem');
 
         final out = _Out(), diag = _Out();
         final code = await mem(
@@ -244,11 +232,9 @@ void main() {
         ).call([...memSigned, 'remember', 'domain/hello', '-t', 'semantic',
           '-A', '0.7', '--gist', 'a greeting']);
 
-        expect(diag.text, contains('written domain/hello'));
-        expect(code, Mem.materializationLagCode);
-        expect(code, isNot(1));
-        expect(diag.text, contains('NO TREE'));
-        expect(diag.text, contains(p.join(site.root.path, 'alfred.mem')));
+        expect(code, isNot(0));
+        expect(diag.text, contains('never born'));
+        expect(diag.text, isNot(contains('written domain/hello')));
       });
     });
 
@@ -259,11 +245,8 @@ void main() {
       // walk — indistinguishable from a bank that genuinely holds nothing.
       // The guard's whole job is to make "empty" and "invisible" say
       // different things.
-      Entity installOnly(Directory root) {
-        final entity =
-            Entity('alfred.mem', from: root.path).create(actor: testActor);
-        entity.instance('main').create();
-        return entity;
+      void installOnly(Directory root) {
+        standGitlinkOnly(site, 'alfred.mem');
       }
 
       test('survey', () async {
