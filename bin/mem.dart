@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:bentos_userland/mem.dart';
@@ -30,7 +31,7 @@ Future<void> main(List<String> args) async {
     environment: Platform.environment,
     stdinReader: stdin.hasTerminal
         ? null
-        : () => stdin.transform(const SystemEncoding().decoder).join(),
+        : () => stdin.transform(utf8.decoder).join(),
     fileReader: (path) => File(path).readAsString(),
     gistSource: const LlmGistSource(),
   );
