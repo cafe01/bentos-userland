@@ -147,6 +147,11 @@ class Program {
     final outDone = process.stdout.transform(utf8.decoder).forEach(out.write);
     final errDone = process.stderr.transform(utf8.decoder).forEach(err.write);
 
+    // UTF-8 on the wire, never the platform default: on Windows that is the
+    // ANSI code page, and a body the program decodes as UTF-8 arrives as
+    // mojibake. Output is already read back as UTF-8 above; input must match.
+    process.stdin.encoding = utf8;
+
     try {
       if (input != null) process.stdin.write(input);
       await process.stdin.close();

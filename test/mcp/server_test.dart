@@ -109,6 +109,23 @@ void main() {
       expect(partsOf(result)[1], 'stdout:\nspoken into the program\n');
     });
 
+    test('with non-ASCII stdin returns it intact — UTF-8, not the code page',
+        () async {
+      final harness = await connectedToFixture();
+
+      final result = await harness.connection.callTool(
+        CallToolRequest(
+          name: 'program',
+          arguments: {
+            'args': ['echo-stdin'],
+            'stdin': 'sócia — ação → ok\n',
+          },
+        ),
+      );
+
+      expect(partsOf(result)[1], 'stdout:\nsócia — ação → ok\n');
+    });
+
     test('with neither runs the program bare', () async {
       final harness = await connectedToFixture();
 
